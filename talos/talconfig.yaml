@@ -20,7 +20,7 @@ cniConfig:
 
 nodes:
   - hostname: "k8s-cp-0"
-    ipAddress: "192.168.1.10"
+    ipAddress: "192.168.10.10"
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -31,7 +31,7 @@ nodes:
           hardwareAddr: "bc:24:11:bf:b4:39"
         dhcp: false
         addresses:
-          - "192.168.1.10/24"
+          - "192.168.10.10/24"
         routes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
@@ -39,7 +39,7 @@ nodes:
         vip:
           ip: "192.168.10.100"
   - hostname: "k8s-cp-1"
-    ipAddress: "192.168.1.11"
+    ipAddress: "192.168.10.11"
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -50,7 +50,7 @@ nodes:
           hardwareAddr: "bc:24:11:2e:3b:34"
         dhcp: false
         addresses:
-          - "192.168.1.11/24"
+          - "192.168.10.11/24"
         routes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
@@ -58,7 +58,7 @@ nodes:
         vip:
           ip: "192.168.10.100"
   - hostname: "k8s-cp-2"
-    ipAddress: "192.168.1.12"
+    ipAddress: "192.168.10.12"
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -69,7 +69,7 @@ nodes:
           hardwareAddr: "bc:24:11:e1:3f:7d"
         dhcp: false
         addresses:
-          - "192.168.1.12/24"
+          - "192.168.10.12/24"
         routes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
@@ -77,7 +77,7 @@ nodes:
         vip:
           ip: "192.168.10.100"
   - hostname: "k8s-wrk-0"
-    ipAddress: "192.168.1.20"
+    ipAddress: "192.168.10.20"
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -88,13 +88,13 @@ nodes:
           hardwareAddr: "bc:24:11:7a:18:f2"
         dhcp: false
         addresses:
-          - "192.168.1.20/24"
+          - "192.168.10.20/24"
         routes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
         mtu: 1500
   - hostname: "k8s-wrk-1"
-    ipAddress: "192.168.1.21"
+    ipAddress: "192.168.10.21"
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -105,13 +105,13 @@ nodes:
           hardwareAddr: "bc:24:11:05:ae:11"
         dhcp: false
         addresses:
-          - "192.168.1.21/24"
+          - "192.168.10.21/24"
         routes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
         mtu: 1500
   - hostname: "k8s-wrk-2"
-    ipAddress: "192.168.1.22"
+    ipAddress: "192.168.10.22"
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -122,7 +122,7 @@ nodes:
           hardwareAddr: "bc:24:11:4f:d2:f3"
         dhcp: false
         addresses:
-          - "192.168.1.22/24"
+          - "192.168.10.22/24"
         routes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
