@@ -1,0 +1,143 @@
+---
+clusterName: kubernetes
+
+talosVersion: "${talosVersion}"
+kubernetesVersion: "${kubernetesVersion}"
+
+endpoint: https://192.168.10.100:6443
+additionalApiServerCertSans: &sans
+  - "127.0.0.1"
+  - "192.168.10.100"
+  - "k8s.cisotop.de"
+additionalMachineCertSans: *sans
+
+clusterPodNets: ["10.42.0.0/16"]
+clusterSvcNets: ["10.43.0.0/16"]
+
+# Disable built-in CNI to use Cilium
+cniConfig:
+  name: none
+
+nodes:
+  - hostname: "k8s-cp-0"
+    ipAddress: "192.168.1.10"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:bf:b4:39"
+        dhcp: false
+        addresses:
+          - "192.168.1.10/24"
+        routes:
+          - gateway: "192.168.10.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+        vip:
+          ip: "192.168.10.100"
+  - hostname: "k8s-cp-1"
+    ipAddress: "192.168.1.11"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:2e:3b:34"
+        dhcp: false
+        addresses:
+          - "192.168.1.11/24"
+        routes:
+          - gateway: "192.168.10.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+        vip:
+          ip: "192.168.10.100"
+  - hostname: "k8s-cp-2"
+    ipAddress: "192.168.1.12"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:e1:3f:7d"
+        dhcp: false
+        addresses:
+          - "192.168.1.12/24"
+        routes:
+          - gateway: "192.168.10.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+        vip:
+          ip: "192.168.10.100"
+  - hostname: "k8s-wrk-0"
+    ipAddress: "192.168.1.20"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    controlPlane: false
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:7a:18:f2"
+        dhcp: false
+        addresses:
+          - "192.168.1.20/24"
+        routes:
+          - gateway: "192.168.10.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+  - hostname: "k8s-wrk-1"
+    ipAddress: "192.168.1.21"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    controlPlane: false
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:05:ae:11"
+        dhcp: false
+        addresses:
+          - "192.168.1.21/24"
+        routes:
+          - gateway: "192.168.10.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+  - hostname: "k8s-wrk-2"
+    ipAddress: "192.168.1.22"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    controlPlane: false
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:4f:d2:f3"
+        dhcp: false
+        addresses:
+          - "192.168.1.22/24"
+        routes:
+          - gateway: "192.168.10.1"
+            network: 0.0.0.0/0
+        mtu: 1500
+
+# Global patches
+patches:
+  - "@./patches/global/machine-files.yaml"
+  - "@./patches/global/machine-kubelet.yaml"
+  - "@./patches/global/machine-network.yaml"
+  - "@./patches/global/machine-sysctls.yaml"
+  - "@./patches/global/machine-time.yaml"
+
+# Controller patches
+controlPlane:
+  patches:
+    - "@./patches/controller/cluster.yaml"
+

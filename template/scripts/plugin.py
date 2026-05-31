@@ -7,6 +7,7 @@ import json
 import makejinja
 import re
 import subprocess
+import yaml
 
 
 # Return the filename of a path without the j2 extension
@@ -52,7 +53,7 @@ def age_key(key_type: str, file_path: str = 'age.key') -> str:
 def cloudflare_tunnel_id(file_path: str = 'cloudflare-tunnel.json') -> str:
     try:
         with open(file_path, 'r') as file:
-            data = json.load(file)
+            data = yaml.safe_load(file)
         tunnel_id = data.get("TunnelID")
         if tunnel_id is None:
             raise KeyError(f"Missing 'TunnelID' key in {file_path}")
@@ -60,7 +61,7 @@ def cloudflare_tunnel_id(file_path: str = 'cloudflare-tunnel.json') -> str:
 
     except FileNotFoundError:
         raise FileNotFoundError(f"File not found: {file_path}")
-    except json.JSONDecodeError:
+    except yaml.YAMLError:
         raise ValueError(f"Could not decode JSON file: {file_path}")
     except KeyError as e:
         raise KeyError(f"Error in JSON structure: {e}")
@@ -72,18 +73,16 @@ def cloudflare_tunnel_id(file_path: str = 'cloudflare-tunnel.json') -> str:
 def cloudflare_tunnel_secret(file_path: str = 'cloudflare-tunnel.json') -> str:
     try:
         with open(file_path, 'r') as file:
-            data = json.load(file)
-        transformed_data = {
-            "a": data["AccountTag"],
-            "t": data["TunnelID"],
-            "s": data["TunnelSecret"]
-        }
-        json_string = json.dumps(transformed_data, separators=(',', ':'))
+            data = yaml.safe_load(file)
+        a = data["AccountTag"]
+        t = data["TunnelID"]
+        s = data["TunnelSecret"]
+        json_string = f'{{"a":"{a}","t":"{t}","s":"{s}"}}'
         return base64.b64encode(json_string.encode('utf-8')).decode('utf-8')
 
     except FileNotFoundError:
         raise FileNotFoundError(f"File not found: {file_path}")
-    except json.JSONDecodeError:
+    except yaml.YAMLError:
         raise ValueError(f"Could not decode JSON file: {file_path}")
     except KeyError as e:
         raise KeyError(f"Missing key in JSON file {file_path}: {e}")
@@ -129,12 +128,12 @@ SCHEMA_FILE = 'template/resources/config.schema.cue'
 def cue_export() -> dict[str, Any]:
     try:
         result = subprocess.run(
-            ['cue', 'export', CONFIG_FILE, SCHEMA_FILE, '--out', 'json'],
+            ['cue', 'export', CONFIG_FILE, SCHEMA_FILE, '--out', 'yaml'],
             capture_output=True, check=True, text=True,
         )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"cue export failed:\n{e.stderr}") from None
-    return json.loads(result.stdout)
+    return yaml.safe_load(result.stdout)
 
 
 class Plugin(makejinja.plugin.Plugin):
