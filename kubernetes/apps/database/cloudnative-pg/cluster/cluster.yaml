@@ -56,5 +56,17 @@ spec:
         matchLabels:
           cnpg.io/cluster: postgres
 
+  managed:
+    roles:
+      - name: authentik
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        passwordSecret:
+          name: authentik-db-role
+
   monitoring:
     enablePodMonitor: true
