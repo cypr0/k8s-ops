@@ -1,0 +1,103 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatus-config
+data:
+  config.yaml: |
+    web:
+      port: 8080
+
+    storage:
+      type: sqlite
+      path: /data/data.db
+
+    metrics: true
+
+    alerting:
+      pushover:
+        application-token: "${GATUS_PUSHOVER_API_TOKEN}"
+        user-key: "${PUSHOVER_USER_KEY}"
+        title: "Gatus — ${SECRET_DOMAIN}"
+        default-alert:
+          failure-threshold: 3
+          success-threshold: 2
+          send-on-resolved: true
+
+    # ── External endpoints (user-facing) ──────────────────────────────────
+    endpoints:
+      - name: Authentik SSO
+        group: Security
+        url: "https://id.${SECRET_DOMAIN}"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+          - "[RESPONSE_TIME] < 3000"
+          - "[CERTIFICATE_EXPIRATION] > 336h"
+        alerts:
+          - type: pushover
+
+      - name: Echo (Connectivity Test)
+        group: Infrastructure
+        url: "https://echo.${SECRET_DOMAIN}"
+        interval: 5m
+        conditions:
+          - "[STATUS] == 200"
+          - "[RESPONSE_TIME] < 2000"
+        alerts:
+          - type: pushover
+
+      # ── Internal cluster services ──────────────────────────────────────
+      - name: Prometheus
+        group: Monitoring
+        url: "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/-/healthy"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Alertmanager
+        group: Monitoring
+        url: "http://kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local:9093/-/healthy"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Loki
+        group: Monitoring
+        url: "http://loki.monitoring.svc.cluster.local:3100/ready"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: PostgreSQL (CNPG Primary)
+        group: Database
+        url: "tcp://postgres-rw.database.svc.cluster.local:5432"
+        interval: 30s
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: DragonflyDB
+        group: Database
+        url: "tcp://dragonfly.database.svc.cluster.local:6379"
+        interval: 30s
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: 1Password Connect
+        group: Security
+        url: "http://onepassword-connect.security.svc.cluster.local:8080/health"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
