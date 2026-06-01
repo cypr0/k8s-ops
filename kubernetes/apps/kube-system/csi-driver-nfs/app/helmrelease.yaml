@@ -1,0 +1,32 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: csi-driver-nfs
+spec:
+  chart:
+    spec:
+      chart: csi-driver-nfs
+      version: v4.13.2
+      sourceRef:
+        kind: HelmRepository
+        name: csi-driver-nfs
+  interval: 1h
+  values:
+    kubeletDir: /var/lib/kubelet
+    storageClass:
+      create: true
+      name: zfs-nfs
+      annotations:
+        storageclass.kubernetes.io/is-default-class: "true"
+      reclaimPolicy: Delete
+      volumeBindingMode: Immediate
+      allowVolumeExpansion: true
+      mountOptions:
+        - nfsvers=4.2
+        - hard
+        - intr
+      parameters:
+        server: ${SECRET_NFS_SERVER}
+        share: /rpool/k8s
+        mountPermissions: "0755"
