@@ -56,12 +56,6 @@ spec:
       outputs:
         rate: 1
         max_burst: 1000
-      grpc:
-        enabled: true
-        bind_address: "unix:///run/falco/falco.sock"
-        threadiness: 8
-      grpc_output:
-        enabled: true
 
     # Forward to Falcosidekick via HTTP
     falcoctl:
