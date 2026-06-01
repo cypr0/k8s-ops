@@ -15,7 +15,7 @@ spec:
             io.kubernetes.pod.namespace: security
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "80"
               protocol: TCP
   egress:
     # Allow outbound to 1Password cloud + DNS
