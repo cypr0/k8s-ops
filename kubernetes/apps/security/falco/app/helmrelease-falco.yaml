@@ -96,12 +96,6 @@ spec:
           override:
             exceptions: append
 
-        # Suppress Kubescape node-agent binary execution noise
-        - macro: known_security_tools
-          condition: >
-            proc.name in (kubescape, node-agent, trivy, falco)
-          append: true
-
         # ── Custom detection rules ────────────────────────────────────────────
 
         # Alert: shell spawned inside a database container
