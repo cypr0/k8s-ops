@@ -128,9 +128,14 @@ spec:
 
     controller:
       type: daemonset
-      tolerations:
-        - effect: NoSchedule
-          operator: Exists
+      tolerations: []
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
 
     # Expose syslog ports on the DaemonSet pods
     extraPorts:

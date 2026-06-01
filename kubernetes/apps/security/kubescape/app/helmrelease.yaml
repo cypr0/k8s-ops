@@ -49,8 +49,14 @@ spec:
 
     # Node scanning tolerations
     nodeAgent:
-      tolerations:
-        - operator: Exists
+      tolerations: []
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       resources:
         requests:
           cpu: 10m
