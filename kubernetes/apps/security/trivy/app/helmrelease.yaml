@@ -36,7 +36,7 @@ spec:
       metricsVulnIdEnabled: true
       # Talos: immutable filesystem — node-collector can't access /etc/systemd
       # CIS node benchmarks are handled by Kubescape instead
-      nodeCollectorEnabled: false
+      infraAssessmentScannerEnabled: false
 
     trivy:
       ignoreUnfixed: true
