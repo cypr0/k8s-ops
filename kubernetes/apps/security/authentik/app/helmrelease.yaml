@@ -28,7 +28,7 @@ spec:
   values:
     global:
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: &secret authentik-secret
+        secret.reloader.stakater.com/reload: &secret "authentik-secret,authentik-grafana-oidc"
       deploymentStrategy:
         type: RollingUpdate
       podSecurityContext:
@@ -43,14 +43,22 @@ spec:
           drop: ["ALL"]
       envFrom:
         - secretRef:
-            name: *secret
+            name: authentik-secret
+        - secretRef:
+            name: authentik-grafana-oidc
       volumes:
         - name: authentik-templates
           configMap:
             name: authentik-templates
+        - name: authentik-blueprints
+          configMap:
+            name: authentik-blueprints
       volumeMounts:
         - name: authentik-templates
           mountPath: /templates
+        - name: authentik-blueprints
+          mountPath: /blueprints/custom
+          readOnly: true
     authentik:
       log_level: info
       avatars: "gravatar,initials"

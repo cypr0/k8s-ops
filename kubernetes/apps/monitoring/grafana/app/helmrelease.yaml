@@ -1,0 +1,214 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: grafana
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: grafana
+      version: "10.5.15"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: monitoring
+  maxHistory: 2
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    image:
+      repository: grafana/grafana
+      tag: 12.3.1
+      sha: 2175aaa91c96733d86d31cf270d5310b278654b03f5718c59de12a865380a31f
+
+    replicas: 1
+
+    # ── Autoscaling ────────────────────────────────────────────────────────
+    autoscaling:
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      targetCPU: "70"
+
+    # ── Availability ───────────────────────────────────────────────────────
+    podDisruptionBudget:
+      minAvailable: 1
+
+    # ── Security ──────────────────────────────────────────────────────────
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 472
+      runAsGroup: 472
+      fsGroup: 472
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      # readOnlyRootFilesystem omitted: Grafana writes plugins/temp to disk
+
+    # ── Resources ─────────────────────────────────────────────────────────
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+    # ── Credentials from ExternalSecret ───────────────────────────────────
+    admin:
+      existingSecret: grafana-secret
+      userKey: GF_SECURITY_ADMIN_USER
+      passwordKey: GF_SECURITY_ADMIN_PASSWORD
+
+    envFromSecret: grafana-secret
+
+    deploymentStrategy:
+      type: RollingUpdate
+
+    annotations:
+      secret.reloader.stakater.com/reload: grafana-secret
+
+    # ── Persistence ───────────────────────────────────────────────────────
+    persistence:
+      enabled: true
+      storageClassName: zfs-nfs
+      size: 5Gi
+
+    # ── Grafana config ────────────────────────────────────────────────────
+    grafana.ini:
+      server:
+        root_url: "https://grafana.${SECRET_DOMAIN}"
+      analytics:
+        reporting_enabled: false
+        check_for_updates: false
+        check_for_plugin_updates: false
+      security:
+        disable_gravatar: false
+        cookie_secure: true
+        cookie_samesite: lax
+      users:
+        auto_assign_org_role: Viewer
+        default_theme: dark
+      # Authentik OIDC SSO
+      auth:
+        signout_redirect_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/end-session/"
+        oauth_auto_login: false
+      auth.generic_oauth:
+        enabled: true
+        name: Authentik
+        icon: signin
+        client_id: "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID}"
+        client_secret: "${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}"
+        scopes: "openid profile email"
+        empty_scopes: false
+        auth_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/authorize/"
+        token_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/token/"
+        api_url: "https://id.${SECRET_DOMAIN}/application/o/userinfo/"
+        login_attribute_path: preferred_username
+        groups_attribute_path: groups
+        name_attribute_path: name
+        use_pkce: true
+        allow_sign_up: true
+        role_attribute_path: >
+          contains(groups[*], 'Grafana Admins') && 'Admin'
+          || contains(groups[*], 'Grafana Editors') && 'Editor'
+          || 'Viewer'
+
+    # ── Datasources ───────────────────────────────────────────────────────
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            uid: prometheus
+            url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+            isDefault: true
+            jsonData:
+              timeInterval: 30s
+              exemplarTraceIdDestinations: []
+          - name: Loki
+            type: loki
+            uid: loki
+            url: http://loki.monitoring.svc.cluster.local:3100
+            jsonData:
+              maxLines: 1000
+          - name: Alertmanager
+            type: alertmanager
+            uid: alertmanager
+            url: http://kube-prometheus-stack-alertmanager.monitoring.svc.cluster.local:9093
+            jsonData:
+              implementation: prometheus
+              handleGrafanaManagedAlerts: false
+
+    # ── Dashboard providers ───────────────────────────────────────────────
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+          - name: default
+            orgId: 1
+            folder: ""
+            type: file
+            disableDeletion: false
+            editable: true
+            options:
+              path: /var/lib/grafana/dashboards/default
+
+    # ── Pre-loaded dashboards (Grafana.com IDs) ───────────────────────────
+    dashboards:
+      default:
+        kubernetes-cluster:
+          gnetId: 7249
+          revision: 1
+          datasource: Prometheus
+        kubernetes-nodes:
+          gnetId: 1860
+          revision: 37
+          datasource: Prometheus
+        kubernetes-pods:
+          gnetId: 6336
+          revision: 1
+          datasource: Prometheus
+        loki-logs:
+          gnetId: 13639
+          revision: 2
+          datasource: Loki
+        cnpg:
+          gnetId: 20417
+          revision: 2
+          datasource: Prometheus
+        cilium-agent:
+          gnetId: 16611
+          revision: 1
+          datasource: Prometheus
+        cilium-hubble:
+          gnetId: 16613
+          revision: 1
+          datasource: Prometheus
+
+    # ── Monitoring ────────────────────────────────────────────────────────
+    serviceMonitor:
+      enabled: true
+      interval: 1m
+
+    # ── Init container: correct PVC ownership ─────────────────────────────
+    initChownData:
+      enabled: true
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 64Mi

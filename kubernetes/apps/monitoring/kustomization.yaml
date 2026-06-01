@@ -13,3 +13,4 @@ resources:
   - ./loki/ks.yaml
   - ./alloy/ks.yaml
   - ./gatus/ks.yaml
+  - ./grafana/ks.yaml
