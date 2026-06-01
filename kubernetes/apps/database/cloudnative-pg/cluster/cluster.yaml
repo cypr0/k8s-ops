@@ -58,7 +58,7 @@ spec:
 
   managed:
     roles:
-      - name: authentik
+      - name: authentikusr
         ensure: present
         login: true
         superuser: false
