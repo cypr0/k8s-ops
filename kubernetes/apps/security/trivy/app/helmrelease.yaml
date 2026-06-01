@@ -29,12 +29,14 @@ spec:
     operator:
       scanJobTimeout: 5m
       concurrentScanJobsLimit: 3
-      scanNodeCollectorLimit: 1
       builtInTrivyServer: true
       # Scan all namespaces except system ones
       excludeNamespaces: "kube-system,flux-system"
       metricsFindingsEnabled: true
       metricsVulnIdEnabled: true
+      # Talos: immutable filesystem — node-collector can't access /etc/systemd
+      # CIS node benchmarks are handled by Kubescape instead
+      nodeCollectorEnabled: false
 
     trivy:
       ignoreUnfixed: true
