@@ -89,3 +89,4 @@ spec:
           - SYS_PTRACE
           - NET_RAW
           - PERFMON
+          - SYS_RESOURCE  # needed to bump RLIMIT_MEMLOCK for modern eBPF on Talos
