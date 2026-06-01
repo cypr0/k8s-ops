@@ -89,6 +89,13 @@ spec:
     bloomGateway:
       replicas: 0
 
+    # Disable memcached caches — not needed for SingleBinary homelab
+    # Default requests are 8Gi which no homelab node can satisfy
+    chunksCache:
+      enabled: false
+    resultsCache:
+      enabled: false
+
     gateway:
       enabled: false
 
