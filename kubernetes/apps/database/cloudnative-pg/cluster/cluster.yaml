@@ -6,26 +6,55 @@ metadata:
   name: postgres
 spec:
   instances: 3
-  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.4@sha256:8ff3abd13383e619797f974b4fcdda6de0c2cfdad90eb47e1cd95d41fe26bf80
 
+  enableSuperuserAccess: true
   superuserSecret:
     name: cloudnative-pg-superuser
+
+  primaryUpdateStrategy: Unsupervised
 
   storage:
     size: 20Gi
     storageClass: zfs-nfs
 
+  walStorage:
+    size: 5Gi
+    storageClass: zfs-nfs
+
   postgresql:
     parameters:
+      # Memory — tuned for 2Gi container limit
+      shared_buffers: "512MB"
+      effective_cache_size: "1536MB"
+      work_mem: "32MB"
+      maintenance_work_mem: "128MB"
+      # WAL
+      wal_level: "logical"
+      max_wal_size: "2GB"
+      min_wal_size: "512MB"
+      checkpoint_completion_target: "0.9"
+      # Connections
       max_connections: "200"
-      shared_buffers: "256MB"
+      max_replication_slots: "10"
+      # Storage (ZFS via NFS behaves closer to SSD for sequential reads)
+      random_page_cost: "1.1"
 
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
     limits:
-      memory: 1Gi
+      memory: 2Gi
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          cnpg.io/cluster: postgres
 
   monitoring:
     enablePodMonitor: true
