@@ -90,12 +90,12 @@ spec:
       server:
         root_url: "https://grafana.${SECRET_DOMAIN}"
       analytics:
-        reporting_enabled: false
-        check_for_updates: false
-        check_for_plugin_updates: false
+        reporting_enabled: "false"
+        check_for_updates: "false"
+        check_for_plugin_updates: "false"
       security:
-        disable_gravatar: false
-        cookie_secure: true
+        disable_gravatar: "false"
+        cookie_secure: "true"
         cookie_samesite: lax
       users:
         auto_assign_org_role: Viewer
@@ -103,27 +103,24 @@ spec:
       # Authentik OIDC SSO
       auth:
         signout_redirect_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/end-session/"
-        oauth_auto_login: false
+        oauth_auto_login: "false"
       auth.generic_oauth:
-        enabled: true
+        enabled: "true"
         name: Authentik
         icon: signin
         client_id: "${GF_AUTH_GENERIC_OAUTH_CLIENT_ID}"
         client_secret: "${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}"
         scopes: "openid profile email"
-        empty_scopes: false
+        empty_scopes: "false"
         auth_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/authorize/"
         token_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/token/"
         api_url: "https://id.${SECRET_DOMAIN}/application/o/userinfo/"
         login_attribute_path: preferred_username
         groups_attribute_path: groups
         name_attribute_path: name
-        use_pkce: true
-        allow_sign_up: true
-        role_attribute_path: >
-          contains(groups[*], 'Grafana Admins') && 'Admin'
-          || contains(groups[*], 'Grafana Editors') && 'Editor'
-          || 'Viewer'
+        use_pkce: "true"
+        allow_sign_up: "true"
+        role_attribute_path: "contains(groups[*], 'Grafana Admins') && 'Admin' || contains(groups[*], 'Grafana Editors') && 'Editor' || 'Viewer'"
 
     # ── Datasources ───────────────────────────────────────────────────────
     datasources:
