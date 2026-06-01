@@ -92,13 +92,13 @@ spec:
               address  = "0.0.0.0:5514"
               protocol = "udp"
               labels   = { job = "syslog" }
-              label_structured_data = true
+              use_incoming_timestamp = true
             }
             listener {
               address  = "0.0.0.0:5514"
               protocol = "tcp"
               labels   = { job = "syslog" }
-              label_structured_data = true
+              use_incoming_timestamp = true
             }
             forward_to = [loki.process.external_syslog.receiver]
           }
