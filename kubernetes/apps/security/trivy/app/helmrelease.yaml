@@ -1,0 +1,79 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: trivy-operator
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: trivy-operator
+      version: "0.32.1"
+      sourceRef:
+        kind: HelmRepository
+        name: aqua
+        namespace: trivy-system
+  maxHistory: 2
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    operator:
+      scanJobTimeout: 5m
+      concurrentScanJobsLimit: 3
+      scanNodeCollectorLimit: 1
+      builtInTrivyServer: true
+      # Scan all namespaces except system ones
+      excludeNamespaces: "kube-system,flux-system"
+      metricsFindingsEnabled: true
+      metricsVulnIdEnabled: true
+
+    trivy:
+      ignoreUnfixed: true
+      severity: "MEDIUM,HIGH,CRITICAL"
+      slow: true
+
+    # Node collector needs to run on all nodes
+    nodeCollector:
+      tolerations:
+        - operator: Exists
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        readOnlyRootFilesystem: true
+
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+      readOnlyRootFilesystem: true
+
+    resources:
+      requests:
+        cpu: 20m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+    serviceMonitor:
+      enabled: true

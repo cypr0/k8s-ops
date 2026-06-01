@@ -1,0 +1,90 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kubescape
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: kubescape-operator
+      version: "1.40.2"
+      sourceRef:
+        kind: HelmRepository
+        name: kubescape
+        namespace: kubescape
+  maxHistory: 2
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    # Run in offline mode — no Kubescape cloud account needed
+    capabilities:
+      configurationScan: enable
+      continuousScan: enable
+      vulnerabilityScan: disable  # handled by Trivy Operator
+      nodeScan: enable
+      networkPolicyService: disable
+      runtimeObservability: disable
+      secureApplicationProfile: disable
+
+    # Scan frameworks
+    configuration:
+      frameworks:
+        - cis-v1.23-t1.0
+
+    clusterName: k8s-ops
+
+    # Scan schedule: daily at 2am
+    triggerNewImageScan: false
+    scanSchedule: "0 2 * * *"
+
+    # Node scanning tolerations
+    nodeAgent:
+      tolerations:
+        - operator: Exists
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+
+    operator:
+      resources:
+        requests:
+          cpu: 20m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+      podSecurityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+
+    kubescape:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+
+    # Prometheus metrics
+    prometheusAnnotations: true
+
+    serviceMonitor:
+      enabled: true

@@ -12,3 +12,6 @@ resources:
   - ./external-secrets/ks.yaml
   - ./onepassword-connect/ks.yaml
   - ./authentik/ks.yaml
+  - ./trivy/ks.yaml
+  - ./falco/ks.yaml
+  - ./kubescape/ks.yaml
