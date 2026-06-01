@@ -28,7 +28,7 @@ spec:
   values:
     global:
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: &secret "authentik-secret,authentik-grafana-oidc"
+        secret.reloader.stakater.com/reload: "authentik-secret,authentik-grafana-oidc"
       deploymentStrategy:
         type: RollingUpdate
       podSecurityContext:
@@ -117,6 +117,6 @@ spec:
       editionIds: "GeoLite2-City GeoLite2-ASN"
       updateInterval: 48
       existingSecret:
-        secretName: *secret
+        secretName: authentik-secret
         accountId: MAXMIND_ACCOUNT_ID
         licenseKey: MAXMIND_LICENSE_KEY
