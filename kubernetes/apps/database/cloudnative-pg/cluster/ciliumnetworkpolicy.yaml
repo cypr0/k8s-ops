@@ -1,0 +1,29 @@
+---
+# Allow postgres access from all cluster pods (port 5432)
+# and internal CNPG replication between instances
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/cluster: postgres
+  ingress:
+    # CNPG internal replication (all ports between instances)
+    - fromEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: postgres
+    # Allow postgres access from any pod in the cluster
+    - fromEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  egress:
+    # Allow replication + barman S3 backup + DNS
+    - toEntities:
+        - cluster
+        - world

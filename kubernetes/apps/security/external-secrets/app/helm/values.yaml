@@ -23,6 +23,11 @@ containerSecurityContext:
 webhook:
   image:
     repository: ghcr.io/external-secrets/external-secrets
+  autoscaling:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
   resources:
     requests:
       cpu: 10m

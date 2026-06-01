@@ -1,0 +1,40 @@
+---
+# authentik-server: reachable from network namespace (envoy proxies) + security
+# authentik-worker: only internal communication
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: authentik
+  namespace: security
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: authentik
+  ingress:
+    # Envoy proxy pods (in network namespace)
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: network
+    # Internal security namespace (worker ↔ server)
+    - fromEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: security
+  egress:
+    # postgres + dragonfly
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: database
+    # External: GeoIP updates, email, OIDC federation
+    - toEntities:
+        - world
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

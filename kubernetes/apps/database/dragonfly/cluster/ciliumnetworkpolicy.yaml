@@ -1,0 +1,22 @@
+---
+# Allow dragonfly access from all cluster pods (port 6379)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dragonfly
+  namespace: database
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: dragonfly
+  ingress:
+    # Allow redis/dragonfly access from any pod in the cluster
+    - fromEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+  egress:
+    - toEntities:
+        - cluster
