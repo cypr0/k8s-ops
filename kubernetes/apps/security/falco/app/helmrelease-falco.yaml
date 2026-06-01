@@ -79,6 +79,90 @@ spec:
       limits:
         memory: 1Gi
 
+    customRules:
+      homelab-rules.yaml: |-
+        # ── Suppress known infrastructure noise ──────────────────────────────
+
+        # Cilium CNI installs its binary to /opt/cni/bin at startup — this
+        # triggers "Drop and execute new binary" because the file is writable.
+        # It runs at host level (container.id = runtime), not inside a container.
+        - rule: Drop and execute new binary in container
+          exceptions:
+            - name: cilium_cni_install
+              fields: [proc.name, container.id]
+              comps: [in, =]
+              values:
+                - [[cilium-cni], runtime]
+          override:
+            exceptions: append
+
+        # Suppress Kubescape node-agent binary execution noise
+        - macro: known_security_tools
+          condition: >
+            proc.name in (kubescape, node-agent, trivy, falco)
+          append: true
+
+        # ── Custom detection rules ────────────────────────────────────────────
+
+        # Alert: shell spawned inside a database container
+        - rule: Shell in Database Container
+          desc: A shell was spawned inside a database pod — potential intrusion
+          condition: >
+            spawned_process
+            and container
+            and k8s.ns.name in (database)
+            and proc.name in (bash, sh, zsh, dash, ash)
+          output: >
+            Shell spawned in database container
+            (user=%user.name pod=%k8s.pod.name ns=%k8s.ns.name
+            cmd=%proc.cmdline image=%container.image.repository)
+          priority: CRITICAL
+          tags: [database, intrusion, shell]
+
+        # Alert: shell spawned in security-critical namespaces
+        - rule: Shell in Security Namespace
+          desc: A shell was spawned in security or authentik pod — potential intrusion
+          condition: >
+            spawned_process
+            and container
+            and k8s.ns.name in (security)
+            and proc.name in (bash, sh, zsh, dash, ash)
+            and not k8s.pod.name startswith "authentik-worker"
+          output: >
+            Shell spawned in security namespace
+            (user=%user.name pod=%k8s.pod.name ns=%k8s.ns.name
+            cmd=%proc.cmdline image=%container.image.repository)
+          priority: CRITICAL
+          tags: [security, intrusion, shell]
+
+        # Alert: unexpected write to /etc in any container
+        - rule: Write to /etc in Container
+          desc: Unexpected write to /etc inside a container
+          condition: >
+            open_write
+            and container
+            and fd.name startswith /etc
+            and not k8s.ns.name in (kube-system, falco, trivy-system, kubescape)
+          output: >
+            Write to /etc in container
+            (user=%user.name file=%fd.name pod=%k8s.pod.name
+            ns=%k8s.ns.name image=%container.image.repository)
+          priority: WARNING
+          tags: [filesystem, container]
+
+        # Alert: crypto mining indicators
+        - rule: Possible Crypto Mining
+          desc: Detects processes commonly used for crypto mining
+          condition: >
+            spawned_process
+            and container
+            and proc.name in (xmrig, xmr-stak, minerd, cpuminer, cgminer)
+          output: >
+            Possible crypto mining process detected
+            (proc=%proc.name pod=%k8s.pod.name ns=%k8s.ns.name)
+          priority: CRITICAL
+          tags: [cryptomining, malware]
+
     podSecurityContext:
       runAsNonRoot: false  # Falco needs root for eBPF
     containerSecurityContext:
