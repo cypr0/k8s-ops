@@ -28,5 +28,5 @@ spec:
         - intr
       parameters:
         server: ${SECRET_NFS_SERVER}
-        share: /rpool/k8s
+        share: /rpool/k8s-rwx
         mountPermissions: "0755"
