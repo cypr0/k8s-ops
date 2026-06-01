@@ -13,7 +13,7 @@ spec:
   superuserSecret:
     name: cloudnative-pg-superuser
 
-  primaryUpdateStrategy: Unsupervised
+  primaryUpdateStrategy: unsupervised
 
   storage:
     size: 20Gi
