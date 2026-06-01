@@ -1,0 +1,25 @@
+---
+# LoadBalancer for external syslog collection (Proxmox + OPNsense)
+# Proxmox:  System > Syslog → UDP/TCP 514 → 192.168.10.110
+# OPNsense: System > Log Files > Settings → Remote Logging → 192.168.10.110:514
+apiVersion: v1
+kind: Service
+metadata:
+  name: alloy-syslog
+  namespace: monitoring
+  annotations:
+    lbipam.cilium.io/ips: "192.168.10.110"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
+  selector:
+    app.kubernetes.io/name: alloy
+  ports:
+    - name: syslog-udp
+      port: 514
+      protocol: UDP
+      targetPort: 5514
+    - name: syslog-tcp
+      port: 514
+      protocol: TCP
+      targetPort: 5514
