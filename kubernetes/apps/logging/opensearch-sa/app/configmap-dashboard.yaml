@@ -1,0 +1,348 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trivy-dashboard-script
+data:
+  create_dashboard.py: |
+    #!/usr/bin/env python3
+    """
+    Create Trivy Vulnerability Dashboard in OpenSearch Dashboards.
+    Imports index-pattern, visualizations, and dashboard via Saved Objects API.
+    """
+    import json, os, sys, time, ssl, urllib.request, urllib.error
+
+    OSD = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    HEADERS = {"Content-Type": "application/json", "osd-xsrf": "true"}
+
+    def osd_req(method, path, body=None):
+        url = f"{OSD}{path}"
+        data = json.dumps(body).encode() if body else None
+        req  = urllib.request.Request(url, data=data, headers=HEADERS, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read()), r.status
+        except urllib.error.HTTPError as e:
+            return json.loads(e.read()), e.code
+
+    # Wait for Dashboards
+    print("Waiting for OpenSearch Dashboards...")
+    for _ in range(30):
+        try:
+            r, s = osd_req("GET", "/api/status")
+            if s == 200 and r.get("status", {}).get("overall", {}).get("state") == "green":
+                print("Dashboards ready.")
+                break
+        except:
+            pass
+        time.sleep(10)
+
+    IDX_ID = "trivy-index-pattern"
+
+    # ── 1. Index Pattern ───────────────────────────────────────────────────
+    print("Creating index pattern trivy-* ...")
+    r, s = osd_req("POST", f"/api/saved_objects/index-pattern/{IDX_ID}?overwrite=true", {
+        "attributes": {
+            "title": "trivy-*",
+            "timeFieldName": "@timestamp",
+            "fields": "[]"
+        }
+    })
+    print(f"  Index pattern: {s}")
+
+    # ── Visualization factory ──────────────────────────────────────────────
+    def make_metric(vid, title, filter_term, field="@timestamp", color="#E7664C"):
+        query_filter = [{"term": {k: v}} for k, v in filter_term.items()] if filter_term else []
+        return {
+            "type": "visualization",
+            "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({
+                    "title": title,
+                    "type": "metric",
+                    "params": {
+                        "addTooltip": True,
+                        "addLegend": False,
+                        "type": "gauge",
+                        "gauge": {
+                            "verticalSplit": False,
+                            "extendRange": True,
+                            "percentageMode": False,
+                            "gaugeType": "Metric",
+                            "gaugeColorMode": "None",
+                            "colorsRange": [{"from": 0, "to": 100000}],
+                            "invertColors": False,
+                            "labels": {"show": True, "color": "black"},
+                            "scale": {"show": False, "labels": False, "color": "#333"},
+                            "type": "simple",
+                            "style": {"bgFill": "#000", "bgColor": False,
+                                      "labelColor": False, "subText": "", "fontSize": 60}
+                        }
+                    },
+                    "aggs": [{"id": "1", "enabled": True, "type": "count",
+                              "schema": "metric", "params": {}}]
+                }),
+                "uiStateJSON": "{}",
+                "description": "",
+                "searchSourceJSON": json.dumps({
+                    "index": IDX_ID,
+                    "query": {"bool": {"filter": query_filter, "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })
+            },
+            "references": [{"id": IDX_ID, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    def make_pie(vid, title, field):
+        return {
+            "type": "visualization",
+            "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({
+                    "title": title,
+                    "type": "pie",
+                    "params": {
+                        "type": "pie",
+                        "addTooltip": True,
+                        "addLegend": True,
+                        "legendPosition": "right",
+                        "isDonut": True,
+                        "labels": {"show": True, "values": True, "last_level": True, "truncate": 100}
+                    },
+                    "aggs": [
+                        {"id": "1", "enabled": True, "type": "count", "schema": "metric", "params": {}},
+                        {"id": "2", "enabled": True, "type": "terms", "schema": "segment",
+                         "params": {"field": field, "size": 10, "order": "desc", "orderBy": "1"}}
+                    ]
+                }),
+                "uiStateJSON": "{}",
+                "description": "",
+                "searchSourceJSON": json.dumps({"index": IDX_ID, "query": {"match_all": {}}, "filter": []})
+            },
+            "references": [{"id": IDX_ID, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    def make_hbar(vid, title, field, size=10, filter_terms=None):
+        query_filter = [{"term": {k: v}} for k, v in (filter_terms or {}).items()]
+        return {
+            "type": "visualization",
+            "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({
+                    "title": title,
+                    "type": "horizontal_bar",
+                    "params": {
+                        "type": "histogram",
+                        "grid": {"categoryLines": False},
+                        "categoryAxes": [{"id": "CategoryAxis-1", "type": "category",
+                                          "position": "left", "show": True,
+                                          "style": {}, "scale": {"type": "linear"},
+                                          "labels": {"show": True, "rotate": 0, "filter": True, "truncate": 200},
+                                          "title": {}}],
+                        "valueAxes": [{"id": "ValueAxis-1", "name": "LeftAxis-1", "type": "value",
+                                       "position": "bottom", "show": True,
+                                       "style": {}, "scale": {"type": "linear", "mode": "normal"},
+                                       "labels": {"show": True, "rotate": 0, "filter": False, "truncate": 100},
+                                       "title": {"text": "Count"}}],
+                        "seriesParams": [{"show": True, "type": "histogram", "mode": "stacked",
+                                          "data": {"label": "Count", "id": "1"},
+                                          "valueAxis": "ValueAxis-1", "drawLinesBetweenPoints": True,
+                                          "lineWidth": 2, "showCircles": True}],
+                        "addTooltip": True,
+                        "addLegend": True,
+                        "legendPosition": "right",
+                        "times": [],
+                        "addTimeMarker": False,
+                        "truncateLegend": True,
+                        "maxLegendLines": 1,
+                        "distinctColors": False,
+                        "palette": {"type": "palette", "name": "default"}
+                    },
+                    "aggs": [
+                        {"id": "1", "enabled": True, "type": "count", "schema": "metric", "params": {}},
+                        {"id": "2", "enabled": True, "type": "terms", "schema": "segment",
+                         "params": {"field": field, "size": size, "order": "desc", "orderBy": "1",
+                                    "otherBucket": False, "missingBucket": False}}
+                    ]
+                }),
+                "uiStateJSON": "{}",
+                "description": "",
+                "searchSourceJSON": json.dumps({
+                    "index": IDX_ID,
+                    "query": {"bool": {"filter": query_filter, "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })
+            },
+            "references": [{"id": IDX_ID, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    def make_table(vid, title, cols, filter_terms=None, sort_field="severity", size=25):
+        query_filter = [{"term": {k: v}} for k, v in (filter_terms or {}).items()]
+        aggs = [{"id": "1", "enabled": True, "type": "count", "schema": "metric", "params": {}}]
+        for i, col in enumerate(cols, start=2):
+            aggs.append({"id": str(i), "enabled": True, "type": "terms", "schema": "bucket",
+                         "params": {"field": col, "size": size, "order": "desc", "orderBy": "1",
+                                    "otherBucket": False, "missingBucket": False}})
+        return {
+            "type": "visualization",
+            "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({
+                    "title": title,
+                    "type": "table",
+                    "params": {
+                        "perPage": 25,
+                        "showPartialRows": False,
+                        "showMetricsAtAllLevels": False,
+                        "sort": {"columnIndex": None, "direction": None},
+                        "showTotal": False,
+                        "totalFunc": "sum",
+                        "percentageCol": ""
+                    },
+                    "aggs": aggs
+                }),
+                "uiStateJSON": json.dumps({"vis": {"params": {"sort": {"columnIndex": 0, "direction": "desc"}}}}),
+                "description": "",
+                "searchSourceJSON": json.dumps({
+                    "index": IDX_ID,
+                    "query": {"bool": {"filter": query_filter, "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })
+            },
+            "references": [{"id": IDX_ID, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    def make_line(vid, title):
+        return {
+            "type": "visualization",
+            "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({
+                    "title": title,
+                    "type": "line",
+                    "params": {
+                        "type": "line",
+                        "grid": {"categoryLines": False},
+                        "categoryAxes": [{"id": "CategoryAxis-1", "type": "category",
+                                          "position": "bottom", "show": True, "style": {},
+                                          "scale": {"type": "linear"},
+                                          "labels": {"show": True, "filter": True, "truncate": 100},
+                                          "title": {}}],
+                        "valueAxes": [{"id": "ValueAxis-1", "name": "LeftAxis-1", "type": "value",
+                                       "position": "left", "show": True, "style": {},
+                                       "scale": {"type": "linear", "mode": "normal"},
+                                       "labels": {"show": True, "rotate": 0, "filter": False, "truncate": 100},
+                                       "title": {"text": "CVE Count"}}],
+                        "seriesParams": [{"show": True, "type": "line", "mode": "normal",
+                                          "data": {"label": "CVEs", "id": "1"},
+                                          "drawLinesBetweenPoints": True, "lineWidth": 2,
+                                          "showCircles": True, "interpolate": "linear",
+                                          "valueAxis": "ValueAxis-1"}],
+                        "addTooltip": True, "addLegend": True, "legendPosition": "right",
+                        "times": [], "addTimeMarker": False
+                    },
+                    "aggs": [
+                        {"id": "1", "enabled": True, "type": "count", "schema": "metric", "params": {}},
+                        {"id": "2", "enabled": True, "type": "date_histogram", "schema": "segment",
+                         "params": {"field": "@timestamp", "useNormalizedEsInterval": True,
+                                    "scaleMetricValues": False, "interval": "auto",
+                                    "drop_partials": False, "min_doc_count": 1, "extended_bounds": {}}}
+                    ]
+                }),
+                "uiStateJSON": "{}",
+                "description": "",
+                "searchSourceJSON": json.dumps({"index": IDX_ID, "query": {"match_all": {}}, "filter": []})
+            },
+            "references": [{"id": IDX_ID, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    # ── 2. Create visualizations ───────────────────────────────────────────
+    print("Creating visualizations...")
+    vizs = [
+        make_metric("trivy-v1-critical", "🔴 Critical CVEs",   {"severity": "CRITICAL"}),
+        make_metric("trivy-v2-high",     "🟠 High CVEs",       {"severity": "HIGH"}),
+        make_metric("trivy-v3-images",   "📦 Affected Images", {}),
+        make_pie(   "trivy-v4-severity", "Severity Distribution", "severity"),
+        make_hbar(  "trivy-v5-top-images", "Top 10 Vulnerable Images", "image", 10),
+        make_hbar(  "trivy-v6-namespace",  "CVEs by Namespace",        "namespace", 15),
+        make_table( "trivy-v7-with-fix",   "✅ CVEs with Fix Available",
+                    ["vulnerabilityID", "severity", "image", "fixedVersion"],
+                    filter_terms=None, size=50),
+        make_table( "trivy-v8-no-fix",     "⚠️ CVEs — No Fix Available",
+                    ["vulnerabilityID", "severity", "image", "namespace"],
+                    filter_terms=None, size=50),
+        make_line(  "trivy-v9-trend",      "CVE Trend Over Time"),
+    ]
+
+    # Add "no fix" filter for v8
+    vizs[7]["attributes"]["searchSourceJSON"] = json.dumps({
+        "index": IDX_ID,
+        "query": {"bool": {
+            "filter": [{"term": {"severity": "CRITICAL"}}],
+            "must_not": [{"exists": {"field": "fixedVersion"}}],
+            "must": [], "should": []
+        }},
+        "filter": []
+    })
+
+    for v in vizs:
+        r, s = osd_req("POST", f"/api/saved_objects/{v['type']}/{v['id']}?overwrite=true",
+                       {"attributes": v["attributes"], "references": v.get("references", [])})
+        print(f"  {v['attributes']['title']}: {s}")
+
+    # ── 3. Create Dashboard ────────────────────────────────────────────────
+    print("Creating dashboard...")
+
+    # Panel layout: 48 columns wide
+    panels = [
+        # Row 1: KPI metrics (each 12 wide, 3 high)
+        {"id": "trivy-v1-critical", "x": 0,  "y": 0, "w": 12, "h": 3},
+        {"id": "trivy-v2-high",     "x": 12, "y": 0, "w": 12, "h": 3},
+        {"id": "trivy-v3-images",   "x": 24, "y": 0, "w": 12, "h": 3},
+        {"id": "trivy-v4-severity", "x": 36, "y": 0, "w": 12, "h": 3},
+        # Row 2: Charts
+        {"id": "trivy-v5-top-images", "x": 0,  "y": 3, "w": 24, "h": 10},
+        {"id": "trivy-v6-namespace",  "x": 24, "y": 3, "w": 24, "h": 10},
+        # Row 3: Tables
+        {"id": "trivy-v7-with-fix",   "x": 0,  "y": 13, "w": 24, "h": 12},
+        {"id": "trivy-v8-no-fix",     "x": 24, "y": 13, "w": 24, "h": 12},
+        # Row 4: Trend
+        {"id": "trivy-v9-trend",      "x": 0,  "y": 25, "w": 48, "h": 8},
+    ]
+
+    panels_json = []
+    refs = []
+    for i, p in enumerate(panels):
+        panel_id = f"panel_{i+1}"
+        panels_json.append({
+            "version": "3.6.0",
+            "gridData": {"x": p["x"], "y": p["y"], "w": p["w"], "h": p["h"], "i": str(i+1)},
+            "panelIndex": str(i+1),
+            "embeddableConfig": {},
+            "panelRefName": panel_id
+        })
+        refs.append({"name": panel_id, "type": "visualization", "id": p["id"]})
+
+    dash_attrs = {
+        "title": "Trivy — Vulnerability Overview",
+        "description": "CVE findings from Trivy Operator: CRITICAL and HIGH severity vulnerabilities across all namespaces.",
+        "panelsJSON": json.dumps(panels_json),
+        "optionsJSON": json.dumps({"useMargins": True, "syncColors": False, "hidePanelTitles": False}),
+        "version": 1,
+        "timeRestore": False,
+        "kibanaSavedObjectMeta": {
+            "searchSourceJSON": json.dumps({"query": {"match_all": {}}, "filter": []})
+        }
+    }
+
+    r, s = osd_req("POST", "/api/saved_objects/dashboard/trivy-dashboard?overwrite=true",
+                   {"attributes": dash_attrs, "references": refs})
+    print(f"  Dashboard: {s} — ID: trivy-dashboard")
+    print()
+    print("=== Trivy Dashboard ready ===")
+    print(f"  URL: <OSD>/app/dashboards#/view/trivy-dashboard")

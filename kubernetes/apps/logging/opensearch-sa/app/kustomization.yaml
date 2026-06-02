@@ -9,3 +9,5 @@ resources:
   - ./crd-exporter-rbac.yaml
   - ./configmap-exporter.yaml
   - ./cronjob-exporter.yaml
+  - ./configmap-dashboard.yaml
+  - ./job-dashboard.yaml
