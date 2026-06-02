@@ -10,8 +10,6 @@ spec:
     serviceName: opensearch
     httpPort: 9200
     setVMMaxMapCount: true
-    additionalConfig:
-      discovery.type: single-node
 
   # ── Security & TLS ──────────────────────────────────────────────────
   security:
