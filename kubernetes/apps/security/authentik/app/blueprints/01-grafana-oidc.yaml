@@ -54,6 +54,7 @@ entries:
       slug: grafana
     attrs:
       name: Grafana
+      group: Monitoring
       provider: !KeyOf grafana-oidc-provider
       meta_launch_url: https://grafana.${SECRET_DOMAIN}
       meta_icon: https://grafana.com/static/assets/img/fav32.png

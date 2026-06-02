@@ -54,6 +54,7 @@ entries:
       slug: opensearch
     attrs:
       name: OpenSearch Dashboards
+      group: Monitoring
       provider: !KeyOf opensearch-oidc-provider
       meta_launch_url: https://logs.${SECRET_DOMAIN}
       meta_icon: https://opensearch.org/assets/brand/SVG/Logo/opensearch_logo_default.svg
