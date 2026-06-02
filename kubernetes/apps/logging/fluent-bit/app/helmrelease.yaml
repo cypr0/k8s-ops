@@ -63,6 +63,16 @@ spec:
             HTTP_Listen   0.0.0.0
             HTTP_Port     2020
 
+      customParsers: |
+        # RFC5424 without mandatory fractional seconds (Proxmox, OPNsense)
+        [PARSER]
+            Name        syslog-rfc5424-nofrac
+            Format      regex
+            Regex       ^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>(\[(.*?)\]|-)) (?<message>.+)$
+            Time_Key    time
+            Time_Format %Y-%m-%dT%H:%M:%S%z
+            Time_Keep   Off
+
       inputs: |
         # ── Syslog from Proxmox + OPNsense ──────────────────────────────
         [INPUT]
@@ -71,7 +81,7 @@ spec:
             Port          5514
             Mode          udp
             Tag           syslog.udp
-            Format        rfc3164
+            Parser        syslog-rfc5424-nofrac
 
         [INPUT]
             Name          syslog
@@ -79,7 +89,7 @@ spec:
             Port          5514
             Mode          tcp
             Tag           syslog.tcp
-            Format        rfc3164
+            Parser        syslog-rfc5424-nofrac
 
       filters: |
         # Label Proxmox by hostname
