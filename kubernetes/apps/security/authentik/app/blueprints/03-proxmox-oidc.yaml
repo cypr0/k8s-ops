@@ -1,0 +1,59 @@
+version: 1
+metadata:
+  name: Proxmox VE OIDC
+  labels:
+    app: proxmox
+
+entries:
+  # ── Custom scope: username claim (Proxmox requires "username", not "preferred_username") ──
+  - model: authentik_providers_oauth2.scopemapping
+    id: proxmox-scope-mapping
+    identifiers:
+      name: proxmox-scope
+    attrs:
+      scope_name: proxmox
+      description: Proxmox VE username claim
+      expression: |
+        return {
+            "username": request.user.username,
+        }
+
+  # ── OAuth2 / OIDC Provider ────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    id: proxmox-oidc-provider
+    identifiers:
+      name: proxmox-oidc
+    attrs:
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: confidential
+      client_id: !Env PROXMOX_CLIENT_ID
+      client_secret: !Env PROXMOX_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: https://proxmox.${SECRET_DOMAIN}:8006
+      access_code_validity: minutes=1
+      access_token_validity: minutes=5
+      refresh_token_validity: days=30
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, proxmox]]
+
+  # ── Application ───────────────────────────────────────────────────────
+  - model: authentik_core.application
+    id: proxmox-app
+    identifiers:
+      slug: proxmox
+    attrs:
+      name: Proxmox VE
+      group: Infrastructure
+      provider: !KeyOf proxmox-oidc-provider
+      meta_launch_url: https://proxmox.${SECRET_DOMAIN}:8006
+      meta_icon: https://cdn.jsdelivr.net/gh/selfhst/icons/svg/proxmox-ve.svg
+      policy_engine_mode: all
