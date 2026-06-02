@@ -71,7 +71,7 @@ spec:
             Port          5514
             Mode          udp
             Tag           syslog.udp
-            Format        auto
+            Format        rfc3164
 
         [INPUT]
             Name          syslog
@@ -79,7 +79,7 @@ spec:
             Port          5514
             Mode          tcp
             Tag           syslog.tcp
-            Format        auto
+            Format        rfc3164
 
       filters: |
         # Label Proxmox by hostname
@@ -116,7 +116,7 @@ spec:
             Logstash_Format  On
             Logstash_Prefix  syslog
             Time_Key         @timestamp
-            tls              Off
+            tls              On
             tls.verify       Off
             Retry_Limit      5
             Suppress_Type_Name On
