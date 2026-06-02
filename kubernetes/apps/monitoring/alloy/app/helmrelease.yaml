@@ -54,7 +54,7 @@ spec:
           // Using otlphttp — OpenSearch 2.x accepts OTLP at /_plugins/observability
           otelcol.exporter.otlphttp "opensearch" {
             client {
-              endpoint = "https://opensearch.logging.svc.cluster.local:9200"
+              endpoint = "http://opensearch.logging.svc.cluster.local:9200"
               auth     = otelcol.auth.basic.opensearch.handler
               tls {
                 insecure_skip_verify = true
