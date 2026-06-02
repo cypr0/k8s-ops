@@ -10,6 +10,8 @@ spec:
     serviceName: opensearch
     httpPort: 9200
     setVMMaxMapCount: true
+    additionalConfig:
+      cluster.initial_master_nodes: "opensearch-bootstrap-0,opensearch-masters-0"
 
   # ── Security & TLS ──────────────────────────────────────────────────
   security:
