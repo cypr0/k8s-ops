@@ -32,20 +32,36 @@ data:
     CTX.check_hostname = False
     CTX.verify_mode    = ssl.CERT_NONE
 
-    def k8s_get(path):
-        """Call Kubernetes API via service account token."""
+    def k8s_get_all(path):
+        """Paginate through Kubernetes API results to avoid rate limiting."""
+        import time
         token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
         ca    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-        url   = f"https://kubernetes.default.svc{path}"
         ctx   = ssl.create_default_context(cafile=ca)
-        req   = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-        try:
-            with urllib.request.urlopen(req, context=ctx) as r:
-                return json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                return {"items": []}
-            raise
+        all_items = []
+        cont = None
+        while True:
+            sep = "&" if "?" in path else "?"
+            url = f"https://kubernetes.default.svc{path}{sep}limit=30"
+            if cont:
+                url += f"&continue={cont}"
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+            try:
+                with urllib.request.urlopen(req, context=ctx) as r:
+                    data = json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return []
+                if e.code == 429:
+                    time.sleep(2)
+                    continue
+                raise
+            all_items.extend(data.get("items", []))
+            cont = data.get("metadata", {}).get("continue")
+            if not cont:
+                break
+            time.sleep(0.3)  # Gentle rate limiting
+        return all_items
 
     def os_bulk(index, docs):
         """Bulk-index documents to OpenSearch."""
@@ -77,8 +93,7 @@ data:
     ts     = datetime.now(timezone.utc).isoformat()
 
     try:
-        reports = k8s_get("/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports")
-        for item in reports.get("items", []):
+        for item in k8s_get_all("/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports"):
             meta    = item.get("metadata", {})
             report  = item.get("report", {})
             ns      = meta.get("namespace", "")
@@ -109,8 +124,7 @@ data:
     print("=== Trivy ConfigAuditReports ===")
     audit_docs = []
     try:
-        reports = k8s_get("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
-        for item in reports.get("items", []):
+        for item in k8s_get_all("/apis/aquasecurity.github.io/v1alpha1/configauditreports"):
             meta   = item.get("metadata", {})
             report = item.get("report", {})
             ns     = meta.get("namespace", "")
@@ -140,12 +154,11 @@ data:
     ks_index = f"kubescape-{TODAY}"
     ks_docs  = []
     try:
-        scans = k8s_get("/apis/spdx.softwarecomposition.kubescape.io/v1beta1/workloadconfigurationscans")
-        for item in scans.get("items", []):
-            meta    = item.get("metadata", {})
-            ns      = meta.get("namespace", "")
-            results = item.get("spec", {}).get("relatedObjects", [{}])[0].get("metadata", {})
-            for ctrl in item.get("spec", {}).get("controls", {}).values():
+        for item in k8s_get_all("/apis/spdx.softwarecomposition.kubescape.io/v1beta1/workloadconfigurationscans"):
+            meta     = item.get("metadata", {})
+            ns       = meta.get("namespace", "")
+            controls = item.get("spec", {}).get("controls") or {}
+            for ctrl in controls.values():
                 status = ctrl.get("status", {}).get("status", "")
                 if status != "failed":
                     continue
