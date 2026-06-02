@@ -57,5 +57,5 @@ entries:
       group: Monitoring
       provider: !KeyOf opensearch-oidc-provider
       meta_launch_url: https://logs.${SECRET_DOMAIN}
-      meta_icon: https://opensearch.org/assets/brand/SVG/Logo/opensearch_logo_default.svg
+      meta_icon: https://opensearch.org/wp-content/uploads/2025/01/opensearch_mark_default.svg
       policy_engine_mode: all
