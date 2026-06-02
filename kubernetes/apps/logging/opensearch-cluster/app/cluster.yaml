@@ -74,6 +74,10 @@ spec:
       opensearch_security.openid.logout_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/end-session/"
       opensearch_security.cookie.secure: "true"
       opensearch_security.multitenancy.enabled: "false"
+      # $${} = Flux-escaped → ${} in config → Dashboards env var substitution at runtime
+      opensearch_security.openid.client_id: "$${OPENSEARCH_SECURITY_OPENID_CLIENT_ID}"
+      opensearch_security.openid.client_secret: "$${OPENSEARCH_SECURITY_OPENID_CLIENT_SECRET}"
+      opensearch_security.cookie.password: "$${OPENSEARCH_SECURITY_COOKIE_PASSWORD}"
     env:
       - name: OPENSEARCH_SECURITY_COOKIE_PASSWORD
         valueFrom:
