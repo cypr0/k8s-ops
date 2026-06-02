@@ -10,6 +10,7 @@ spec:
     serviceName: opensearch
     httpPort: 9200
     setVMMaxMapCount: true
+    drainDataNodes: true
 
   # ── Security & TLS ──────────────────────────────────────────────────
   security:
@@ -25,31 +26,27 @@ spec:
       securityConfigSecret:
         name: opensearch-security-config
 
-  # ── Node pool: single data+manager node ────────────────────────────
+  # ── 3-node cluster: proper quorum, Bootstrap → Masters transition works ──
   nodePools:
     - component: masters
-      replicas: 1
-      diskSize: "50Gi"
+      replicas: 3
+      diskSize: "20Gi"
       roles:
         - cluster_manager
         - data
         - ingest
       resources:
         requests:
-          cpu: 500m
-          memory: 4Gi
+          cpu: 200m
+          memory: 2Gi
         limits:
-          memory: 4Gi
-      jvm: "-Xmx2g -Xms2g"
+          memory: 2Gi
+      jvm: "-Xmx1g -Xms1g"
       persistence:
         pvc:
           storageClass: zfs-nfs
           accessModes:
             - ReadWriteOnce
-      # Override operator's env var to include masters node in initial election
-      env:
-        - name: cluster.initial_master_nodes
-          value: "opensearch-bootstrap-0,opensearch-masters-0"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -57,6 +54,14 @@ spec:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    opensearch.cluster.masters: opensearch
+                topologyKey: kubernetes.io/hostname
 
   # ── Dashboards ──────────────────────────────────────────────────────
   dashboards:
@@ -80,7 +85,6 @@ spec:
       opensearch_security.openid.logout_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/end-session/"
       opensearch_security.cookie.secure: "true"
       opensearch_security.multitenancy.enabled: "false"
-      # $${} = Flux-escaped → ${} in config → Dashboards env var substitution at runtime
       opensearch_security.openid.client_id: "$${OPENSEARCH_SECURITY_OPENID_CLIENT_ID}"
       opensearch_security.openid.client_secret: "$${OPENSEARCH_SECURITY_OPENID_CLIENT_SECRET}"
       opensearch_security.cookie.password: "$${OPENSEARCH_SECURITY_COOKIE_PASSWORD}"
