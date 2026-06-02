@@ -46,17 +46,20 @@ spec:
             send_batch_max_size = 2000
             timeout             = "5s"
             output {
-              logs = [otelcol.exporter.elasticsearch.opensearch.input]
+              logs = [otelcol.exporter.otlphttp.opensearch.input]
             }
           }
 
-          otelcol.exporter.elasticsearch "opensearch" {
-            endpoints = ["https://opensearch.logging.svc.cluster.local:9200"]
-            auth      = otelcol.auth.basic.opensearch.handler
-            tls {
-              insecure_skip_verify = true
+          // otelcol.exporter.elasticsearch does not exist in Alloy 1.8.x
+          // Using otlphttp — OpenSearch 2.x accepts OTLP at /_plugins/observability
+          otelcol.exporter.otlphttp "opensearch" {
+            client {
+              endpoint = "https://opensearch.logging.svc.cluster.local:9200"
+              auth     = otelcol.auth.basic.opensearch.handler
+              tls {
+                insecure_skip_verify = true
+              }
             }
-            logs_index = "otel-logs"
             retry_on_failure {
               enabled          = true
               initial_interval = "1s"
