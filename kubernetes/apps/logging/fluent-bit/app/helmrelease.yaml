@@ -118,6 +118,7 @@ spec:
             Time_Key         @timestamp
             tls              On
             tls.verify       Off
+            net.keepalive    off
             Retry_Limit      5
             Suppress_Type_Name On
 
