@@ -22,6 +22,8 @@ spec:
     config:
       adminCredentialsSecret:
         name: opensearch-admin-credentials
+      securityConfigSecret:
+        name: opensearch-security-config
 
   # ── Node pool: single data+manager node ────────────────────────────
   nodePools:
