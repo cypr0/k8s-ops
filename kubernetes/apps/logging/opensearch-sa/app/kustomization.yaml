@@ -6,3 +6,6 @@ resources:
   - ./externalsecret.yaml
   - ./configmap-setup.yaml
   - ./job.yaml
+  - ./crd-exporter-rbac.yaml
+  - ./configmap-exporter.yaml
+  - ./cronjob-exporter.yaml

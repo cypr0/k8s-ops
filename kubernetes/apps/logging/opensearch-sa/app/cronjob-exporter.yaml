@@ -1,0 +1,61 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crd-to-opensearch
+spec:
+  # Run every hour at :05
+  schedule: "5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          serviceAccountName: crd-exporter
+          restartPolicy: OnFailure
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          containers:
+            - name: exporter
+              image: python:3.12-alpine
+              command: ["python3", "/scripts/export.py"]
+              env:
+                - name: OPENSEARCH_HOST
+                  value: "https://opensearch.logging.svc.cluster.local:9200"
+                - name: OPENSEARCH_USER
+                  value: "admin"
+                - name: OPENSEARCH_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: opensearch-sa-credentials
+                      key: OPENSEARCH_PASSWORD
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65534
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: scripts
+              configMap:
+                name: crd-exporter-script
+                defaultMode: 0755

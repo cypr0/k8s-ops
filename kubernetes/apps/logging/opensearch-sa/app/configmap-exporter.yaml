@@ -1,0 +1,173 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crd-exporter-script
+data:
+  export.py: |
+    #!/usr/bin/env python3
+    """
+    Export Trivy VulnerabilityReports and Kubescape findings to OpenSearch.
+    Runs as a CronJob — indexes to trivy-YYYY.MM.DD and kubescape-YYYY.MM.DD.
+    """
+    import json
+    import os
+    import sys
+    import urllib.request
+    import urllib.error
+    import ssl
+    from datetime import datetime, timezone
+
+    # ── Config ────────────────────────────────────────────────────────────
+    OS_HOST  = os.environ.get("OPENSEARCH_HOST",     "https://opensearch.logging.svc.cluster.local:9200")
+    OS_USER  = os.environ.get("OPENSEARCH_USER",     "admin")
+    OS_PASS  = os.environ.get("OPENSEARCH_PASSWORD", "")
+    TODAY    = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+
+    import base64
+    AUTH = base64.b64encode(f"{OS_USER}:{OS_PASS}".encode()).decode()
+
+    # Skip TLS verification (operator self-signed cert)
+    CTX = ssl.create_default_context()
+    CTX.check_hostname = False
+    CTX.verify_mode    = ssl.CERT_NONE
+
+    def k8s_get(path):
+        """Call Kubernetes API via service account token."""
+        token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
+        ca    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        url   = f"https://kubernetes.default.svc{path}"
+        ctx   = ssl.create_default_context(cafile=ca)
+        req   = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(req, context=ctx) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return {"items": []}
+            raise
+
+    def os_bulk(index, docs):
+        """Bulk-index documents to OpenSearch."""
+        if not docs:
+            return 0
+        body = ""
+        for doc in docs:
+            body += json.dumps({"index": {"_index": index}}) + "\n"
+            body += json.dumps(doc) + "\n"
+        req = urllib.request.Request(
+            f"{OS_HOST}/_bulk",
+            data=body.encode(),
+            headers={"Content-Type": "application/x-ndjson", "Authorization": f"Basic {AUTH}"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, context=CTX) as r:
+                resp = json.loads(r.read())
+                errors = [i for i in resp.get("items", []) if "error" in i.get("index", {})]
+                return len(docs) - len(errors)
+        except Exception as e:
+            print(f"  ERROR bulk indexing: {e}", file=sys.stderr)
+            return 0
+
+    # ── Trivy VulnerabilityReports ────────────────────────────────────────
+    print("=== Trivy VulnerabilityReports ===")
+    index  = f"trivy-{TODAY}"
+    docs   = []
+    ts     = datetime.now(timezone.utc).isoformat()
+
+    try:
+        reports = k8s_get("/apis/aquasecurity.github.io/v1alpha1/vulnerabilityreports")
+        for item in reports.get("items", []):
+            meta    = item.get("metadata", {})
+            report  = item.get("report", {})
+            ns      = meta.get("namespace", "")
+            image   = report.get("artifact", {}).get("tag", "")
+            repo    = report.get("artifact", {}).get("repository", "")
+            for vuln in report.get("vulnerabilities", []):
+                sev = vuln.get("severity", "UNKNOWN")
+                if sev not in ("CRITICAL", "HIGH"):
+                    continue
+                docs.append({
+                    "@timestamp":       ts,
+                    "namespace":        ns,
+                    "resource":         meta.get("name", ""),
+                    "image":            f"{repo}:{image}",
+                    "vulnerabilityID":  vuln.get("vulnerabilityID", ""),
+                    "severity":         sev,
+                    "title":            vuln.get("title", ""),
+                    "fixedVersion":     vuln.get("fixedVersion", ""),
+                    "installedVersion": vuln.get("installedVersion", ""),
+                    "source":           "trivy"
+                })
+        indexed = os_bulk(index, docs)
+        print(f"  Indexed {indexed}/{len(docs)} CRITICAL+HIGH CVEs to {index}")
+    except Exception as e:
+        print(f"  Trivy export error: {e}", file=sys.stderr)
+
+    # ── Trivy ConfigAuditReports ──────────────────────────────────────────
+    print("=== Trivy ConfigAuditReports ===")
+    audit_docs = []
+    try:
+        reports = k8s_get("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
+        for item in reports.get("items", []):
+            meta   = item.get("metadata", {})
+            report = item.get("report", {})
+            ns     = meta.get("namespace", "")
+            for check in report.get("checks", []):
+                if check.get("success", True):
+                    continue
+                sev = check.get("severity", "LOW")
+                if sev not in ("CRITICAL", "HIGH", "MEDIUM"):
+                    continue
+                audit_docs.append({
+                    "@timestamp": ts,
+                    "namespace":  ns,
+                    "resource":   meta.get("name", ""),
+                    "checkID":    check.get("checkID", ""),
+                    "severity":   sev,
+                    "title":      check.get("title", ""),
+                    "category":   check.get("category", ""),
+                    "source":     "trivy-config"
+                })
+        indexed = os_bulk(f"trivy-{TODAY}", audit_docs)
+        print(f"  Indexed {indexed}/{len(audit_docs)} config audit findings")
+    except Exception as e:
+        print(f"  Trivy config audit error: {e}", file=sys.stderr)
+
+    # ── Kubescape WorkloadConfigurationScans ─────────────────────────────
+    print("=== Kubescape WorkloadConfigurationScans ===")
+    ks_index = f"kubescape-{TODAY}"
+    ks_docs  = []
+    try:
+        scans = k8s_get("/apis/spdx.softwarecomposition.kubescape.io/v1beta1/workloadconfigurationscans")
+        for item in scans.get("items", []):
+            meta    = item.get("metadata", {})
+            ns      = meta.get("namespace", "")
+            results = item.get("spec", {}).get("relatedObjects", [{}])[0].get("metadata", {})
+            for ctrl in item.get("spec", {}).get("controls", {}).values():
+                status = ctrl.get("status", {}).get("status", "")
+                if status != "failed":
+                    continue
+                sev = ctrl.get("severity", {}).get("scoreFactor", 0)
+                sev_label = "Critical" if sev >= 8 else "High" if sev >= 5 else "Medium"
+                if sev_label not in ("Critical", "High"):
+                    continue
+                ks_docs.append({
+                    "@timestamp":  ts,
+                    "namespace":   ns,
+                    "resource":    meta.get("name", ""),
+                    "kind":        meta.get("labels", {}).get("kubescape.io/workload-kind", ""),
+                    "ruleName":    ctrl.get("name", ""),
+                    "severity":    sev_label,
+                    "scoreFactor": sev,
+                    "remediation": ctrl.get("remediation", ""),
+                    "source":      "kubescape"
+                })
+        indexed = os_bulk(ks_index, ks_docs)
+        print(f"  Indexed {indexed}/{len(ks_docs)} Critical+High CIS findings to {ks_index}")
+    except Exception as e:
+        print(f"  Kubescape export error: {e}", file=sys.stderr)
+
+    print("=== CRD export complete ===")
+    print(f"  Trivy CVEs: {len(docs) + len(audit_docs)}, Kubescape: {len(ks_docs)}")
