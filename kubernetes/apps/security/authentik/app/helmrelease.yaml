@@ -46,6 +46,8 @@ spec:
             name: authentik-secret
         - secretRef:
             name: authentik-grafana-oidc
+        - secretRef:
+            name: authentik-opensearch-oidc
       volumes:
         - name: authentik-templates
           configMap:

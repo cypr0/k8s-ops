@@ -7,6 +7,7 @@ resources:
   - ./configmap.yaml
   - ./externalsecret.yaml
   - ./externalsecret-grafana-oidc.yaml
+  - ./externalsecret-opensearch-oidc.yaml
   - ./helmrepository.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml
@@ -16,5 +17,6 @@ configMapGenerator:
   - name: authentik-blueprints
     files:
       - blueprints/01-grafana-oidc.yaml
+      - blueprints/02-opensearch-oidc.yaml
     options:
       disableNameSuffixHash: true

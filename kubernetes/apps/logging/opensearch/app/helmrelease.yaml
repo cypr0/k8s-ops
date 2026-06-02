@@ -1,0 +1,178 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: opensearch
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: opensearch
+      version: "3.6.0"
+      sourceRef:
+        kind: HelmRepository
+        name: opensearch
+        namespace: logging
+  maxHistory: 2
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    singleNode: true
+    replicas: 1
+
+    image:
+      tag: "3.6.0"
+
+    opensearchJavaOpts: "-Xmx2g -Xms2g"
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 4Gi
+      limits:
+        memory: 4Gi
+
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+
+    extraEnvs:
+      - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: opensearch-credentials
+            key: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+
+    # Mount cert-manager TLS cert for transport layer
+    extraVolumes:
+      - name: transport-tls
+        secret:
+          secretName: opensearch-transport-tls
+
+    extraVolumeMounts:
+      - name: transport-tls
+        mountPath: /usr/share/opensearch/config/tls
+        readOnly: true
+
+    persistence:
+      enabled: true
+      storageClass: zfs-nfs
+      size: 50Gi
+
+    config:
+      opensearch.yml: |
+        cluster.name: opensearch-logs
+        network.host: 0.0.0.0
+        discovery.type: single-node
+
+        # Transport TLS via cert-manager (no demo certs)
+        plugins.security.ssl.transport.pemcert_filepath: tls/tls.crt
+        plugins.security.ssl.transport.pemkey_filepath: tls/tls.key
+        plugins.security.ssl.transport.pemtrustedcas_filepath: tls/ca.crt
+        plugins.security.ssl.transport.enforce_hostname_verification: false
+        plugins.security.allow_unsafe_democertificates: false
+
+        # HTTP: no TLS (internal cluster traffic, Envoy handles external TLS)
+        plugins.security.ssl.http.enabled: false
+
+        plugins.security.allow_default_init_securityindex: true
+        plugins.security.audit.type: internal_opensearch
+        plugins.security.enable_snapshot_restore_privilege: true
+        plugins.security.check_snapshot_restore_write_privileges: true
+        plugins.security.restapi.roles_enabled: ["all_access", "security_rest_api_access"]
+
+    # Security plugin: OIDC auth + role mapping
+    securityConfig:
+      enabled: true
+      path: "/usr/share/opensearch/plugins/opensearch-security/securityconfig"
+      config:
+        dataComplete: false
+        data:
+          config.yml: |
+            _meta:
+              type: "config"
+              config_version: 2
+            config:
+              dynamic:
+                authc:
+                  basic_internal_auth_domain:
+                    description: "Internal users (kibanaserver, admin)"
+                    http_enabled: true
+                    transport_enabled: true
+                    order: 0
+                    http_authenticator:
+                      type: basic
+                      challenge: false
+                    authentication_backend:
+                      type: intern
+
+                  openid_auth_domain:
+                    description: "Authentik OIDC"
+                    http_enabled: true
+                    transport_enabled: false
+                    order: 1
+                    http_authenticator:
+                      type: openid
+                      challenge: false
+                      config:
+                        subject_key: "preferred_username"
+                        roles_key: "groups"
+                        openid_connect_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/.well-known/openid-configuration"
+                    authentication_backend:
+                      type: noop
+
+          roles_mapping.yml: |
+            _meta:
+              type: "rolesmapping"
+              config_version: 2
+
+            # Full admin access
+            all_access:
+              reserved: false
+              backend_roles:
+                - "OpenSearch Admins"
+
+            # Read-only + monitoring
+            readall_and_monitor:
+              reserved: false
+              backend_roles:
+                - "OpenSearch Users"
+
+            # Required for Dashboards UI access
+            kibana_user:
+              reserved: false
+              backend_roles:
+                - "OpenSearch Admins"
+                - "OpenSearch Users"
+
+            # Internal Dashboards service account
+            kibana_server:
+              reserved: true
+              users:
+                - "kibanaserver"
+
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+
+    serviceMonitor:
+      enabled: true

@@ -1,0 +1,29 @@
+---
+# Self-signed Issuer for OpenSearch internal transport TLS
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: opensearch-selfsigned
+spec:
+  selfSigned: {}
+---
+# Transport-layer TLS cert for OpenSearch nodes
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: opensearch-transport-tls
+spec:
+  secretName: opensearch-transport-tls
+  duration: 8760h    # 1 year
+  renewBefore: 720h  # renew 30 days before expiry
+  isCA: false
+  usages:
+    - server auth
+    - client auth
+  dnsNames:
+    - opensearch-cluster-master
+    - opensearch-cluster-master.logging.svc
+    - opensearch-cluster-master.logging.svc.cluster.local
+  issuerRef:
+    name: opensearch-selfsigned
+    kind: Issuer

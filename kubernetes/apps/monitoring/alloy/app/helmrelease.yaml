@@ -116,13 +116,30 @@ spec:
                 values = { source = "opnsense" }
               }
             }
-            forward_to = [loki.write.default.receiver]
+            // Security logs → Loki AND OpenSearch
+            forward_to = [loki.write.default.receiver, otelcol.receiver.loki.opensearch.receiver]
           }
 
           // ── Loki write endpoint ───────────────────────────────────────────
           loki.write "default" {
             endpoint {
               url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+            }
+          }
+
+          // ── OpenSearch OTLP pipeline (security logs) ──────────────────────
+          otelcol.receiver.loki "opensearch" {
+            output {
+              logs = [otelcol.exporter.otlphttp.opensearch.input]
+            }
+          }
+
+          otelcol.exporter.otlphttp "opensearch" {
+            client {
+              endpoint = "http://opensearch-cluster-master.logging.svc.cluster.local:9200"
+              tls {
+                insecure = true
+              }
             }
           }
 
