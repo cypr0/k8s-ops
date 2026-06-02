@@ -87,6 +87,9 @@ spec:
 
     # ── Grafana config ────────────────────────────────────────────────────
     grafana.ini:
+      log:
+        level: debug
+        filters: "oauth.generic_oauth:debug oauth.social:debug authn:debug user.sync:debug"
       server:
         root_url: "https://grafana.${SECRET_DOMAIN}"
       analytics:
