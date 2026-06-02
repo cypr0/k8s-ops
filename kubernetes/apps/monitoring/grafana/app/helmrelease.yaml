@@ -109,10 +109,11 @@ spec:
         name: Authentik
         icon: signin
         # client_id + client_secret injected via GF_AUTH_GENERIC_OAUTH_CLIENT_ID/SECRET env vars
-        scopes: "openid profile email"
+        # URLs without application slug per Authentik docs
+        scopes: "openid profile email grafana"
         empty_scopes: "false"
-        auth_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/authorize/"
-        token_url: "https://id.${SECRET_DOMAIN}/application/o/grafana/token/"
+        auth_url: "https://id.${SECRET_DOMAIN}/application/o/authorize/"
+        token_url: "https://id.${SECRET_DOMAIN}/application/o/token/"
         api_url: "https://id.${SECRET_DOMAIN}/application/o/userinfo/"
         login_attribute_path: preferred_username
         groups_attribute_path: groups
