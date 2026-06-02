@@ -280,13 +280,13 @@ data:
         make_metric("trivy-v2-high",     "🟠 High CVEs",       {"severity": "HIGH"}),
         make_metric("trivy-v3-images",   "📦 Affected Images", {}),
         make_pie(   "trivy-v4-severity", "Severity Distribution", "severity"),
-        make_hbar(  "trivy-v5-top-images", "Top 10 Vulnerable Images", "image", 10),
-        make_hbar(  "trivy-v6-namespace",  "CVEs by Namespace",        "namespace", 15),
+        make_hbar(  "trivy-v5-top-images", "Top 10 Vulnerable Images", "image.keyword", 10),
+        make_hbar(  "trivy-v6-namespace",  "CVEs by Namespace",        "namespace.keyword", 15),
         make_table( "trivy-v7-with-fix",   "✅ CVEs with Fix Available",
-                    ["vulnerabilityID", "severity", "image", "fixedVersion"],
+                    ["vulnerabilityID.keyword", "severity", "image.keyword", "fixedVersion.keyword"],
                     filter_terms=None, size=50),
         make_table( "trivy-v8-no-fix",     "⚠️ CVEs — No Fix Available",
-                    ["vulnerabilityID", "severity", "image", "namespace"],
+                    ["vulnerabilityID.keyword", "severity", "image.keyword", "namespace.keyword"],
                     filter_terms=None, size=50),
         make_line(  "trivy-v9-trend",      "CVE Trend Over Time"),
     ]
@@ -296,7 +296,7 @@ data:
         "index": IDX_ID,
         "query": {"bool": {
             "filter": [{"term": {"severity": "CRITICAL"}}],
-            "must_not": [{"exists": {"field": "fixedVersion"}}],
+            "must_not": [{"exists": {"field": "fixedVersion.keyword"}}],
             "must": [], "should": []
         }},
         "filter": []
