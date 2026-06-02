@@ -10,8 +10,6 @@ spec:
     serviceName: opensearch
     httpPort: 9200
     setVMMaxMapCount: true
-    additionalConfig:
-      cluster.initial_master_nodes: "opensearch-bootstrap-0,opensearch-masters-0"
 
   # ── Security & TLS ──────────────────────────────────────────────────
   security:
@@ -48,6 +46,10 @@ spec:
           storageClass: zfs-nfs
           accessModes:
             - ReadWriteOnce
+      # Override operator's env var to include masters node in initial election
+      env:
+        - name: cluster.initial_master_nodes
+          value: "opensearch-bootstrap-0,opensearch-masters-0"
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
