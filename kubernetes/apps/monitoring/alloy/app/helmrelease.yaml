@@ -28,7 +28,56 @@ spec:
       configMap:
         create: true
         content: |
-          // ── Pod log collection ────────────────────────────────────────────
+          // ── OUTPUTS ──────────────────────────────────────────────────────
+
+          loki.write "loki" {
+            endpoint {
+              url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+            }
+          }
+
+          otelcol.auth.basic "opensearch" {
+            username = env("OPENSEARCH_USER")
+            password = env("OPENSEARCH_PASSWORD")
+          }
+
+          otelcol.processor.batch "opensearch" {
+            send_batch_size     = 1000
+            send_batch_max_size = 2000
+            timeout             = "5s"
+            output {
+              logs = [otelcol.exporter.elasticsearch.opensearch.input]
+            }
+          }
+
+          otelcol.exporter.elasticsearch "opensearch" {
+            endpoints = ["https://opensearch.logging.svc.cluster.local:9200"]
+            auth      = otelcol.auth.basic.opensearch.handler
+            tls {
+              insecure_skip_verify = true
+            }
+            logs_index = "otel-logs"
+            retry_on_failure {
+              enabled          = true
+              initial_interval = "1s"
+              max_interval     = "30s"
+              max_elapsed_time = "300s"
+            }
+            sending_queue {
+              enabled       = true
+              num_consumers = 4
+              queue_size    = 2000
+            }
+          }
+
+          otelcol.receiver.loki "to_opensearch" {
+            output {
+              logs = [otelcol.processor.batch.opensearch.input]
+            }
+          }
+
+          // ── KUBERNETES POD LOGS ──────────────────────────────────────────
+
           discovery.kubernetes "pods" {
             role = "pod"
           }
@@ -56,7 +105,6 @@ spec:
               separator     = "/"
               target_label  = "job"
             }
-            // Drop noisy health-check logs
             rule {
               source_labels = ["__meta_kubernetes_pod_annotation_log_io_skip"]
               regex         = "true"
@@ -70,34 +118,35 @@ spec:
           }
 
           loki.process "pod_logs" {
-            // Parse JSON logs and promote level label
             stage.json {
               expressions = { level = "level", msg = "msg" }
             }
             stage.labels {
               values = { level = "" }
             }
-            forward_to = [loki.write.default.receiver]
+            forward_to = [loki.write.loki.receiver, otelcol.receiver.loki.to_opensearch.receiver]
           }
 
-          // ── Kubernetes events as logs ──────────────────────────────────────
+          // ── KUBERNETES EVENTS ────────────────────────────────────────────
+
           loki.source.kubernetes_events "cluster_events" {
             job_name   = "integrations/kubernetes/eventhandler"
-            forward_to = [loki.write.default.receiver]
+            forward_to = [loki.write.loki.receiver, otelcol.receiver.loki.to_opensearch.receiver]
           }
 
-          // ── External syslog: Proxmox + OPNsense ──────────────────────────
+          // ── EXTERNAL SYSLOG: Proxmox + OPNsense ─────────────────────────
+
           loki.source.syslog "external" {
             listener {
-              address  = "0.0.0.0:5514"
-              protocol = "udp"
-              labels   = { job = "syslog" }
+              address                = "0.0.0.0:5514"
+              protocol               = "udp"
+              labels                 = { job = "syslog" }
               use_incoming_timestamp = true
             }
             listener {
-              address  = "0.0.0.0:5514"
-              protocol = "tcp"
-              labels   = { job = "syslog" }
+              address                = "0.0.0.0:5514"
+              protocol               = "tcp"
+              labels                 = { job = "syslog" }
               use_incoming_timestamp = true
             }
             forward_to = [loki.process.external_syslog.receiver]
@@ -116,32 +165,12 @@ spec:
                 values = { source = "opnsense" }
               }
             }
-            // Security logs → Loki AND OpenSearch
-            forward_to = [loki.write.default.receiver, otelcol.receiver.loki.opensearch.receiver]
+            forward_to = [loki.write.loki.receiver, otelcol.receiver.loki.to_opensearch.receiver]
           }
 
-          // ── Loki write endpoint ───────────────────────────────────────────
-          loki.write "default" {
-            endpoint {
-              url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
-            }
-          }
-
-          // ── OpenSearch OTLP pipeline (security logs) ──────────────────────
-          otelcol.receiver.loki "opensearch" {
-            output {
-              logs = [otelcol.exporter.otlphttp.opensearch.input]
-            }
-          }
-
-          otelcol.exporter.otlphttp "opensearch" {
-            client {
-              endpoint = "http://opensearch-cluster-master.logging.svc.cluster.local:9200"
-              tls {
-                insecure = true
-              }
-            }
-          }
+    extraEnvFrom:
+      - secretRef:
+          name: alloy-opensearch-credentials
 
     controller:
       type: daemonset
@@ -154,7 +183,6 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
 
-    # Expose syslog ports on the DaemonSet pods
     extraPorts:
       - name: syslog-udp
         port: 5514
@@ -168,9 +196,9 @@ spec:
     resources:
       requests:
         cpu: 50m
-        memory: 128Mi
+        memory: 192Mi
       limits:
-        memory: 256Mi
+        memory: 384Mi
 
     serviceMonitor:
       enabled: true
