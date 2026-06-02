@@ -1,5 +1,4 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/opensearch-project/opensearch-k8s-operator/main/opensearch-operator/config/crd/bases/opensearch.org_opensearchclusters.yaml
 apiVersion: opensearch.org/v1
 kind: OpenSearchCluster
 metadata:
@@ -10,27 +9,20 @@ spec:
     version: "2.19.2"
     serviceName: opensearch
     httpPort: 9200
-    # Single-node homelab
     setVMMaxMapCount: true
     additionalConfig:
       discovery.type: single-node
 
   # ── Security & TLS ──────────────────────────────────────────────────
   security:
-    ssl:
+    tls:
       transport:
         generate: true
         perNode: false
-        duration: "8760h"
       http:
         generate: true
-        duration: "8760h"
-    adminCredentialsSecret:
-      name: opensearch-admin-credentials
     config:
-      securityConfigSecret:
-        name: opensearch-security-config
-      adminSecret:
+      adminCredentialsSecret:
         name: opensearch-admin-credentials
 
   # ── Node pool: single data+manager node ────────────────────────────
@@ -54,11 +46,6 @@ spec:
           storageClass: zfs-nfs
           accessModes:
             - ReadWriteOnce
-      podSecurityContext:
-        runAsUser: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -82,7 +69,6 @@ spec:
       limits:
         memory: 1Gi
     additionalConfig:
-      # Authentik OIDC — non-secret values only
       opensearch_security.auth.type: "openid"
       opensearch_security.openid.connect_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/.well-known/openid-configuration"
       opensearch_security.openid.scope: "openid profile email"
