@@ -37,8 +37,8 @@ spec:
           }
 
           otelcol.auth.basic "opensearch" {
-            username = env("OPENSEARCH_USER")
-            password = env("OPENSEARCH_PASSWORD")
+            username = sys.env("OPENSEARCH_USER")
+            password = sys.env("OPENSEARCH_PASSWORD")
           }
 
           otelcol.processor.batch "opensearch" {
