@@ -40,7 +40,8 @@ spec:
         memory: 4Gi
 
     podSecurityContext:
-      runAsNonRoot: true
+      # runAsNonRoot omitted: fsgroup-volume init container requires root
+      # to chown the data directory. Main container runs as uid 1000.
       runAsUser: 1000
       fsGroup: 1000
       seccompProfile:
