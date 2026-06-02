@@ -67,7 +67,7 @@ spec:
   dashboards:
     enable: true
     # renovate: datasource=docker depName=opensearchproject/opensearch-dashboards
-    version: "2.19.2"
+    version: "2.19.5"
     replicas: 1
     opensearchCredentialsSecret:
       name: opensearch-dashboards-credentials
