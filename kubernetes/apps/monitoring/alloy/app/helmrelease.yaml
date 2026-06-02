@@ -171,7 +171,7 @@ spec:
             forward_to = [loki.write.loki.receiver, otelcol.receiver.loki.to_opensearch.receiver]
           }
 
-    extraEnvFrom:
+    envFrom:
       - secretRef:
           name: alloy-opensearch-credentials
 
