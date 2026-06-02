@@ -31,7 +31,11 @@ data:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read()), r.status
         except urllib.error.HTTPError as e:
-            return json.loads(e.read()), e.code
+            body = e.read()
+            try:
+                return json.loads(body), e.code
+            except:
+                return {"raw_error": body.decode()[:300]}, e.code
 
     # Wait for Dashboards
     print("Waiting for OpenSearch Dashboards...")
@@ -301,7 +305,8 @@ data:
     for v in vizs:
         r, s = osd_req("POST", f"/api/saved_objects/{v['type']}/{v['id']}?overwrite=true",
                        {"attributes": v["attributes"], "references": v.get("references", [])})
-        print(f"  {v['attributes']['title']}: {s}")
+        status_str = "✅" if s < 300 else f"❌ {s}: {r.get('message') or r.get('raw_error','?')[:120]}"
+        print(f"  {v['attributes']['title']}: {status_str}")
 
     # ── 3. Create Dashboard ────────────────────────────────────────────────
     print("Creating dashboard...")
