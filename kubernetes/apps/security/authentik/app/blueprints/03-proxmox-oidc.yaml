@@ -16,6 +16,7 @@ entries:
       expression: |
         return {
             "username": request.user.username,
+            "groups": [group.name for group in request.user.ak_groups.all()],
         }
 
   # ── OAuth2 / OIDC Provider ────────────────────────────────────────────
@@ -55,5 +56,5 @@ entries:
       group: Infrastructure
       provider: !KeyOf proxmox-oidc-provider
       meta_launch_url: https://proxmox.${SECRET_DOMAIN}:8006
-      meta_icon: https://cdn.jsdelivr.net/gh/selfhst/icons/svg/proxmox-ve.svg
+      meta_icon: https://cdn.simpleicons.org/proxmox
       policy_engine_mode: all
