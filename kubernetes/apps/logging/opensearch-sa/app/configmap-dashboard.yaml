@@ -97,11 +97,11 @@ data:
                 }),
                 "uiStateJSON": "{}",
                 "description": "",
-                "searchSourceJSON": json.dumps({
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
                     "index": IDX_ID,
                     "query": {"bool": {"filter": query_filter, "must": [], "must_not": [], "should": []}},
                     "filter": []
-                })
+                })}
             },
             "references": [{"id": IDX_ID, "name": "indexPatternId", "type": "index-pattern"}]
         }
@@ -131,7 +131,7 @@ data:
                 }),
                 "uiStateJSON": "{}",
                 "description": "",
-                "searchSourceJSON": json.dumps({"index": IDX_ID, "query": {"match_all": {}}, "filter": []})
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"index": IDX_ID, "query": {"match_all": {}}, "filter": []})}
             },
             "references": [{"id": IDX_ID, "name": "indexPatternId", "type": "index-pattern"}]
         }
