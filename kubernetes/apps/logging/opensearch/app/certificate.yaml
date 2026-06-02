@@ -1,22 +1,55 @@
 ---
-# Self-signed Issuer for OpenSearch internal transport TLS
+# Step 1: Bootstrap issuer (only used to sign the CA)
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: opensearch-selfsigned
+  name: opensearch-selfsigned-bootstrap
 spec:
   selfSigned: {}
 ---
-# Transport-layer TLS cert for OpenSearch nodes
+# Step 2: Internal CA certificate with proper subject DN
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: opensearch-ca
+spec:
+  isCA: true
+  commonName: opensearch-ca
+  subject:
+    organizations:
+      - k8s-ops
+  secretName: opensearch-ca-tls
+  duration: 87600h  # 10 years
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: opensearch-selfsigned-bootstrap
+    kind: Issuer
+---
+# Step 3: CA-backed issuer for signing transport certs
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: opensearch-ca-issuer
+spec:
+  ca:
+    secretName: opensearch-ca-tls
+---
+# Step 4: Transport TLS cert signed by the CA (proper issuer DN)
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: opensearch-transport-tls
 spec:
   secretName: opensearch-transport-tls
-  duration: 8760h    # 1 year
-  renewBefore: 720h  # renew 30 days before expiry
+  duration: 8760h
+  renewBefore: 720h
   isCA: false
+  commonName: opensearch-cluster-master
+  subject:
+    organizations:
+      - k8s-ops
   usages:
     - server auth
     - client auth
@@ -25,5 +58,5 @@ spec:
     - opensearch-cluster-master.logging.svc
     - opensearch-cluster-master.logging.svc.cluster.local
   issuerRef:
-    name: opensearch-selfsigned
+    name: opensearch-ca-issuer
     kind: Issuer

@@ -64,10 +64,16 @@ spec:
       - name: transport-tls
         secret:
           secretName: opensearch-transport-tls
+      - name: transport-ca
+        secret:
+          secretName: opensearch-ca-tls
 
     extraVolumeMounts:
       - name: transport-tls
         mountPath: /usr/share/opensearch/config/tls
+        readOnly: true
+      - name: transport-ca
+        mountPath: /usr/share/opensearch/config/tls-ca
         readOnly: true
 
     persistence:
@@ -81,10 +87,10 @@ spec:
         network.host: 0.0.0.0
         discovery.type: single-node
 
-        # Transport TLS via cert-manager (no demo certs)
+        # Transport TLS via cert-manager CA (no demo certs)
         plugins.security.ssl.transport.pemcert_filepath: tls/tls.crt
         plugins.security.ssl.transport.pemkey_filepath: tls/tls.key
-        plugins.security.ssl.transport.pemtrustedcas_filepath: tls/ca.crt
+        plugins.security.ssl.transport.pemtrustedcas_filepath: tls-ca/tls.crt
         plugins.security.ssl.transport.enforce_hostname_verification: false
         plugins.security.allow_unsafe_democertificates: false
 
