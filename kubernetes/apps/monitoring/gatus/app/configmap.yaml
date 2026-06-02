@@ -95,9 +95,27 @@ data:
 
       - name: 1Password Connect
         group: Security
-        url: "http://onepassword-connect.security.svc.cluster.local:8080/health"
+        url: "http://onepassword-connect.security.svc.cluster.local/health"
         interval: 1m
         conditions:
           - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: OpenSearch
+        group: Logging
+        url: "tcp://opensearch.logging.svc.cluster.local:9200"
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: OpenSearch Dashboards
+        group: Logging
+        url: "http://opensearch-dashboards.logging.svc.cluster.local:5601/api/status"
+        interval: 1m
+        conditions:
+          - "[STATUS] < 500"
         alerts:
           - type: pushover
