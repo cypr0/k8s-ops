@@ -71,7 +71,7 @@ spec:
             Port          5514
             Mode          udp
             Tag           syslog.udp
-            Syslog_Format auto
+            Format        auto
 
         [INPUT]
             Name          syslog
@@ -79,7 +79,7 @@ spec:
             Port          5514
             Mode          tcp
             Tag           syslog.tcp
-            Syslog_Format auto
+            Format        auto
 
       filters: |
         # Label Proxmox by hostname
