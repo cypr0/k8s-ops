@@ -93,25 +93,52 @@ spec:
             Parser        syslog-rfc5424-nofrac
 
       filters: |
+        # Retag Suricata Eve-JSON records before any other processing
+        [FILTER]
+            Name              rewrite_tag
+            Match             syslog.*
+            Rule              $ident ^suricata$ suricata.$TAG false
+
+        # Parse Eve-JSON message field into structured fields
+        [FILTER]
+            Name              parser
+            Match             suricata.*
+            Key_Name          message
+            Parser            json
+            Reserve_Data      On
+            Preserve_Key      Off
+
+        # Default source fallback (overwritten by specific rules below)
+        [FILTER]
+            Name          modify
+            Match         syslog.*
+            Add           source syslog
+
         # Label Proxmox by hostname
         [FILTER]
             Name          modify
             Match         syslog.*
             Condition     Key_value_matches host ^pve|^proxmox
-            Add           source proxmox
+            Set           source proxmox
 
         # Label OPNsense by hostname
         [FILTER]
             Name          modify
             Match         syslog.*
             Condition     Key_value_matches host ^OPNsense|^opnsense|^fw
-            Add           source opnsense
+            Set           source opnsense
 
         # Add job label for Loki
         [FILTER]
             Name          modify
             Match         syslog.*
             Add           job syslog
+
+        # Add job label for Loki (Suricata)
+        [FILTER]
+            Name          modify
+            Match         suricata.*
+            Add           job suricata
 
       outputs: |
         # ── OpenSearch (SIEM) ────────────────────────────────────────────
@@ -122,10 +149,28 @@ spec:
             Port             9200
             HTTP_User        admin
             HTTP_Passwd      ${OPENSEARCH_PASSWORD}
-            Index            syslog
             Type             _doc
             Logstash_Format  On
             Logstash_Prefix  syslog
+            Logstash_Prefix_Key  $source
+            Time_Key         @timestamp
+            tls              On
+            tls.verify       Off
+            net.keepalive    off
+            Retry_Limit      5
+            Suppress_Type_Name On
+
+        # ── OpenSearch (Suricata Eve-JSON) ──────────────────────────────
+        [OUTPUT]
+            Name             opensearch
+            Match            suricata.*
+            Host             opensearch.logging.svc.cluster.local
+            Port             9200
+            HTTP_User        admin
+            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
+            Type             _doc
+            Logstash_Format  On
+            Logstash_Prefix  suricata
             Time_Key         @timestamp
             tls              On
             tls.verify       Off
@@ -141,6 +186,17 @@ spec:
             Port             3100
             Labels           job=syslog
             Label_Keys       $source,$host
+            Line_Format      json
+            Retry_Limit      5
+
+        # ── Loki (Suricata) ──────────────────────────────────────────────
+        [OUTPUT]
+            Name             loki
+            Match            suricata.*
+            Host             loki.monitoring.svc.cluster.local
+            Port             3100
+            Labels           job=suricata
+            Label_Keys       $event_type,$host
             Line_Format      json
             Retry_Limit      5
 
