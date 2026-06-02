@@ -26,6 +26,9 @@ spec:
   values:
     replicaCount: 1
 
+    # OpenSearch runs HTTP (no TLS on internal API)
+    opensearchHosts: "http://opensearch-cluster-master:9200"
+
     image:
       tag: "3.6.0"
 
