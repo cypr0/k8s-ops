@@ -36,49 +36,6 @@ spec:
             }
           }
 
-          otelcol.auth.basic "opensearch" {
-            username = sys.env("OPENSEARCH_USER")
-            password = sys.env("OPENSEARCH_PASSWORD")
-          }
-
-          otelcol.processor.batch "opensearch" {
-            send_batch_size     = 1000
-            send_batch_max_size = 2000
-            timeout             = "5s"
-            output {
-              logs = [otelcol.exporter.otlphttp.opensearch.input]
-            }
-          }
-
-          // otelcol.exporter.elasticsearch does not exist in Alloy 1.8.x
-          // Using otlphttp — OpenSearch 2.x accepts OTLP at /_plugins/observability
-          otelcol.exporter.otlphttp "opensearch" {
-            client {
-              endpoint = "http://opensearch.logging.svc.cluster.local:9200"
-              auth     = otelcol.auth.basic.opensearch.handler
-              tls {
-                insecure_skip_verify = true
-              }
-            }
-            retry_on_failure {
-              enabled          = true
-              initial_interval = "1s"
-              max_interval     = "30s"
-              max_elapsed_time = "300s"
-            }
-            sending_queue {
-              enabled       = true
-              num_consumers = 4
-              queue_size    = 2000
-            }
-          }
-
-          otelcol.receiver.loki "to_opensearch" {
-            output {
-              logs = [otelcol.processor.batch.opensearch.input]
-            }
-          }
-
           // ── KUBERNETES POD LOGS ──────────────────────────────────────────
 
           discovery.kubernetes "pods" {
@@ -127,14 +84,14 @@ spec:
             stage.labels {
               values = { level = "" }
             }
-            forward_to = [loki.write.loki.receiver, otelcol.receiver.loki.to_opensearch.receiver]
+            forward_to = [loki.write.loki.receiver]
           }
 
           // ── KUBERNETES EVENTS ────────────────────────────────────────────
 
           loki.source.kubernetes_events "cluster_events" {
             job_name   = "integrations/kubernetes/eventhandler"
-            forward_to = [loki.write.loki.receiver, otelcol.receiver.loki.to_opensearch.receiver]
+            forward_to = [loki.write.loki.receiver]
           }
 
           // ── EXTERNAL SYSLOG: Proxmox + OPNsense ─────────────────────────
@@ -168,12 +125,9 @@ spec:
                 values = { source = "opnsense" }
               }
             }
-            forward_to = [loki.write.loki.receiver, otelcol.receiver.loki.to_opensearch.receiver]
+            forward_to = [loki.write.loki.receiver]
           }
 
-    envFrom:
-      - secretRef:
-          name: alloy-opensearch-credentials
 
     controller:
       type: daemonset
