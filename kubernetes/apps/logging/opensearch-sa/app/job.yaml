@@ -1,0 +1,60 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: opensearch-sa-setup
+  annotations:
+    # Re-run by changing this value
+    setup-version: "1"
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      containers:
+        - name: setup
+          image: curlimages/curl:8.11.1
+          command: ["/bin/sh", "/scripts/setup.sh"]
+          env:
+            - name: OPENSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-sa-credentials
+                  key: OPENSEARCH_PASSWORD
+            - name: PUSHOVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-sa-credentials
+                  key: PUSHOVER_TOKEN
+            - name: PUSHOVER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-sa-credentials
+                  key: PUSHOVER_USER
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: scripts
+          configMap:
+            name: opensearch-sa-setup
+            defaultMode: 0755

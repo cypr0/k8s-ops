@@ -1,0 +1,348 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensearch-sa-setup
+data:
+  setup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    OS="https://opensearch.logging.svc.cluster.local:9200"
+    AUTH="admin:${OPENSEARCH_PASSWORD}"
+    CURL="curl -sk -u ${AUTH}"
+
+    echo "=== Waiting for OpenSearch ==="
+    until ${CURL} "${OS}/_cluster/health" | grep -q '"status"'; do
+      echo "Waiting..."; sleep 10
+    done
+    echo "OpenSearch ready."
+
+    # ── 1. Pushover notification channel ──────────────────────────────────
+    echo "=== Creating Pushover notification channel ==="
+    ${CURL} -X POST "${OS}/_plugins/_notifications/configs" \
+      -H "Content-Type: application/json" -d "{
+        \"config_id\": \"pushover-siem\",
+        \"name\": \"Pushover SIEM\",
+        \"config\": {
+          \"name\": \"Pushover SIEM\",
+          \"description\": \"Pushover alerts for OpenSearch Security Analytics\",
+          \"config_type\": \"webhook\",
+          \"is_enabled\": true,
+          \"webhook\": {
+            \"url\": \"https://api.pushover.net/1/messages.json\",
+            \"method\": \"POST\",
+            \"query_params\": {
+              \"token\": \"${PUSHOVER_TOKEN}\",
+              \"user\": \"${PUSHOVER_USER}\",
+              \"priority\": \"0\"
+            },
+            \"header_params\": {
+              \"Content-Type\": \"application/x-www-form-urlencoded\"
+            }
+          }
+        }
+      }" | python3 -c "import json,sys; r=json.load(sys.stdin); print('Channel:', r.get('config_id','?'), r.get('config',{}).get('name','?'))" 2>/dev/null || true
+
+    # ── 2. Index template for syslog with OCSF-compatible field aliases ──
+    echo "=== Creating syslog index template ==="
+    ${CURL} -X PUT "${OS}/_index_template/syslog-template" \
+      -H "Content-Type: application/json" -d '{
+        "index_patterns": ["syslog-*"],
+        "priority": 100,
+        "template": {
+          "mappings": {
+            "properties": {
+              "host":       {"type": "keyword"},
+              "source":     {"type": "keyword"},
+              "message":    {"type": "text"},
+              "@timestamp": {"type": "date"},
+              "severity":   {"type": "keyword"},
+              "appname":    {"type": "keyword"},
+              "src_ip":     {"type": "ip",      "ignore_malformed": true},
+              "dst_ip":     {"type": "ip",      "ignore_malformed": true},
+              "src_port":   {"type": "integer", "ignore_malformed": true},
+              "dst_port":   {"type": "integer", "ignore_malformed": true},
+              "action":     {"type": "keyword"},
+              "protocol":   {"type": "keyword"}
+            }
+          }
+        }
+      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Template:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null || true
+
+    # ── 3. Security Analytics: OPNsense Firewall Detector ────────────────
+    echo "=== Creating OPNsense firewall detector ==="
+    DETECTOR_RESP=$(${CURL} -X POST "${OS}/_plugins/_security_analytics/detectors" \
+      -H "Content-Type: application/json" -d '{
+        "type": "detector",
+        "name": "opnsense-firewall-detector",
+        "detector_type": "NETWORK",
+        "enabled": true,
+        "schedule": {"period": {"interval": 1, "unit": "MINUTES"}},
+        "inputs": [{
+          "input": {
+            "description": "OPNsense firewall logs via Fluent Bit",
+            "indices": ["syslog-*"],
+            "custom_rules": [],
+            "pre_packaged_rules": [
+              {"id": "b32a4cb9-c4eb-4e67-8da7-3a31b09fe7dd"},
+              {"id": "cd1b4551-b1f1-43ca-a5d3-cbace3ef3eb3"},
+              {"id": "fa5e96d5-7b6a-4b15-a341-b9bc9c7e40c5"}
+            ]
+          }
+        }],
+        "triggers": [{
+          "id": "firewall-critical-trigger",
+          "name": "Critical Firewall Finding",
+          "severity": "1",
+          "types": ["NETWORK"],
+          "sev_levels": ["critical", "high"],
+          "tags": [],
+          "actions": [{
+            "id": "pushover-action",
+            "name": "Notify Pushover",
+            "destination_id": "pushover-siem",
+            "message_template": {
+              "source": "SIEM Alert: {{ctx.monitor.name}}\nSeverity: {{ctx.trigger.severity}}\nFindings: {{ctx.results.0.hits.total.value}}\nTime: {{ctx.periodEnd}}"
+            },
+            "throttle_enabled": true,
+            "throttle": {"value": 10, "unit": "MINUTES"}
+          }]
+        }]
+      }' 2>/dev/null)
+    echo "Detector: $(echo ${DETECTOR_RESP} | python3 -c "import json,sys; r=json.load(sys.stdin); print(r.get('_id','error: ' + str(r)))" 2>/dev/null || echo "error")"
+
+    # ── 4. Alerting Monitor: watch for high-severity SA findings ─────────
+    echo "=== Creating Security Findings alerting monitor ==="
+    ${CURL} -X POST "${OS}/_plugins/_alerting/monitors" \
+      -H "Content-Type: application/json" -d "{
+        \"type\": \"monitor\",
+        \"name\": \"SIEM Critical Findings\",
+        \"monitor_type\": \"query_level_monitor\",
+        \"enabled\": true,
+        \"schedule\": {\"period\": {\"interval\": 5, \"unit\": \"MINUTES\"}},
+        \"inputs\": [{
+          \"search\": {
+            \"indices\": [\".opensearch-sap-alerts*\"],
+            \"query\": {
+              \"size\": 1,
+              \"query\": {
+                \"bool\": {
+                  \"filter\": [
+                    {\"term\": {\"severity\": \"1\"}},
+                    {\"range\": {\"last_notification_time\": {\"gte\": \"now-5m\"}}}
+                  ]
+                }
+              },
+              \"aggs\": {\"total\": {\"value_count\": {\"field\": \"id\"}}}
+            }
+          }
+        }],
+        \"triggers\": [{
+          \"query_level_trigger\": {
+            \"id\": \"findings-trigger\",
+            \"name\": \"New Critical Findings\",
+            \"severity\": \"1\",
+            \"condition\": {\"script\": {\"source\": \"ctx.results[0].hits.total.value > 0\", \"lang\": \"painless\"}},
+            \"actions\": [{
+              \"name\": \"Pushover Alert\",
+              \"destination_id\": \"pushover-siem\",
+              \"message_template\": {
+                \"source\": \"title=OpenSearch+SIEM+Alert&message=New+critical+security+finding+detected.+Check+OpenSearch+Dashboards+for+details.&priority=1\"
+              },
+              \"throttle_enabled\": true,
+              \"throttle\": {\"value\": 15, \"unit\": \"MINUTES\"}
+            }]
+          }
+        }]
+      }" | python3 -c "import json,sys; r=json.load(sys.stdin); print('Monitor:', r.get('_id','?'))" 2>/dev/null || true
+
+    # ── 5. Falco index template ───────────────────────────────────────────
+    echo "=== Creating Falco index template ==="
+    ${CURL} -X PUT "${OS}/_index_template/falco-template" \
+      -H "Content-Type: application/json" -d '{
+        "index_patterns": ["falco-*"],
+        "priority": 100,
+        "template": {
+          "mappings": {
+            "properties": {
+              "rule":       {"type": "keyword"},
+              "priority":   {"type": "keyword"},
+              "output":     {"type": "text"},
+              "hostname":   {"type": "keyword"},
+              "time":       {"type": "date"},
+              "source":     {"type": "keyword"},
+              "k8s.ns.name": {"type": "keyword"},
+              "k8s.pod.name": {"type": "keyword"},
+              "container.image.repository": {"type": "keyword"},
+              "proc.name":  {"type": "keyword"},
+              "proc.cmdline": {"type": "text"}
+            }
+          }
+        }
+      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Falco template:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null || true
+
+    # ── 6. Falco Security Analytics Detector ─────────────────────────────
+    echo "=== Creating Falco container security detector ==="
+    ${CURL} -X POST "${OS}/_plugins/_security_analytics/detectors" \
+      -H "Content-Type: application/json" -d '{
+        "type": "detector",
+        "name": "falco-container-security",
+        "detector_type": "OTHERS_APPLICATION",
+        "enabled": true,
+        "schedule": {"period": {"interval": 1, "unit": "MINUTES"}},
+        "inputs": [{
+          "input": {
+            "description": "Falco container runtime security events",
+            "indices": ["falco-*"],
+            "custom_rules": [],
+            "pre_packaged_rules": []
+          }
+        }],
+        "triggers": [{
+          "id": "falco-critical-trigger",
+          "name": "Critical Falco Event",
+          "severity": "1",
+          "types": ["OTHERS_APPLICATION"],
+          "sev_levels": ["critical", "high"],
+          "tags": [],
+          "actions": [{
+            "id": "falco-pushover-action",
+            "name": "Notify Pushover",
+            "destination_id": "pushover-siem",
+            "message_template": {
+              "source": "Falco SIEM: {{ctx.trigger.name}}\nNew security events in container runtime\nCheck OpenSearch Dashboards for details."
+            },
+            "throttle_enabled": true,
+            "throttle": {"value": 10, "unit": "MINUTES"}
+          }]
+        }]
+      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Falco detector:', r.get('_id','?'))" 2>/dev/null || true
+
+    # ── 7. Kubescape findings alerting monitor ────────────────────────────
+    echo "=== Creating Kubescape CIS findings monitor ==="
+    ${CURL} -X PUT "${OS}/_index_template/kubescape-template" \
+      -H "Content-Type: application/json" -d '{
+        "index_patterns": ["kubescape-*"],
+        "priority": 100,
+        "template": {
+          "mappings": {
+            "properties": {
+              "severity":    {"type": "keyword"},
+              "resourceID":  {"type": "keyword"},
+              "ruleName":    {"type": "keyword"},
+              "namespace":   {"type": "keyword"},
+              "kind":        {"type": "keyword"},
+              "@timestamp":  {"type": "date"}
+            }
+          }
+        }
+      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Kubescape template:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null || true
+
+    ${CURL} -X POST "${OS}/_plugins/_alerting/monitors" \
+      -H "Content-Type: application/json" -d "{
+        \"type\": \"monitor\",
+        \"name\": \"Kubescape Critical Findings\",
+        \"monitor_type\": \"query_level_monitor\",
+        \"enabled\": true,
+        \"schedule\": {\"period\": {\"interval\": 60, \"unit\": \"MINUTES\"}},
+        \"inputs\": [{
+          \"search\": {
+            \"indices\": [\"kubescape-*\"],
+            \"query\": {
+              \"size\": 1,
+              \"query\": {
+                \"bool\": {
+                  \"filter\": [
+                    {\"term\": {\"severity\": \"Critical\"}},
+                    {\"range\": {\"@timestamp\": {\"gte\": \"now-1h\"}}}
+                  ]
+                }
+              },
+              \"aggs\": {\"total\": {\"value_count\": {\"field\": \"ruleName\"}}}
+            }
+          }
+        }],
+        \"triggers\": [{
+          \"query_level_trigger\": {
+            \"id\": \"kubescape-trigger\",
+            \"name\": \"Critical CIS Violations\",
+            \"severity\": \"2\",
+            \"condition\": {\"script\": {\"source\": \"ctx.results[0].hits.total.value > 0\", \"lang\": \"painless\"}},
+            \"actions\": [{
+              \"name\": \"Pushover Alert\",
+              \"destination_id\": \"pushover-siem\",
+              \"message_template\": {
+                \"source\": \"title=Kubescape+CIS+Violation&message=Critical+compliance+violation+detected.+Check+OpenSearch+Dashboards.&priority=0\"
+              },
+              \"throttle_enabled\": true,
+              \"throttle\": {\"value\": 60, \"unit\": \"MINUTES\"}
+            }]
+          }
+        }]
+      }" | python3 -c "import json,sys; r=json.load(sys.stdin); print('Kubescape monitor:', r.get('_id','?'))" 2>/dev/null || true
+
+    # ── 8. Trivy CVE alerting monitor ────────────────────────────────────
+    echo "=== Creating Trivy critical CVE monitor ==="
+    ${CURL} -X PUT "${OS}/_index_template/trivy-template" \
+      -H "Content-Type: application/json" -d '{
+        "index_patterns": ["trivy-*"],
+        "priority": 100,
+        "template": {
+          "mappings": {
+            "properties": {
+              "severity":        {"type": "keyword"},
+              "vulnerabilityID": {"type": "keyword"},
+              "resource":        {"type": "keyword"},
+              "namespace":       {"type": "keyword"},
+              "image":           {"type": "keyword"},
+              "@timestamp":      {"type": "date"}
+            }
+          }
+        }
+      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Trivy template:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null || true
+
+    ${CURL} -X POST "${OS}/_plugins/_alerting/monitors" \
+      -H "Content-Type: application/json" -d "{
+        \"type\": \"monitor\",
+        \"name\": \"Trivy CRITICAL CVEs\",
+        \"monitor_type\": \"query_level_monitor\",
+        \"enabled\": true,
+        \"schedule\": {\"period\": {\"interval\": 60, \"unit\": \"MINUTES\"}},
+        \"inputs\": [{
+          \"search\": {
+            \"indices\": [\"trivy-*\"],
+            \"query\": {
+              \"size\": 1,
+              \"query\": {
+                \"bool\": {
+                  \"filter\": [
+                    {\"term\": {\"severity\": \"CRITICAL\"}},
+                    {\"range\": {\"@timestamp\": {\"gte\": \"now-1h\"}}}
+                  ]
+                }
+              },
+              \"aggs\": {\"total\": {\"value_count\": {\"field\": \"vulnerabilityID\"}}}
+            }
+          }
+        }],
+        \"triggers\": [{
+          \"query_level_trigger\": {
+            \"id\": \"trivy-trigger\",
+            \"name\": \"New CRITICAL CVE\",
+            \"severity\": \"1\",
+            \"condition\": {\"script\": {\"source\": \"ctx.results[0].hits.total.value > 0\", \"lang\": \"painless\"}},
+            \"actions\": [{
+              \"name\": \"Pushover Alert\",
+              \"destination_id\": \"pushover-siem\",
+              \"message_template\": {
+                \"source\": \"title=Trivy+CRITICAL+CVE&message=New+CRITICAL+vulnerability+detected+in+cluster.+Check+OpenSearch+Dashboards.&priority=1\"
+              },
+              \"throttle_enabled\": true,
+              \"throttle\": {\"value\": 60, \"unit\": \"MINUTES\"}
+            }]
+          }
+        }]
+      }" | python3 -c "import json,sys; r=json.load(sys.stdin); print('Trivy monitor:', r.get('_id','?'))" 2>/dev/null || true
+
+    echo "=== Security Analytics setup complete ==="
