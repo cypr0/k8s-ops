@@ -291,8 +291,8 @@ data:
         make_line(  "trivy-v9-trend",      "CVE Trend Over Time"),
     ]
 
-    # Add "no fix" filter for v8
-    vizs[7]["attributes"]["searchSourceJSON"] = json.dumps({
+    # Add "no fix" filter for v8 (must use kibanaSavedObjectMeta for strict mapping)
+    vizs[7]["attributes"]["kibanaSavedObjectMeta"] = {"searchSourceJSON": json.dumps({
         "index": IDX_ID,
         "query": {"bool": {
             "filter": [{"term": {"severity": "CRITICAL"}}],
@@ -300,7 +300,8 @@ data:
             "must": [], "should": []
         }},
         "filter": []
-    })
+    })}
+    vizs[7]["attributes"].pop("searchSourceJSON", None)  # remove old key if present
 
     for v in vizs:
         r, s = osd_req("POST", f"/api/saved_objects/{v['type']}/{v['id']}?overwrite=true",
