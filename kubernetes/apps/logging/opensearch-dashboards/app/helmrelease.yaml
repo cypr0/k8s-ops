@@ -50,7 +50,6 @@ spec:
       capabilities:
         drop: ["ALL"]
 
-    # Workers only
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
@@ -64,54 +63,43 @@ spec:
       keyPassphrase:
         enabled: false
 
+    # Sensitive values via env vars — OpenSearch Dashboards auto-maps
+    # OPENSEARCH_SECURITY_* env vars to opensearch_security.* config keys
     extraEnvs:
-      - name: OPENSEARCH_DASHBOARDS_PASSWORD
-        valueFrom:
-          secretKeyRef:
-            name: opensearch-dashboards-secret
-            key: OPENSEARCH_DASHBOARDS_PASSWORD
-      - name: OPENSEARCH_OIDC_CLIENT_ID
-        valueFrom:
-          secretKeyRef:
-            name: opensearch-dashboards-secret
-            key: OPENSEARCH_OIDC_CLIENT_ID
-      - name: OPENSEARCH_OIDC_CLIENT_SECRET
-        valueFrom:
-          secretKeyRef:
-            name: opensearch-dashboards-secret
-            key: OPENSEARCH_OIDC_CLIENT_SECRET
-      - name: OPENSEARCH_COOKIE_SECRET
+      - name: OPENSEARCH_SECURITY_COOKIE_PASSWORD
         valueFrom:
           secretKeyRef:
             name: opensearch-dashboards-secret
             key: OPENSEARCH_COOKIE_SECRET
+      - name: OPENSEARCH_SECURITY_OPENID_CLIENT_ID
+        valueFrom:
+          secretKeyRef:
+            name: opensearch-dashboards-secret
+            key: OPENSEARCH_OIDC_CLIENT_ID
+      - name: OPENSEARCH_SECURITY_OPENID_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef:
+            name: opensearch-dashboards-secret
+            key: OPENSEARCH_OIDC_CLIENT_SECRET
 
     config:
       opensearch_dashboards.yml: |
         server.name: opensearch-dashboards
         server.host: "0.0.0.0"
-        opensearch.hosts: ["http://opensearch-cluster-master:9200"]
-        opensearch.username: "kibanaserver"
-        opensearch.password: "$${OPENSEARCH_DASHBOARDS_PASSWORD}"
         opensearch.ssl.verificationMode: none
 
-        # Authentik OIDC
-        # ${SECRET_DOMAIN} → substituted by Flux
-        # $${...} → escaped so Flux passes them through as ${...} for Dashboards runtime
+        # Authentik OIDC — only non-secret values here
+        # ${SECRET_DOMAIN} is substituted by Flux from cluster-secrets
         opensearch_security.auth.type: "openid"
         opensearch_security.openid.connect_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/.well-known/openid-configuration"
-        opensearch_security.openid.client_id: "$${OPENSEARCH_OIDC_CLIENT_ID}"
-        opensearch_security.openid.client_secret: "$${OPENSEARCH_OIDC_CLIENT_SECRET}"
         opensearch_security.openid.scope: "openid profile email"
         opensearch_security.openid.base_redirect_url: "https://logs.${SECRET_DOMAIN}"
         opensearch_security.openid.logout_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/end-session/"
         opensearch_security.cookie.secure: "true"
-        opensearch_security.cookie.password: "$${OPENSEARCH_COOKIE_SECRET}"
 
         opensearch_security.multitenancy.enabled: false
         opensearch_security.readonly_mode.roles: ["kibana_read_only"]
 
-        # Telemetry off
         telemetry.enabled: false
         telemetry.optIn: false
 
