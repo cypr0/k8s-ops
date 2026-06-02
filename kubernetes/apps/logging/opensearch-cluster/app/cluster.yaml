@@ -19,7 +19,7 @@ spec:
         generate: true
         perNode: false
       http:
-        enabled: false
+        generate: true
     config:
       adminCredentialsSecret:
         name: opensearch-admin-credentials
