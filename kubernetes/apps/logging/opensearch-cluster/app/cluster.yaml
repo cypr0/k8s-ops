@@ -6,7 +6,7 @@ metadata:
 spec:
   general:
     # renovate: datasource=docker depName=opensearchproject/opensearch
-    version: "2.19.2"
+    version: "2.19.5"
     serviceName: opensearch
     httpPort: 9200
     setVMMaxMapCount: true
