@@ -100,8 +100,5 @@ spec:
         opensearch_security.multitenancy.enabled: false
         opensearch_security.readonly_mode.roles: ["kibana_read_only"]
 
-        telemetry.enabled: false
-        telemetry.optIn: false
-
     annotations:
       secret.reloader.stakater.com/reload: opensearch-dashboards-secret
