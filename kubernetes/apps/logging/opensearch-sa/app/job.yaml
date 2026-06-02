@@ -21,8 +21,8 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: setup
-          image: curlimages/curl:8.11.1
-          command: ["/bin/sh", "/scripts/setup.sh"]
+          image: python:3.12-alpine
+          command: ["/bin/sh", "-c", "apk add -q curl && /bin/sh /scripts/setup.sh"]
           env:
             - name: OPENSEARCH_PASSWORD
               valueFrom:
@@ -50,7 +50,7 @@ spec:
               memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             capabilities:
               drop: ["ALL"]
       volumes:
