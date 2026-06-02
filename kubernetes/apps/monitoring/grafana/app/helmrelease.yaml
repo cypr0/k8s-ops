@@ -98,6 +98,8 @@ spec:
         cookie_secure: "true"
         cookie_samesite: lax
       users:
+        auto_assign_org: "true"
+        auto_assign_org_id: "1"
         auto_assign_org_role: Viewer
         default_theme: dark
       # Authentik OIDC SSO
