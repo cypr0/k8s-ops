@@ -25,6 +25,13 @@ spec:
           env:
             - name: OSD_HOST
               value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
+            - name: OSD_USER
+              value: "admin"
+            - name: OSD_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-sa-credentials
+                  key: OPENSEARCH_PASSWORD
           volumeMounts:
             - name: scripts
               mountPath: /scripts

@@ -12,8 +12,16 @@ data:
     """
     import json, os, sys, time, ssl, urllib.request, urllib.error
 
-    OSD = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
-    HEADERS = {"Content-Type": "application/json", "osd-xsrf": "true"}
+    import base64
+    OSD      = os.environ.get("OSD_HOST",  "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    OSD_USER = os.environ.get("OSD_USER",  "admin")
+    OSD_PASS = os.environ.get("OSD_PASS",  "")
+    _b64      = base64.b64encode(f"{OSD_USER}:{OSD_PASS}".encode()).decode()
+    HEADERS  = {
+        "Content-Type": "application/json",
+        "osd-xsrf": "true",
+        "Authorization": f"Basic {_b64}"
+    }
 
     def osd_req(method, path, body=None):
         url = f"{OSD}{path}"
