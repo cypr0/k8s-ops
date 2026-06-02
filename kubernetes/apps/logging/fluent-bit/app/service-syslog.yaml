@@ -2,18 +2,19 @@
 # LoadBalancer for external syslog collection (Proxmox + OPNsense)
 # Proxmox:  System > Syslog → UDP/TCP 514 → 192.168.10.110
 # OPNsense: System > Log Files > Settings → Remote Logging → 192.168.10.110:514
+# Selector now points to Fluent Bit in logging namespace
 apiVersion: v1
 kind: Service
 metadata:
-  name: alloy-syslog
-  namespace: monitoring
+  name: syslog-ingress
+  namespace: logging
   annotations:
     lbipam.cilium.io/ips: "192.168.10.110"
 spec:
   type: LoadBalancer
   externalTrafficPolicy: Cluster
   selector:
-    app.kubernetes.io/name: alloy
+    app.kubernetes.io/name: fluent-bit
   ports:
     - name: syslog-udp
       port: 514

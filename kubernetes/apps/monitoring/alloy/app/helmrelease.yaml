@@ -94,39 +94,6 @@ spec:
             forward_to = [loki.write.loki.receiver]
           }
 
-          // ── EXTERNAL SYSLOG: Proxmox + OPNsense ─────────────────────────
-
-          loki.source.syslog "external" {
-            listener {
-              address                = "0.0.0.0:5514"
-              protocol               = "udp"
-              labels                 = { job = "syslog" }
-              use_incoming_timestamp = true
-            }
-            listener {
-              address                = "0.0.0.0:5514"
-              protocol               = "tcp"
-              labels                 = { job = "syslog" }
-              use_incoming_timestamp = true
-            }
-            forward_to = [loki.process.external_syslog.receiver]
-          }
-
-          loki.process "external_syslog" {
-            stage.match {
-              selector = `{job="syslog", hostname=~"pve.*|proxmox.*"}`
-              stage.static_labels {
-                values = { source = "proxmox" }
-              }
-            }
-            stage.match {
-              selector = `{job="syslog", hostname=~"(?i)opnsense.*|fw.*"}`
-              stage.static_labels {
-                values = { source = "opnsense" }
-              }
-            }
-            forward_to = [loki.write.loki.receiver]
-          }
 
 
     controller:
@@ -140,15 +107,6 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
 
-    extraPorts:
-      - name: syslog-udp
-        port: 5514
-        targetPort: 5514
-        protocol: UDP
-      - name: syslog-tcp
-        port: 5514
-        targetPort: 5514
-        protocol: TCP
 
     resources:
       requests:

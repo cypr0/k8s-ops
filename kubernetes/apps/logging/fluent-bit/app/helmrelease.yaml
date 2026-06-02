@@ -1,0 +1,142 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: fluent-bit
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: fluent-bit
+      version: "0.57.6"
+      sourceRef:
+        kind: HelmRepository
+        name: fluent
+        namespace: logging
+  maxHistory: 2
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    # Workers only
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+    tolerations: []
+
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+    podSecurityContext:
+      runAsNonRoot: false  # needs root for syslog socket
+
+    # Inject OpenSearch password
+    envFrom:
+      - secretRef:
+          name: fluent-bit-opensearch
+
+    serviceMonitor:
+      enabled: true
+
+    config:
+      service: |
+        [SERVICE]
+            Flush         5
+            Daemon        Off
+            Log_Level     info
+            Parsers_File  parsers.conf
+            HTTP_Server   On
+            HTTP_Listen   0.0.0.0
+            HTTP_Port     2020
+
+      inputs: |
+        # ── Syslog from Proxmox + OPNsense ──────────────────────────────
+        [INPUT]
+            Name          syslog
+            Listen        0.0.0.0
+            Port          5514
+            Mode          udp
+            Tag           syslog.udp
+            Syslog_Format auto
+
+        [INPUT]
+            Name          syslog
+            Listen        0.0.0.0
+            Port          5514
+            Mode          tcp
+            Tag           syslog.tcp
+            Syslog_Format auto
+
+      filters: |
+        # Label Proxmox by hostname
+        [FILTER]
+            Name          modify
+            Match         syslog.*
+            Condition     Key_value_matches host ^pve|^proxmox
+            Add           source proxmox
+
+        # Label OPNsense by hostname
+        [FILTER]
+            Name          modify
+            Match         syslog.*
+            Condition     Key_value_matches host ^OPNsense|^opnsense|^fw
+            Add           source opnsense
+
+        # Add job label for Loki
+        [FILTER]
+            Name          modify
+            Match         syslog.*
+            Add           job syslog
+
+      outputs: |
+        # ── OpenSearch (SIEM) ────────────────────────────────────────────
+        [OUTPUT]
+            Name             opensearch
+            Match            syslog.*
+            Host             opensearch.logging.svc.cluster.local
+            Port             9200
+            HTTP_User        admin
+            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
+            Index            syslog
+            Type             _doc
+            Logstash_Format  On
+            Logstash_Prefix  syslog
+            Time_Key         @timestamp
+            tls              Off
+            tls.verify       Off
+            Retry_Limit      5
+            Suppress_Type_Name On
+
+        # ── Loki (Grafana dashboards) ────────────────────────────────────
+        [OUTPUT]
+            Name             loki
+            Match            syslog.*
+            Host             loki.monitoring.svc.cluster.local
+            Port             3100
+            Labels           job=syslog
+            Label_Keys       $source,$host
+            Line_Format      json
+            Retry_Limit      5
+
+    # Expose syslog port on pods
+    extraPorts:
+      - name: syslog-udp
+        containerPort: 5514
+        protocol: UDP
+      - name: syslog-tcp
+        containerPort: 5514
+        protocol: TCP
