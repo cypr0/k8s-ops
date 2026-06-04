@@ -197,38 +197,22 @@ data:
           register: pve_node
           changed_when: false
 
+        # /etc/pve/firewall is PMXCFS (FUSE) — no atomic rename support.
+        # ansible.builtin.copy fails because it writes a temp file then renames.
+        # Use shell with printf so content stays on one line (no YAML indent issues).
         - name: Enable cluster-level PVE firewall
-          ansible.builtin.copy:
-            dest: /etc/pve/firewall/cluster.fw
-            owner: root
-            group: www-data
-            mode: "0640"
-            content: |
-              [OPTIONS]
-              enable: 1
-              log_level_in: warning
-              log_level_out: warning
+          ansible.builtin.shell: >-
+            printf '[OPTIONS]\nenable: 1\nlog_level_in: warning\nlog_level_out: warning\n'
+            > /etc/pve/firewall/cluster.fw
+          args:
+            executable: /bin/bash
 
         - name: Configure node-level PVE firewall rules
-          ansible.builtin.copy:
-            dest: "/etc/pve/firewall/{{ pve_node.stdout }}.fw"
-            owner: root
-            group: www-data
-            mode: "0640"
-            content: |
-              [OPTIONS]
-              enable: 1
-
-              [RULES]
-              # SSH — admin IP + RFC1918 (for in-cluster Ansible access)
-              IN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"
-              IN ACCEPT -source 10.0.0.0/8 -p tcp -dport 22 -comment "SSH internal"
-              IN ACCEPT -source 172.16.0.0/12 -p tcp -dport 22 -comment "SSH internal"
-              IN ACCEPT -source 192.168.0.0/16 -p tcp -dport 22 -comment "SSH internal"
-              IN DROP -p tcp -dport 22 -comment "Block external SSH"
-              # Proxmox UI — admin IP only
-              IN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"
-              IN DROP -p tcp -dport 8006 -comment "Block external Proxmox UI"
+          ansible.builtin.shell: >-
+            printf '[OPTIONS]\nenable: 1\n\n[RULES]\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"\nIN ACCEPT -source 10.0.0.0/8 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 172.16.0.0/12 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 192.168.0.0/16 -p tcp -dport 22 -comment "SSH internal"\nIN DROP -p tcp -dport 22 -comment "Block external SSH"\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"\nIN DROP -p tcp -dport 8006 -comment "Block external Proxmox UI"\n'
+            > /etc/pve/firewall/{{ pve_node.stdout }}.fw
+          args:
+            executable: /bin/bash
           notify: Restart pve-firewall
 
         # ── SSH Hardening (CIS Debian 13 / Trixie) ───────────────────────────
