@@ -19,7 +19,6 @@ data:
     export ANSIBLE_LOCAL_TMP=/tmp/ansible-local
     export ANSIBLE_REMOTE_TMP=/tmp/.ansible/tmp
     export ANSIBLE_HOST_KEY_CHECKING=False
-    export ANSIBLE_STDOUT_CALLBACK=yaml
 
     mkdir -p /tmp/ansible-local
 
