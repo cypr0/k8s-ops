@@ -95,24 +95,33 @@ data:
                     "if": "ctx.containsKey('ident') && ctx.ident == 'filterlog'"
                 }
             },
-            # Suricata: parse JSON message
+            # Suricata: parse JSON from message field into _suricata_raw
             {
-                "script": {
-                    "lang": "painless",
-                    "source": suricata_script,
-                    "if": "ctx.containsKey('ident') && ctx.ident == 'suricata'"
+                "json": {
+                    "field": "message",
+                    "target_field": "_suricata",
+                    "if": "ctx.containsKey('ident') && ctx.ident == 'suricata'",
+                    "ignore_failure": True
                 }
             },
-            # Convert port fields to integer where possible
-            {
-                "convert": {"field": "src_port", "type": "integer", "ignore_missing": True, "ignore_failure": True}
-            },
-            {
-                "convert": {"field": "dst_port", "type": "integer", "ignore_missing": True, "ignore_failure": True}
-            },
-            {
-                "convert": {"field": "suricata_severity", "type": "integer", "ignore_missing": True, "ignore_failure": True}
-            }
+            # Copy relevant Suricata fields to top-level
+            {"set": {"field": "src_ip",               "value": "{{_suricata.src_ip}}",             "if": "ctx.containsKey('_suricata') && ctx._suricata?.src_ip != null",               "ignore_failure": True}},
+            {"set": {"field": "dst_ip",               "value": "{{_suricata.dest_ip}}",            "if": "ctx.containsKey('_suricata') && ctx._suricata?.dest_ip != null",              "ignore_failure": True}},
+            {"set": {"field": "src_port",             "value": "{{_suricata.src_port}}",           "if": "ctx.containsKey('_suricata') && ctx._suricata?.src_port != null",             "ignore_failure": True}},
+            {"set": {"field": "dst_port",             "value": "{{_suricata.dest_port}}",          "if": "ctx.containsKey('_suricata') && ctx._suricata?.dest_port != null",            "ignore_failure": True}},
+            {"set": {"field": "fw_protocol",          "value": "{{_suricata.proto}}",              "if": "ctx.containsKey('_suricata') && ctx._suricata?.proto != null",                "ignore_failure": True}},
+            {"set": {"field": "fw_interface",         "value": "{{_suricata.in_iface}}",           "if": "ctx.containsKey('_suricata') && ctx._suricata?.in_iface != null",             "ignore_failure": True}},
+            {"set": {"field": "suricata_event_type",  "value": "{{_suricata.event_type}}",         "if": "ctx.containsKey('_suricata') && ctx._suricata?.event_type != null",           "ignore_failure": True}},
+            {"set": {"field": "suricata_signature",   "value": "{{_suricata.alert.signature}}",    "if": "ctx.containsKey('_suricata') && ctx._suricata?.alert?.signature != null",     "ignore_failure": True}},
+            {"set": {"field": "suricata_category",    "value": "{{_suricata.alert.category}}",     "if": "ctx.containsKey('_suricata') && ctx._suricata?.alert?.category != null",      "ignore_failure": True}},
+            {"set": {"field": "suricata_severity",    "value": "{{_suricata.alert.severity}}",     "if": "ctx.containsKey('_suricata') && ctx._suricata?.alert?.severity != null",      "ignore_failure": True}},
+            {"set": {"field": "fw_action",            "value": "{{_suricata.alert.action}}",       "if": "ctx.containsKey('_suricata') && ctx._suricata?.alert?.action != null",        "ignore_failure": True}},
+            # Remove temp field
+            {"remove": {"field": "_suricata", "ignore_missing": True, "ignore_failure": True}},
+            # Convert numeric fields
+            {"convert": {"field": "src_port",          "type": "integer", "ignore_missing": True, "ignore_failure": True}},
+            {"convert": {"field": "dst_port",          "type": "integer", "ignore_missing": True, "ignore_failure": True}},
+            {"convert": {"field": "suricata_severity", "type": "integer", "ignore_missing": True, "ignore_failure": True}}
         ]
     }
 
