@@ -21,7 +21,7 @@ spec:
       containers:
         - name: pipeline
           image: python:3.12-alpine
-          command: ["/bin/sh", "-c", "apk add -q curl && /bin/sh /scripts/setup_pipeline.sh"]
+          command: ["python3", "/scripts/setup_pipeline.py"]
           env:
             - name: OPENSEARCH_PASSWORD
               valueFrom:

@@ -4,96 +4,136 @@ kind: ConfigMap
 metadata:
   name: proxmox-pipeline-script
 data:
-  setup_pipeline.sh: |
-    #!/bin/bash
-    set -euo pipefail
+  setup_pipeline.py: |
+    #!/usr/bin/env python3
+    import json, os, time, base64, urllib.request, urllib.error
 
-    OS="https://opensearch.logging.svc.cluster.local:9200"
-    AUTH="admin:${OPENSEARCH_PASSWORD}"
-    CURL="curl -sk -u ${AUTH}"
+    OS   = "https://opensearch.logging.svc.cluster.local:9200"
+    PASS = os.environ.get("OPENSEARCH_PASSWORD", "")
+    AUTH = base64.b64encode(f"admin:{PASS}".encode()).decode()
+    import ssl
+    CTX  = ssl.create_default_context()
+    CTX.check_hostname = False
+    CTX.verify_mode = ssl.CERT_NONE
 
-    echo "=== Waiting for OpenSearch ==="
-    until ${CURL} "${OS}/_cluster/health" | grep -q '"status"'; do
-      echo "Waiting..."; sleep 10
-    done
+    def req(method, path, body=None):
+        url  = f"{OS}{path}"
+        data = json.dumps(body).encode() if body else None
+        r    = urllib.request.Request(url, data=data, method=method,
+               headers={"Content-Type":"application/json","Authorization":f"Basic {AUTH}"})
+        try:
+            with urllib.request.urlopen(r, context=CTX, timeout=60) as resp:
+                return json.loads(resp.read()), resp.status
+        except urllib.error.HTTPError as e:
+            try:    return json.loads(e.read()), e.code
+            except: return {}, e.code
 
-    # ── 1. Create Ingest Pipeline for Proxmox syslog enrichment ──────────
-    echo "=== Creating Proxmox syslog ingest pipeline ==="
-    ${CURL} -X PUT "${OS}/_ingest/pipeline/proxmox-syslog-enrich" \
-      -H "Content-Type: application/json" -d '{
-        "description": "Enrich Proxmox syslog messages: extract src_ip, username, action",
+    print("Waiting for OpenSearch...")
+    for _ in range(30):
+        try:
+            r, s = req("GET", "/_cluster/health")
+            if s == 200:
+                print("Ready.")
+                break
+        except: pass
+        time.sleep(10)
+
+    # ── 1. Ingest Pipeline ────────────────────────────────────────────────
+    print("Creating ingest pipeline...")
+    pipeline = {
+        "description": "Enrich Proxmox syslog: extract src_ip, username, action",
         "processors": [
-          {
-            "grok": {
-              "field": "message",
-              "patterns": [
-                "Failed password for invalid user %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
-                "Failed password for %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
-                "Invalid user %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int}",
-                "Accepted %{WORD:auth_method} for %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
-                "Disconnected from invalid user %{WORD:username} %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
-                "Disconnected from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
-                "Connection closed by invalid user %{WORD:username} %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
-                "Connection closed by %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
-                "authentication failure; rhost=::ffff:%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}",
-                "authentication failure; rhost=%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}",
-                "pam_unix\\(sshd:auth\\): authentication failure;%{GREEDYDATA}rhost=%{IP:src_ip}%{GREEDYDATA}"
-              ],
-              "ignore_failure": true
+            {
+                "grok": {
+                    "field": "message",
+                    "patterns": [
+                        "Failed password for invalid user %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                        "Failed password for %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                        "Invalid user %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int}",
+                        "Accepted %{WORD:auth_method} for %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                        "Disconnected from invalid user %{WORD:username} %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                        "Disconnected from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                        "Connection closed by invalid user %{WORD:username} %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                        "Connection closed by %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                        "authentication failure; rhost=::ffff:%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}",
+                        "authentication failure; rhost=%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}"
+                    ],
+                    "ignore_failure": True
+                }
+            },
+            {
+                "script": {
+                    "lang": "painless",
+                    "source": """
+String msg = ctx.containsKey("message") ? ctx.message : "";
+if (msg.contains("Failed password")) {
+  ctx.action = "ssh_failed_password"; ctx.action_category = "auth_failure";
+} else if (msg.contains("Invalid user")) {
+  ctx.action = "ssh_invalid_user"; ctx.action_category = "auth_failure";
+} else if (msg.contains("Accepted")) {
+  ctx.action = "ssh_accepted"; ctx.action_category = "auth_success";
+} else if (msg.contains("authentication failure")) {
+  ctx.action = "api_auth_failure"; ctx.action_category = "auth_failure";
+} else if (msg.contains("Disconnected from invalid")) {
+  ctx.action = "ssh_disconnected_invalid"; ctx.action_category = "connection";
+} else if (msg.contains("Disconnected")) {
+  ctx.action = "ssh_disconnected"; ctx.action_category = "connection";
+} else if (msg.contains("Connection closed by invalid")) {
+  ctx.action = "ssh_closed_invalid"; ctx.action_category = "connection";
+} else if (msg.contains("Connection closed")) {
+  ctx.action = "ssh_closed"; ctx.action_category = "connection";
+} else if (msg.contains("check pass")) {
+  ctx.action = "pam_check"; ctx.action_category = "auth_check";
+}
+"""
+                }
             }
-          },
-          {
-            "script": {
-              "lang": "painless",
-              "source": "String msg = ctx.get('\''message'\'', '\'\'\''); if (msg.contains(\"Failed password\")) { ctx.action = \"ssh_failed_password\"; ctx.action_category = \"auth_failure\"; } else if (msg.contains(\"Invalid user\")) { ctx.action = \"ssh_invalid_user\"; ctx.action_category = \"auth_failure\"; } else if (msg.contains(\"Accepted\")) { ctx.action = \"ssh_accepted\"; ctx.action_category = \"auth_success\"; } else if (msg.contains(\"authentication failure\")) { ctx.action = \"api_auth_failure\"; ctx.action_category = \"auth_failure\"; } else if (msg.contains(\"Disconnected from invalid\")) { ctx.action = \"ssh_disconnected_invalid\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"Disconnected\")) { ctx.action = \"ssh_disconnected\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"Connection closed by invalid\")) { ctx.action = \"ssh_closed_invalid\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"Connection closed\")) { ctx.action = \"ssh_closed\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"check pass\")) { ctx.action = \"pam_check\"; ctx.action_category = \"auth_check\"; }"
-            }
-          }
         ]
-      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Pipeline:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null
+    }
+    r, s = req("PUT", "/_ingest/pipeline/proxmox-syslog-enrich", pipeline)
+    print(f"  Pipeline: {'OK' if r.get('acknowledged') else f'ERROR {s}: {str(r)[:150]}'}")
 
-    # ── 2. Apply pipeline to syslog-* index template ─────────────────────
-    echo "=== Updating syslog index template with default pipeline ==="
-    ${CURL} -X PUT "${OS}/_index_template/syslog-template" \
-      -H "Content-Type: application/json" -d '{
+    # ── 2. Update syslog index template ───────────────────────────────────
+    print("Updating syslog index template...")
+    template = {
         "index_patterns": ["syslog-*"],
         "priority": 200,
         "template": {
-          "settings": {
-            "index.default_pipeline": "proxmox-syslog-enrich"
-          },
-          "mappings": {
-            "properties": {
-              "@timestamp":      {"type": "date"},
-              "host":            {"type": "keyword"},
-              "source":          {"type": "keyword"},
-              "ident":           {"type": "keyword"},
-              "pid":             {"type": "keyword"},
-              "severity":        {"type": "keyword"},
-              "message":         {"type": "text"},
-              "src_ip":          {"type": "ip",      "ignore_malformed": true},
-              "src_port":        {"type": "integer", "ignore_malformed": true},
-              "username":        {"type": "keyword"},
-              "auth_method":     {"type": "keyword"},
-              "action":          {"type": "keyword"},
-              "action_category": {"type": "keyword"}
+            "settings": {"index.default_pipeline": "proxmox-syslog-enrich"},
+            "mappings": {
+                "properties": {
+                    "@timestamp":      {"type": "date"},
+                    "host":            {"type": "keyword"},
+                    "source":          {"type": "keyword"},
+                    "ident":           {"type": "keyword"},
+                    "pid":             {"type": "keyword"},
+                    "severity":        {"type": "keyword"},
+                    "message":         {"type": "text"},
+                    "src_ip":          {"type": "ip",      "ignore_malformed": True},
+                    "src_port":        {"type": "integer", "ignore_malformed": True},
+                    "username":        {"type": "keyword"},
+                    "auth_method":     {"type": "keyword"},
+                    "action":          {"type": "keyword"},
+                    "action_category": {"type": "keyword"}
+                }
             }
-          }
         }
-      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Template:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null
+    }
+    r, s = req("PUT", "/_index_template/syslog-template", template)
+    print(f"  Template: {'OK' if r.get('acknowledged') else f'ERROR {s}'}")
 
-    # ── 3. Re-process today'\''s existing syslog data ─────────────────────
-    echo "=== Re-processing existing syslog indices with pipeline ==="
-    TODAY=$(date -u +%Y.%m.%d)
-    for IDX in $(${CURL} "${OS}/_cat/indices/syslog-*?h=index" 2>/dev/null | grep -v "^$"); do
-      echo -n "  Reindexing ${IDX}... "
-      RESULT=$(${CURL} -X POST "${OS}/_reindex?wait_for_completion=false" \
-        -H "Content-Type: application/json" -d "{
-          \"source\": {\"index\": \"${IDX}\"},
-          \"dest\":   {\"index\": \"${IDX}-enriched\", \"pipeline\": \"proxmox-syslog-enrich\"}
-        }" 2>/dev/null | python3 -c "import json,sys; r=json.load(sys.stdin); print(r.get('task','error'))" 2>/dev/null)
-      echo "task: ${RESULT}"
-    done
+    # ── 3. Reindex existing data through pipeline ─────────────────────────
+    print("Reindexing existing syslog indices...")
+    r, s = req("GET", "/_cat/indices/syslog-*?h=index&format=json")
+    indices = [i["index"] for i in (r if isinstance(r, list) else [])]
+    for idx in indices:
+        dest = f"{idx}-enriched"
+        r, s = req("POST", "/_reindex?wait_for_completion=false", {
+            "source": {"index": idx},
+            "dest":   {"index": dest, "pipeline": "proxmox-syslog-enrich"}
+        })
+        print(f"  {idx} → {dest}: task {r.get('task','error')}")
 
-    echo "=== Pipeline setup complete ==="
-    echo "New syslog docs will be automatically enriched."
-    echo "Fields added: src_ip, src_port, username, auth_method, action, action_category"
+    print("=== Pipeline setup complete ===")
+    print("New syslog-* docs will be enriched automatically.")
+    print("Fields: src_ip, src_port, username, auth_method, action, action_category")
