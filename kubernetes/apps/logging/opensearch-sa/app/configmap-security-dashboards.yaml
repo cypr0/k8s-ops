@@ -168,7 +168,7 @@ data:
         mkv("ks-v2-critical", "🔴 Critical",              "metric", METRIC_P, c(), KI, ks_crit),
         mkv("ks-v3-high",     "🟠 High",                  "metric", METRIC_P, c(), KI, ks_high),
         mkv("ks-v4-ns",       "📁 Affected Namespaces",   "metric", METRIC_P,
-            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"namespace"}}], KI),
+            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"namespace.keyword"}}], KI),
 
         mkv("ks-v5-timeline", "Violations Over Time",     "line", line_p(),
             c() + [dh(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"severity","size":4,"order":"desc","orderBy":"1"}}], KI),
@@ -177,10 +177,10 @@ data:
             c() + [t("ruleName.keyword", 15)], KI),
 
         mkv("ks-v7-ns",       "Violations by Namespace",  "horizontal_bar", hbar_p(),
-            c() + [t("namespace", 15)], KI),
+            c() + [t("namespace.keyword", 15)], KI),
 
         mkv("ks-v8-sev",      "Severity Distribution",    "pie", pie_p(),
-            c() + [t("severity", 5)], KI),
+            c() + [t("severity.keyword", 5)], KI),
 
         mkv("ks-v9-kind",     "Violations by Resource Kind","horizontal_bar", hbar_p(),
             c() + [t("kind.keyword", 10)], KI),
