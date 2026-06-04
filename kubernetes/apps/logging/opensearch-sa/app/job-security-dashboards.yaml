@@ -4,7 +4,7 @@ kind: Job
 metadata:
   name: security-dashboards-setup
   annotations:
-    dashboard-version: "4"
+    dashboard-version: "5"
 spec:
   ttlSecondsAfterFinished: 3600
   backoffLimit: 3
