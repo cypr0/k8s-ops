@@ -1,0 +1,77 @@
+---
+# Runs the Proxmox hardening + maintenance playbook daily at 03:15 UTC.
+# On the first run it creates the ansible OS user; subsequent runs are
+# idempotent (Ansible ensures desired state) and report available updates.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: proxmox-ansible
+spec:
+  schedule: "15 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          containers:
+            - name: ansible
+              image: python:3.12-alpine
+              command: ["/bin/sh", "/scripts/run.sh"]
+              env:
+                - name: PROXMOX_SSH_HOST
+                  valueFrom:
+                    secretKeyRef:
+                      name: proxmox-ansible-credentials
+                      key: PROXMOX_SSH_HOST
+                - name: PROXMOX_ANSIBLE_SSH_PUBKEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: proxmox-ansible-credentials
+                      key: PROXMOX_ANSIBLE_SSH_PUBKEY
+                # Flux substitutes ${SECRET_ALLOWED_IP} from cluster-secrets
+                - name: ALLOWED_IP
+                  value: "${SECRET_ALLOWED_IP}"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: ssh-key
+                  mountPath: /tmp/ssh
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: false
+                runAsUser: 0
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: scripts
+              configMap:
+                name: proxmox-ansible-playbook
+                defaultMode: 0755
+            - name: ssh-key
+              secret:
+                secretName: proxmox-ansible-credentials
+                defaultMode: 0400
+                items:
+                  - key: PROXMOX_ROOT_SSH_KEY
+                    path: id_rsa

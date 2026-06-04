@@ -1,0 +1,321 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proxmox-ansible-playbook
+data:
+  run.sh: |
+    #!/bin/sh
+    set -e
+
+    apk add --no-cache ansible openssh-client >/dev/null 2>&1
+    echo "Ansible $(ansible --version | head -1)"
+
+    # Inventory: double-quoted ansible_ssh_common_args avoids single-quote escaping
+    echo "[proxmox]" > /tmp/inventory.ini
+    echo "proxmox-host ansible_host=${PROXMOX_SSH_HOST} ansible_user=root ansible_ssh_private_key_file=/tmp/ssh/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
+    echo "Inventory written for host: ${PROXMOX_SSH_HOST}"
+
+    export ANSIBLE_LOCAL_TMP=/tmp/ansible-local
+    export ANSIBLE_REMOTE_TMP=/tmp/.ansible/tmp
+    export ANSIBLE_HOST_KEY_CHECKING=False
+    export ANSIBLE_STDOUT_CALLBACK=yaml
+
+    mkdir -p /tmp/ansible-local
+
+    ansible-playbook \
+      -i /tmp/inventory.ini \
+      /scripts/hardening.yml \
+      -e "allowed_ip=${ALLOWED_IP}" \
+      -e "ansible_pubkey_env_name=PROXMOX_ANSIBLE_SSH_PUBKEY"
+
+  hardening.yml: |
+    ---
+    - name: Proxmox Host — Hardening and Maintenance
+      hosts: proxmox
+      become: yes
+      gather_facts: yes
+
+      vars:
+        allowed_ip: "{{ allowed_ip }}"
+        ansible_pubkey: "{{ lookup('env', 'PROXMOX_ANSIBLE_SSH_PUBKEY') }}"
+
+      tasks:
+
+        # ── Ansible OS User ──────────────────────────────────────────────────
+        - name: Ensure ansible user exists
+          ansible.builtin.user:
+            name: ansible
+            shell: /bin/bash
+            create_home: yes
+            state: present
+
+        - name: Ensure .ssh directory for ansible user
+          ansible.builtin.file:
+            path: /home/ansible/.ssh
+            state: directory
+            owner: ansible
+            group: ansible
+            mode: "0700"
+
+        - name: Install SSH public key for ansible user
+          ansible.builtin.copy:
+            content: "{{ ansible_pubkey }}\n"
+            dest: /home/ansible/.ssh/authorized_keys
+            owner: ansible
+            group: ansible
+            mode: "0600"
+          when: ansible_pubkey | length > 0
+
+        - name: Grant ansible user passwordless sudo
+          ansible.builtin.copy:
+            content: "ansible ALL=(ALL) NOPASSWD: ALL\n"
+            dest: /etc/sudoers.d/ansible
+            owner: root
+            group: root
+            mode: "0440"
+            validate: "/usr/sbin/visudo -cf %s"
+
+        # ── System Package Updates ───────────────────────────────────────────
+        - name: Refresh apt package cache
+          ansible.builtin.apt:
+            update_cache: yes
+            cache_valid_time: 3600
+
+        - name: List available upgrades
+          ansible.builtin.command: apt list --upgradable 2>/dev/null
+          register: upgradable
+          changed_when: false
+
+        - name: Report available upgrades
+          ansible.builtin.debug:
+            msg: "{{ upgradable.stdout_lines }}"
+
+        - name: Apply security and safe upgrades
+          ansible.builtin.apt:
+            upgrade: safe
+          register: upgrade_result
+
+        - name: Remove obsolete packages
+          ansible.builtin.apt:
+            autoremove: yes
+            autoclean: yes
+
+        # ── fail2ban ─────────────────────────────────────────────────────────
+        - name: Install fail2ban
+          ansible.builtin.apt:
+            name: fail2ban
+            state: present
+
+        - name: Deploy fail2ban jail.local
+          ansible.builtin.copy:
+            dest: /etc/fail2ban/jail.local
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              [DEFAULT]
+              # Whitelist localhost and the admin IP
+              ignoreip = 127.0.0.1/8 ::1 {{ allowed_ip }}
+              bantime  = 3600
+              findtime = 600
+              maxretry = 5
+
+              [sshd]
+              enabled  = true
+              port     = ssh
+              filter   = sshd
+              logpath  = /var/log/auth.log
+              maxretry = 4
+              bantime  = 7200
+
+              [proxmox]
+              enabled  = true
+              port     = 8006
+              filter   = proxmox
+              logpath  = /var/log/daemon.log
+              maxretry = 3
+              bantime  = 86400
+          notify: Restart fail2ban
+
+        - name: Deploy fail2ban Proxmox filter
+          ansible.builtin.copy:
+            dest: /etc/fail2ban/filter.d/proxmox.conf
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              [Definition]
+              failregex = pvedaemon\[.*authentication failure; rhost=<HOST> user=.* msg=.*
+              ignoreregex =
+          notify: Restart fail2ban
+
+        - name: Enable and start fail2ban
+          ansible.builtin.service:
+            name: fail2ban
+            enabled: yes
+            state: started
+
+        # ── Proxmox Host Firewall ─────────────────────────────────────────────
+        # Uses PVE's native firewall — restricts ports 22 and 8006.
+        # RFC1918 ranges (10/8, 172.16/12, 192.168/16) are allowed for SSH
+        # so the Ansible CronJob (running on an in-cluster node) can connect.
+        - name: Retrieve node hostname
+          ansible.builtin.command: hostname -s
+          register: pve_node
+          changed_when: false
+
+        - name: Enable cluster-level PVE firewall
+          ansible.builtin.copy:
+            dest: /etc/pve/firewall/cluster.fw
+            owner: root
+            group: www-data
+            mode: "0640"
+            content: |
+              [OPTIONS]
+              enable: 1
+              log_level_in: warning
+              log_level_out: warning
+
+        - name: Configure node-level PVE firewall rules
+          ansible.builtin.copy:
+            dest: "/etc/pve/firewall/{{ pve_node.stdout }}.fw"
+            owner: root
+            group: www-data
+            mode: "0640"
+            content: |
+              [OPTIONS]
+              enable: 1
+
+              [RULES]
+              # SSH — admin IP + RFC1918 (for in-cluster Ansible access)
+              IN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"
+              IN ACCEPT -source 10.0.0.0/8 -p tcp -dport 22 -comment "SSH internal"
+              IN ACCEPT -source 172.16.0.0/12 -p tcp -dport 22 -comment "SSH internal"
+              IN ACCEPT -source 192.168.0.0/16 -p tcp -dport 22 -comment "SSH internal"
+              IN DROP -p tcp -dport 22 -comment "Block external SSH"
+              # Proxmox UI — admin IP only
+              IN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"
+              IN DROP -p tcp -dport 8006 -comment "Block external Proxmox UI"
+          notify: Restart pve-firewall
+
+        # ── SSH Hardening (CIS Debian 13 / Trixie) ───────────────────────────
+        - name: Deploy hardened sshd_config (CIS Benchmark Debian 13)
+          ansible.builtin.copy:
+            dest: /etc/ssh/sshd_config
+            owner: root
+            group: root
+            mode: "0600"
+            validate: "/usr/sbin/sshd -t -f %s"
+            content: |
+              # sshd_config — CIS Debian 13 hardened
+              # Managed by Ansible. Do not edit manually.
+
+              Port 22
+              AddressFamily inet
+              ListenAddress 0.0.0.0
+
+              HostKey /etc/ssh/ssh_host_rsa_key
+              HostKey /etc/ssh/ssh_host_ecdsa_key
+              HostKey /etc/ssh/ssh_host_ed25519_key
+
+              # ── Authentication ──────────────────────────────────────────────
+              # CIS 5.2.10: prohibit-password keeps key-based root access for
+              # the Ansible CronJob; prevents password-based root logins.
+              PermitRootLogin prohibit-password
+              AuthenticationMethods publickey
+              PubkeyAuthentication yes
+              PasswordAuthentication no
+              PermitEmptyPasswords no
+              ChallengeResponseAuthentication no
+              KerberosAuthentication no
+              GSSAPIAuthentication no
+              UsePAM yes
+
+              # CIS 5.2.7
+              MaxAuthTries 4
+              # CIS 5.2.8
+              IgnoreRhosts yes
+              # CIS 5.2.9
+              HostbasedAuthentication no
+              # CIS 5.2.12
+              PermitUserEnvironment no
+
+              # ── Forwarding / Tunnelling ─────────────────────────────────────
+              # CIS 5.2.6
+              X11Forwarding no
+              # CIS 5.2.16
+              AllowTcpForwarding no
+              AllowAgentForwarding no
+              AllowStreamLocalForwarding no
+
+              # ── Logging ─────────────────────────────────────────────────────
+              # CIS 5.2.5
+              SyslogFacility AUTH
+              LogLevel VERBOSE
+
+              # ── Session limits ───────────────────────────────────────────────
+              # CIS 5.2.21
+              LoginGraceTime 60
+              # CIS 5.2.22
+              ClientAliveInterval 300
+              ClientAliveCountMax 3
+              # CIS 5.2.19
+              MaxStartups 10:30:60
+              # CIS 5.2.20
+              MaxSessions 10
+
+              # ── Crypto — CIS 5.2.13/5.2.14/5.2.15 ──────────────────────────
+              MACs hmac-sha2-256,hmac-sha2-512,hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com
+              Ciphers aes128-ctr,aes192-ctr,aes256-ctr,aes128-gcm@openssh.com,aes256-gcm@openssh.com,chacha20-poly1305@openssh.com
+              KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521,diffie-hellman-group14-sha256,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512
+
+              # ── Banner — CIS 5.2.17 ──────────────────────────────────────────
+              Banner /etc/ssh/issue.net
+              PrintMotd no
+              PrintLastLog yes
+
+              # ── Misc hardening ───────────────────────────────────────────────
+              StrictModes yes
+              Compression no
+              TCPKeepAlive no
+              UseDNS no
+
+              AcceptEnv LANG LC_*
+              Subsystem sftp /usr/lib/openssh/sftp-server
+          notify: Restart sshd
+
+        - name: Deploy SSH warning banner (CIS 5.2.17)
+          ansible.builtin.copy:
+            dest: /etc/ssh/issue.net
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              *******************************************************************************
+              * This system is for authorized use only. All activities are monitored and   *
+              * logged. Unauthorized access will be prosecuted.                            *
+              *******************************************************************************
+
+        - name: Set strict permissions on sshd_config (CIS 5.2.1)
+          ansible.builtin.file:
+            path: /etc/ssh/sshd_config
+            owner: root
+            group: root
+            mode: "0600"
+
+      handlers:
+        - name: Restart fail2ban
+          ansible.builtin.service:
+            name: fail2ban
+            state: restarted
+
+        - name: Restart sshd
+          ansible.builtin.service:
+            name: ssh
+            state: restarted
+
+        - name: Restart pve-firewall
+          ansible.builtin.service:
+            name: pve-firewall
+            state: restarted
