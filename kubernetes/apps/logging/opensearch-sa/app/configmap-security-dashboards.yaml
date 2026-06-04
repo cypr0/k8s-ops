@@ -85,7 +85,7 @@ data:
         })
 
     # ════════════════════════════════════════════════════════════════════════
-    # INDEX PATTERNS
+    # INDEX PATTERNS  (create then refresh fields from actual indices)
     # ════════════════════════════════════════════════════════════════════════
     for idx_id, pattern, ts in [
         ("falco-idx",      "falco-*",      "@timestamp"),
@@ -94,6 +94,16 @@ data:
         r, s = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
                    {"attributes": {"title": pattern, "timeFieldName": ts, "fields": "[]"}})
         print("Index pattern " + pattern + ": " + str(s))
+        # Discover actual field mappings from the index so .keyword sub-fields are known
+        r2, s2 = osd("GET", "/api/index_patterns/_fields_for_wildcard?pattern=" + pattern +
+                     "&meta_fields=_source,_id,_type,_index,_score")
+        if s2 == 200 and "fields" in r2:
+            fields_json = json.dumps(r2["fields"])
+            osd("PUT", "/api/saved_objects/index-pattern/" + idx_id,
+                {"attributes": {"fields": fields_json}})
+            print("  Fields refreshed: " + str(len(r2["fields"])))
+        else:
+            print("  Field refresh failed: " + str(s2))
 
     # ════════════════════════════════════════════════════════════════════════
     # DASHBOARD 1 — Falco Runtime Security
