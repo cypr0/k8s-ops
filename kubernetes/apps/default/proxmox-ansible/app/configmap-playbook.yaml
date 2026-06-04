@@ -11,10 +11,12 @@ data:
     apk add --no-cache ansible openssh-client >/dev/null 2>&1
     echo "Ansible $(ansible --version | head -1)"
 
-    # Inventory: double-quoted ansible_ssh_common_args avoids single-quote escaping
+    # $${VAR} → Flux ignores and passes through as ${VAR} to the shell at runtime.
+    # Without $$, Flux's postBuild.substituteFrom would replace ${VAR} with empty
+    # because these env vars are not in cluster-secrets.
     echo "[proxmox]" > /tmp/inventory.ini
-    echo "proxmox-host ansible_host=${PROXMOX_SSH_HOST} ansible_user=root ansible_ssh_private_key_file=/tmp/ssh/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
-    echo "Inventory written for host: ${PROXMOX_SSH_HOST}"
+    echo "proxmox-host ansible_host=$${PROXMOX_SSH_HOST} ansible_user=root ansible_ssh_private_key_file=/tmp/ssh/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
+    echo "Inventory written for host: $${PROXMOX_SSH_HOST}"
 
     export ANSIBLE_LOCAL_TMP=/tmp/ansible-local
     export ANSIBLE_REMOTE_TMP=/tmp/.ansible/tmp
@@ -25,7 +27,7 @@ data:
     ansible-playbook \
       -i /tmp/inventory.ini \
       /scripts/hardening.yml \
-      -e "allowed_ip=${ALLOWED_IP}" \
+      -e "allowed_ip=$${ALLOWED_IP}" \
       -e "ansible_pubkey_env_name=PROXMOX_ANSIBLE_SSH_PUBKEY"
 
   hardening.yml: |
