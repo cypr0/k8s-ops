@@ -1,0 +1,188 @@
+---
+# CronJob: Run Kubescape CIS scan and ship results to OpenSearch
+# Runs daily at 02:15 (after the scheduler at 02:00)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubescape-to-opensearch
+spec:
+  schedule: "15 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          serviceAccountName: crd-exporter
+          restartPolicy: OnFailure
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          initContainers:
+            - name: scan
+              image: quay.io/kubescape/kubescape:v4.0.8
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  kubescape scan framework cis-v1.23-t1.0 \
+                    --format json \
+                    --output /results/kubescape.json \
+                    --verbose 2>/dev/null || true
+                  echo "Scan complete, found $(cat /results/kubescape.json | wc -c) bytes"
+              volumeMounts:
+                - name: results
+                  mountPath: /results
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65534
+          containers:
+            - name: ship
+              image: python:3.12-alpine
+              command: ["python3", "/scripts/ship_kubescape.py"]
+              env:
+                - name: OPENSEARCH_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: opensearch-sa-credentials
+                      key: OPENSEARCH_PASSWORD
+              volumeMounts:
+                - name: results
+                  mountPath: /results
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65534
+          volumes:
+            - name: results
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: kubescape-shipper-script
+                defaultMode: 0755
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubescape-shipper-script
+data:
+  ship_kubescape.py: |
+    import json, os, ssl, base64, urllib.request, urllib.error
+    from datetime import datetime, timezone
+
+    OS   = "https://opensearch.logging.svc.cluster.local:9200"
+    PASS = os.environ.get("OPENSEARCH_PASSWORD", "")
+    AUTH = base64.b64encode(("admin:" + PASS).encode()).decode()
+    CTX  = ssl.create_default_context()
+    CTX.check_hostname = False
+    CTX.verify_mode    = ssl.CERT_NONE
+    TODAY = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    TS    = datetime.now(timezone.utc).isoformat()
+
+    def os_bulk(index, docs):
+        if not docs:
+            return 0
+        body = ""
+        for doc in docs:
+            body += json.dumps({"index": {"_index": index}}) + "\n"
+            body += json.dumps(doc) + "\n"
+        req = urllib.request.Request(
+            OS + "/_bulk", data=body.encode(),
+            headers={"Content-Type": "application/x-ndjson", "Authorization": "Basic " + AUTH},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, context=CTX, timeout=60) as r:
+                resp = json.loads(r.read())
+                errors = [i for i in resp.get("items", []) if "error" in i.get("index", {})]
+                return len(docs) - len(errors)
+        except Exception as e:
+            print(f"ERROR bulk: {e}")
+            return 0
+
+    results_file = "/results/kubescape.json"
+    if not os.path.exists(results_file) or os.path.getsize(results_file) == 0:
+        print("No scan results found — scan may have failed")
+        exit(0)
+
+    with open(results_file) as f:
+        data = json.load(f)
+
+    docs = []
+    index = f"kubescape-{TODAY}"
+
+    # Parse Kubescape JSON output format
+    results = data if isinstance(data, list) else data.get("results", [])
+    for result in results:
+        resource_id = result.get("resourceID", "")
+        controls    = result.get("controls", result.get("controlResults", []))
+        for ctrl in (controls if isinstance(controls, list) else []):
+            status = ctrl.get("status", {})
+            if isinstance(status, dict):
+                status_val = status.get("status", "")
+            else:
+                status_val = str(status)
+
+            if status_val.lower() not in ("failed", "error"):
+                continue
+
+            ctrl_info = ctrl.get("control", ctrl)
+            sev_score = ctrl_info.get("baseScore", ctrl_info.get("scoreFactor", 0))
+            if isinstance(sev_score, dict):
+                sev_score = sev_score.get("baseScore", 0)
+
+            sev_label = "Critical" if sev_score >= 8 else "High" if sev_score >= 5 else "Medium"
+            # Only keep Medium+ for relevance
+            if sev_score < 3:
+                continue
+
+            # Extract namespace from resourceID (format: namespace/kind/name)
+            parts = resource_id.split("/") if resource_id else []
+            ns   = parts[0] if len(parts) > 0 else "cluster"
+            kind = parts[1] if len(parts) > 1 else "Unknown"
+            name = parts[2] if len(parts) > 2 else resource_id
+
+            docs.append({
+                "@timestamp":  TS,
+                "namespace":   ns,
+                "kind":        kind,
+                "resource":    name,
+                "ruleName":    ctrl_info.get("name", ctrl_info.get("id", "unknown")),
+                "ruleID":      ctrl_info.get("id", ctrl_info.get("controlID", "")),
+                "severity":    sev_label,
+                "scoreFactor": sev_score,
+                "remediation": ctrl_info.get("remediation", ""),
+                "description": ctrl_info.get("description", "")[:500],
+                "source":      "kubescape"
+            })
+
+    indexed = os_bulk(index, docs)
+    print(f"Kubescape: Indexed {indexed}/{len(docs)} findings to {index}")
+    print(f"Severity breakdown: " + str({
+        s: len([d for d in docs if d["severity"]==s])
+        for s in ["Critical","High","Medium"]
+    }))
