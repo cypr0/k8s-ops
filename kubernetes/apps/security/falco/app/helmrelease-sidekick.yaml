@@ -54,12 +54,22 @@ spec:
       pushover:
         minimumpriority: critical
 
-    # Credentials via envFrom — all keys become env vars directly
-    extraEnvFrom:
-      - secretRef:
-          name: falcosidekick-pushover
-      - secretRef:
-          name: falcosidekick-opensearch
+    extraEnv:
+      - name: PUSHOVER_APITOKEN
+        valueFrom:
+          secretKeyRef:
+            name: falcosidekick-pushover
+            key: PUSHOVER_APITOKEN
+      - name: PUSHOVER_USERKEY
+        valueFrom:
+          secretKeyRef:
+            name: falcosidekick-pushover
+            key: PUSHOVER_USERKEY
+      - name: ELASTICSEARCH_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: falcosidekick-opensearch
+            key: ELASTICSEARCH_PASSWORD
 
     resources:
       requests:
