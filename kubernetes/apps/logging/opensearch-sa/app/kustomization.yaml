@@ -20,4 +20,3 @@ resources:
   - ./job-opnsense.yaml
   - ./configmap-security-dashboards.yaml
   - ./job-security-dashboards.yaml
-  - ./cronjob-kubescape-scan.yaml

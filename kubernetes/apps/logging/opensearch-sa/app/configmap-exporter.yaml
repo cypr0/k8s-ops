@@ -149,49 +149,86 @@ data:
     except Exception as e:
         print(f"  Trivy config audit error: {e}", file=sys.stderr)
 
-    # ── Kubescape ConfigurationScanSummaries ─────────────────────────────
-    # Uses configurationscansummaries which contains actual severity counts
-    print("=== Kubescape ConfigurationScanSummaries ===")
+    # ── Kubescape WorkloadConfigurationScans ─────────────────────────────
+    # NOTE: The list API omits spec.controls — must GET each item individually.
+    # Individual GETs include full controls with status, severity, ruleName.
+    print("=== Kubescape WorkloadConfigurationScans ===")
     ks_index = f"kubescape-{TODAY}"
     ks_docs  = []
     try:
-        for item in k8s_get_all("/apis/spdx.softwarecomposition.kubescape.io/v1beta1/configurationscansummaries"):
-            meta = item.get("metadata", {})
-            spec = item.get("spec", {})
-            ns   = meta.get("name", "")  # name = namespace for summaries
-            sev  = spec.get("severities", {})
-            ref  = spec.get("summaryRef", {})
-            # Export one doc per namespace-level summary
-            doc = {
-                "@timestamp":        ts,
-                "namespace":         ns,
-                "kind":              ref.get("kind", "Namespace"),
-                "resource":          ref.get("name", ns),
-                "severity_critical": sev.get("critical", 0),
-                "severity_high":     sev.get("high", 0),
-                "severity_medium":   sev.get("medium", 0),
-                "severity_low":      sev.get("low", 0),
-                "source":            "kubescape"
-            }
-            # Create one finding per failed severity level
-            for sev_label, count_key in [("Critical","critical"),("High","high"),("Medium","medium")]:
-                count = sev.get(count_key, 0)
-                if count > 0:
-                    for _ in range(min(count, 10)):  # max 10 per level to avoid too many docs
-                        ks_docs.append({
-                            "@timestamp":  ts,
-                            "namespace":   ns,
-                            "kind":        ref.get("kind", "Namespace"),
-                            "resource":    ref.get("name", ns),
-                            "ruleName":    f"{sev_label} CIS violation in {ns}",
-                            "severity":    sev_label,
-                            "scoreFactor": 9 if sev_label == "Critical" else 6 if sev_label == "High" else 3,
-                            "source":      "kubescape"
-                        })
+        import time as _time
+        token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
+        ca    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        k8s_ctx = ssl.create_default_context(cafile=ca)
+
+        def k8s_get_one(path):
+            req = urllib.request.Request(
+                f"https://kubernetes.default.svc{path}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            with urllib.request.urlopen(req, context=k8s_ctx) as r:
+                return json.loads(r.read())
+
+        # Step 1: list all scans (metadata only — controls absent from list response)
+        base = "/apis/spdx.softwarecomposition.kubescape.io/v1beta1/workloadconfigurationscans"
+        stubs = k8s_get_all(base)
+        print(f"  Found {len(stubs)} workload scans — fetching individually...")
+        seen_controls = set()  # deduplicate same control across namespaces
+        for i, stub in enumerate(stubs):
+            meta = stub.get("metadata", {})
+            ns   = meta.get("namespace", "")
+            name = meta.get("name", "")
+            kind = meta.get("labels", {}).get("kubescape.io/workload-kind", "Unknown")
+            wl   = meta.get("labels", {}).get("kubescape.io/workload-name", name)
+            try:
+                item = k8s_get_one(f"{base}/{ns}/{name}" if ns else f"{base}/{name}")
+            except Exception:
+                item = stub  # fall back to stub (no controls)
+            controls = item.get("spec", {}).get("controls", {}) or {}
+            for cid, ctrl in controls.items():
+                st = ctrl.get("status", {})
+                if not isinstance(st, dict) or st.get("status") != "failed":
+                    continue
+                sev_info = ctrl.get("severity", {})
+                sev_label = sev_info.get("severity", "Unknown")
+                sev_score = sev_info.get("scoreFactor", 0)
+                if sev_label not in ("Critical", "High", "Medium"):
+                    continue
+                # One doc per (namespace, workload, control) — deduplicate same ctrl id
+                dedup_key = f"{ns}/{wl}/{cid}"
+                if dedup_key in seen_controls:
+                    continue
+                seen_controls.add(dedup_key)
+                # Extract remediation from first rule's paths
+                remediation = ""
+                for rule in ctrl.get("rules", []):
+                    for path in rule.get("paths", []):
+                        if path.get("fixPath"):
+                            remediation = f"Set {path['fixPath']}={path.get('fixPathValue','<value>')}"
+                            break
+                    if remediation:
+                        break
+                ks_docs.append({
+                    "@timestamp":  ts,
+                    "namespace":   ns,
+                    "kind":        kind,
+                    "resource":    wl,
+                    "ruleID":      cid,
+                    "ruleName":    ctrl.get("name", cid),
+                    "severity":    sev_label,
+                    "scoreFactor": sev_score,
+                    "remediation": remediation,
+                    "source":      "kubescape"
+                })
+            if (i + 1) % 50 == 0:
+                print(f"  Processed {i+1}/{len(stubs)}, findings so far: {len(ks_docs)}")
+                _time.sleep(0.5)
         indexed = os_bulk(ks_index, ks_docs)
         print(f"  Indexed {indexed}/{len(ks_docs)} Kubescape findings to {ks_index}")
     except Exception as e:
+        import traceback
         print(f"  Kubescape export error: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
 
     print("=== CRD export complete ===")
     print(f"  Trivy CVEs: {len(docs) + len(audit_docs)}, Kubescape: {len(ks_docs)}")
