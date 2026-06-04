@@ -115,7 +115,7 @@ data:
             cache_valid_time: 3600
 
         - name: List available upgrades
-          ansible.builtin.command: apt list --upgradable 2>/dev/null
+          ansible.builtin.shell: apt list --upgradable 2>/dev/null
           register: upgradable
           changed_when: false
 
