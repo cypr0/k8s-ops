@@ -12,10 +12,9 @@ data:
     echo "Ansible $(ansible --version | head -1)"
 
     # Fix SSH key: 1Password collapses newlines to spaces in password fields.
-    # Replace space after BEGIN header and before END footer, then remaining
-    # spaces (base64 line breaks). Headers contain spaces so plain tr fails.
+    # fix_key.py is a proper Python file (no shell quoting issues).
     mkdir -p /tmp/ssh-rw
-    python3 -c 'import re; k=open("/tmp/ssh/id_rsa").read().strip(); k=k.replace("-----BEGIN OPENSSH PRIVATE KEY----- ","-----BEGIN OPENSSH PRIVATE KEY-----\n"); k=re.sub(r" -----END OPENSSH PRIVATE KEY-----.*","\n-----END OPENSSH PRIVATE KEY-----",k); k=k.replace(" ","\n"); open("/tmp/ssh-rw/id_rsa","w").write(k+"\n")'
+    python3 /scripts/fix_key.py /tmp/ssh/id_rsa /tmp/ssh-rw/id_rsa
     chmod 600 /tmp/ssh-rw/id_rsa
     echo "SSH key lines: $(wc -l < /tmp/ssh-rw/id_rsa)"
     head -1 /tmp/ssh-rw/id_rsa
@@ -38,6 +37,30 @@ data:
       /scripts/hardening.yml \
       -e "allowed_ip=$${ALLOWED_IP}" \
       -e "ansible_pubkey_env_name=PROXMOX_ANSIBLE_SSH_PUBKEY"
+
+  fix_key.py: |
+    import re, sys
+
+    raw = open(sys.argv[1]).read().strip()
+    print('raw len:', len(raw), 'newlines:', raw.count('\n'), 'spaces:', raw.count(' '))
+
+    # Restore newlines that 1Password collapses to spaces.
+    # Step 1: header + space → header + newline
+    fixed = raw.replace('-----BEGIN OPENSSH PRIVATE KEY----- ', '-----BEGIN OPENSSH PRIVATE KEY-----\n')
+    # Step 2: space + footer → newline + footer (strip any extra trailing dashes)
+    fixed = re.sub(r' -----END OPENSSH PRIVATE KEY-----[-]*', '\n-----END OPENSSH PRIVATE KEY-----', fixed)
+    # Step 3: replace spaces ONLY in the base64 middle section.
+    # The header and footer themselves contain spaces (e.g. "BEGIN OPENSSH PRIVATE KEY")
+    # so we must not run replace(' ','\n') on the whole string.
+    parts = fixed.split('\n')
+    header = parts[0]
+    footer = parts[-1]
+    b64    = '\n'.join(parts[1:-1]).replace(' ', '\n')
+    fixed  = header + '\n' + b64 + '\n' + footer
+
+    print('fixed lines:', len(fixed.splitlines()))
+    print('first line:', fixed.splitlines()[0])
+    open(sys.argv[2], 'w').write(fixed + '\n')
 
   hardening.yml: |
     ---
