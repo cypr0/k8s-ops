@@ -199,6 +199,11 @@ data:
           register: pve_node
           changed_when: false
 
+        - name: Detect WAN interface (interface carrying the public IP)
+          ansible.builtin.shell: ip -o addr show | grep '{{ proxmox_host }}' | awk '{print $2}'
+          register: wan_iface
+          changed_when: false
+
         # /etc/pve/firewall is PMXCFS (FUSE) — no atomic rename support.
         # ansible.builtin.copy fails because it writes a temp file then renames.
         # Use shell with printf so content stays on one line (no YAML indent issues).
@@ -211,7 +216,7 @@ data:
 
         - name: Configure node-level PVE firewall rules
           ansible.builtin.shell: >-
-            printf '[OPTIONS]\nenable: 1\n\n[RULES]\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"\nIN ACCEPT -source {{ proxmox_host }} -p tcp -dport 22 -comment "SSH self (k8s pods)"\nIN ACCEPT -source 10.0.0.0/8 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 172.16.0.0/12 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 192.168.0.0/16 -p tcp -dport 22 -comment "SSH internal"\nIN DROP -p tcp -dport 22 -comment "Block external SSH"\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"\nIN DROP -p tcp -dport 8006 -comment "Block external Proxmox UI"\n'
+            printf '[OPTIONS]\nenable: 1\n\n[RULES]\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"\nIN ACCEPT -source {{ proxmox_host }} -p tcp -dport 22 -comment "SSH self"\nIN DROP -i {{ wan_iface.stdout }} -p tcp -dport 22 -comment "Block external SSH"\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"\nIN DROP -i {{ wan_iface.stdout }} -p tcp -dport 8006 -comment "Block external Proxmox UI"\n'
             > /etc/pve/firewall/{{ pve_node.stdout }}.fw
           args:
             executable: /bin/bash
