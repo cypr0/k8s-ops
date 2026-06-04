@@ -190,7 +190,7 @@ data:
             c() + [t("namespace.keyword", 15)], KI),
 
         mkv("ks-v8-sev",      "Severity Distribution",    "pie", pie_p(),
-            c() + [t("severity.keyword", 5)], KI),
+            c() + [t("severity", 5)], KI),
 
         mkv("ks-v9-kind",     "Violations by Resource Kind","horizontal_bar", hbar_p(),
             c() + [t("kind.keyword", 10)], KI),
