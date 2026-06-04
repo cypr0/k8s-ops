@@ -92,14 +92,14 @@ data:
         v("fw-v4-inbound",  "⬇️ Inbound",              "metric", METRIC_P, count_agg(), fw_filter + [{"term":{"fw_direction":"in"}}]),
 
         v("fw-v5-timeline", "Traffic Timeline", "line", line_p(),
-          count_agg() + [date_agg(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"fw_action_category","size":3,"order":"desc","orderBy":"1"}}],
+          count_agg() + [date_agg(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"fw_action_category.keyword","size":3,"order":"desc","orderBy":"1"}}],
           fw_filter),
 
         v("fw-v6-action",   "Action Distribution",   "pie", pie_p(),
-          count_agg() + [terms_agg("fw_action_category")], fw_filter),
+          count_agg() + [terms_agg("fw_action_category.keyword")], fw_filter),
 
         v("fw-v7-proto",    "Protocol Distribution", "pie", pie_p(),
-          count_agg() + [terms_agg("fw_protocol", 10)], fw_filter),
+          count_agg() + [terms_agg("fw_protocol.keyword", 10)], fw_filter),
 
         v("fw-v8-top-src",  "Top 15 Source IPs (Blocked)", "horizontal_bar", hbar_p(),
           count_agg() + [terms_agg("src_ip", 15)],
@@ -110,7 +110,7 @@ data:
           fw_filter + [{"term":{"fw_action":"block"}}]),
 
         v("fw-v10-iface",   "Traffic by Interface", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("fw_interface", 10)], fw_filter),
+          count_agg() + [terms_agg("fw_interface.keyword", 10)], fw_filter),
     ]
 
     print("\nCreating Firewall Traffic visualizations...")
@@ -168,10 +168,10 @@ data:
           ids_filter),
 
         v("ids-v6-category", "Top Alert Categories", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("suricata_category", 15)], ids_filter),
+          count_agg() + [terms_agg("suricata_category.keyword", 15)], ids_filter),
 
         v("ids-v7-sigs",     "Top Signatures", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("suricata_signature", 15)], ids_filter),
+          count_agg() + [terms_agg("suricata_signature.keyword", 15)], ids_filter),
 
         v("ids-v8-src-ips",  "Top Source IPs", "horizontal_bar", hbar_p(),
           count_agg() + [terms_agg("src_ip", 15)], ids_filter),
