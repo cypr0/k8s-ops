@@ -1,0 +1,99 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proxmox-pipeline-script
+data:
+  setup_pipeline.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    OS="https://opensearch.logging.svc.cluster.local:9200"
+    AUTH="admin:${OPENSEARCH_PASSWORD}"
+    CURL="curl -sk -u ${AUTH}"
+
+    echo "=== Waiting for OpenSearch ==="
+    until ${CURL} "${OS}/_cluster/health" | grep -q '"status"'; do
+      echo "Waiting..."; sleep 10
+    done
+
+    # ── 1. Create Ingest Pipeline for Proxmox syslog enrichment ──────────
+    echo "=== Creating Proxmox syslog ingest pipeline ==="
+    ${CURL} -X PUT "${OS}/_ingest/pipeline/proxmox-syslog-enrich" \
+      -H "Content-Type: application/json" -d '{
+        "description": "Enrich Proxmox syslog messages: extract src_ip, username, action",
+        "processors": [
+          {
+            "grok": {
+              "field": "message",
+              "patterns": [
+                "Failed password for invalid user %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                "Failed password for %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                "Invalid user %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int}",
+                "Accepted %{WORD:auth_method} for %{WORD:username} from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                "Disconnected from invalid user %{WORD:username} %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                "Disconnected from %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                "Connection closed by invalid user %{WORD:username} %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                "Connection closed by %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
+                "authentication failure; rhost=::ffff:%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}",
+                "authentication failure; rhost=%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}",
+                "pam_unix\\(sshd:auth\\): authentication failure;%{GREEDYDATA}rhost=%{IP:src_ip}%{GREEDYDATA}"
+              ],
+              "ignore_failure": true
+            }
+          },
+          {
+            "script": {
+              "lang": "painless",
+              "source": "String msg = ctx.get('\''message'\'', '\'\'\''); if (msg.contains(\"Failed password\")) { ctx.action = \"ssh_failed_password\"; ctx.action_category = \"auth_failure\"; } else if (msg.contains(\"Invalid user\")) { ctx.action = \"ssh_invalid_user\"; ctx.action_category = \"auth_failure\"; } else if (msg.contains(\"Accepted\")) { ctx.action = \"ssh_accepted\"; ctx.action_category = \"auth_success\"; } else if (msg.contains(\"authentication failure\")) { ctx.action = \"api_auth_failure\"; ctx.action_category = \"auth_failure\"; } else if (msg.contains(\"Disconnected from invalid\")) { ctx.action = \"ssh_disconnected_invalid\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"Disconnected\")) { ctx.action = \"ssh_disconnected\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"Connection closed by invalid\")) { ctx.action = \"ssh_closed_invalid\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"Connection closed\")) { ctx.action = \"ssh_closed\"; ctx.action_category = \"connection\"; } else if (msg.contains(\"check pass\")) { ctx.action = \"pam_check\"; ctx.action_category = \"auth_check\"; }"
+            }
+          }
+        ]
+      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Pipeline:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null
+
+    # ── 2. Apply pipeline to syslog-* index template ─────────────────────
+    echo "=== Updating syslog index template with default pipeline ==="
+    ${CURL} -X PUT "${OS}/_index_template/syslog-template" \
+      -H "Content-Type: application/json" -d '{
+        "index_patterns": ["syslog-*"],
+        "priority": 200,
+        "template": {
+          "settings": {
+            "index.default_pipeline": "proxmox-syslog-enrich"
+          },
+          "mappings": {
+            "properties": {
+              "@timestamp":      {"type": "date"},
+              "host":            {"type": "keyword"},
+              "source":          {"type": "keyword"},
+              "ident":           {"type": "keyword"},
+              "pid":             {"type": "keyword"},
+              "severity":        {"type": "keyword"},
+              "message":         {"type": "text"},
+              "src_ip":          {"type": "ip",      "ignore_malformed": true},
+              "src_port":        {"type": "integer", "ignore_malformed": true},
+              "username":        {"type": "keyword"},
+              "auth_method":     {"type": "keyword"},
+              "action":          {"type": "keyword"},
+              "action_category": {"type": "keyword"}
+            }
+          }
+        }
+      }' | python3 -c "import json,sys; r=json.load(sys.stdin); print('Template:', 'OK' if r.get('acknowledged') else r)" 2>/dev/null
+
+    # ── 3. Re-process today'\''s existing syslog data ─────────────────────
+    echo "=== Re-processing existing syslog indices with pipeline ==="
+    TODAY=$(date -u +%Y.%m.%d)
+    for IDX in $(${CURL} "${OS}/_cat/indices/syslog-*?h=index" 2>/dev/null | grep -v "^$"); do
+      echo -n "  Reindexing ${IDX}... "
+      RESULT=$(${CURL} -X POST "${OS}/_reindex?wait_for_completion=false" \
+        -H "Content-Type: application/json" -d "{
+          \"source\": {\"index\": \"${IDX}\"},
+          \"dest\":   {\"index\": \"${IDX}-enriched\", \"pipeline\": \"proxmox-syslog-enrich\"}
+        }" 2>/dev/null | python3 -c "import json,sys; r=json.load(sys.stdin); print(r.get('task','error'))" 2>/dev/null)
+      echo "task: ${RESULT}"
+    done
+
+    echo "=== Pipeline setup complete ==="
+    echo "New syslog docs will be automatically enriched."
+    echo "Fields added: src_ip, src_port, username, auth_method, action, action_category"

@@ -11,3 +11,7 @@ resources:
   - ./cronjob-exporter.yaml
   - ./configmap-dashboard.yaml
   - ./job-dashboard.yaml
+  - ./configmap-proxmox-pipeline.yaml
+  - ./job-proxmox-pipeline.yaml
+  - ./configmap-proxmox-dashboard.yaml
+  - ./job-proxmox-dashboard.yaml

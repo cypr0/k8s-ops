@@ -1,0 +1,196 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proxmox-dashboard-script
+data:
+  create_proxmox_dashboard.py: |
+    #!/usr/bin/env python3
+    """
+    Create Proxmox Security Dashboard in OpenSearch Dashboards.
+    Requires the proxmox-syslog-enrich ingest pipeline to be set up first.
+    """
+    import json, os, time, base64, urllib.request, urllib.error
+
+    import base64 as b64mod
+    OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    OSD_USER = os.environ.get("OSD_USER", "admin")
+    OSD_PASS = os.environ.get("OSD_PASS", "")
+    _b64     = b64mod.b64encode(f"{OSD_USER}:{OSD_PASS}".encode()).decode()
+    HEADERS  = {"Content-Type": "application/json", "osd-xsrf": "true", "Authorization": f"Basic {_b64}"}
+
+    def osd(method, path, body=None):
+        url  = f"{OSD}{path}"
+        data = json.dumps(body).encode() if body else None
+        req  = urllib.request.Request(url, data=data, headers=HEADERS, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read()), r.status
+        except urllib.error.HTTPError as e:
+            body = e.read()
+            try: return json.loads(body), e.code
+            except: return {"raw": body.decode()[:200]}, e.code
+
+    print("Waiting for Dashboards...")
+    for _ in range(30):
+        try:
+            r, s = osd("GET", "/api/status")
+            if s == 200 and r.get("status", {}).get("overall", {}).get("state") == "green":
+                print("Ready."); break
+        except: pass
+        time.sleep(10)
+
+    IDX = "syslog-proxmox-idx"
+
+    # ── Index pattern ─────────────────────────────────────────────────────
+    print("Creating index pattern...")
+    r, s = osd("POST", f"/api/saved_objects/index-pattern/{IDX}?overwrite=true", {
+        "attributes": {"title": "syslog-*", "timeFieldName": "@timestamp", "fields": "[]"}
+    })
+    print(f"  {s}")
+
+    def viz(vid, title, vis_type, params, aggs, src_filter=None):
+        flt = [{"term": {"source": "proxmox"}}]
+        if src_filter:
+            flt.extend(src_filter)
+        return {
+            "type": "visualization", "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({"title": title, "type": vis_type, "params": params, "aggs": aggs}),
+                "uiStateJSON": "{}",
+                "description": "",
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
+                    "index": IDX,
+                    "query": {"bool": {"filter": flt, "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })}
+            },
+            "references": [{"id": IDX, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    METRIC_PARAMS = {
+        "addTooltip": True, "addLegend": False, "type": "gauge",
+        "gauge": {
+            "verticalSplit": False, "extendRange": True, "percentageMode": False,
+            "gaugeType": "Metric", "gaugeColorMode": "None",
+            "colorsRange": [{"from": 0, "to": 1000000}], "invertColors": False,
+            "labels": {"show": True, "color": "black"},
+            "scale": {"show": False, "labels": False, "color": "#333"},
+            "type": "simple",
+            "style": {"bgFill": "#000", "bgColor": False, "labelColor": False, "subText": "", "fontSize": 60}
+        }
+    }
+
+    vizs = [
+        # Row 1: KPI
+        viz("prx-v1-attacks",    "🔴 SSH Attack Attempts",  "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}],
+            [{"terms": {"action": ["ssh_failed_password", "ssh_invalid_user"]}}]),
+
+        viz("prx-v2-api-fails",  "🟠 API Auth Failures",   "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}],
+            [{"term": {"action": "api_auth_failure"}}]),
+
+        viz("prx-v3-unique-ips", "🌍 Unique Attack IPs",   "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"src_ip"}}]),
+
+        viz("prx-v4-success",    "✅ Successful Logins",   "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}],
+            [{"term": {"action": "ssh_accepted"}}]),
+
+        # Row 2: Timeline
+        viz("prx-v5-timeline",  "Attack Timeline",  "line",
+            {"type":"line","grid":{"categoryLines":False},
+             "categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"bottom","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"filter":True,"truncate":100},"title":{}}],
+             "valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"left","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],
+             "seriesParams":[{"show":True,"type":"line","mode":"normal","data":{"label":"SSH Attacks","id":"1"},"drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True,"interpolate":"linear","valueAxis":"ValueAxis-1"}],
+             "addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"date_histogram","schema":"segment","params":{"field":"@timestamp","useNormalizedEsInterval":True,"interval":"auto","drop_partials":False,"min_doc_count":1,"extended_bounds":{}}},
+             {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"action_category","size":5,"order":"desc","orderBy":"1"}}],
+            [{"terms": {"action_category": ["auth_failure", "auth_success"]}}]),
+
+        # Row 3: Top attackers + usernames
+        viz("prx-v6-top-ips", "Top 15 Attacking IPs", "horizontal_bar",
+            {"type":"histogram","grid":{"categoryLines":False},
+             "categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],
+             "valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Attempts"}}],
+             "seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],
+             "addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False,"truncateLegend":True,"maxLegendLines":1,"distinctColors":False},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":"src_ip","size":15,"order":"desc","orderBy":"1"}}],
+            [{"terms": {"action_category": ["auth_failure"]}}]),
+
+        viz("prx-v7-usernames", "Top 15 Targeted Usernames", "horizontal_bar",
+            {"type":"histogram","grid":{"categoryLines":False},
+             "categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],
+             "valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Attempts"}}],
+             "seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],
+             "addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False,"truncateLegend":True,"maxLegendLines":1,"distinctColors":False},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":"username","size":15,"order":"desc","orderBy":"1"}}],
+            [{"terms": {"action_category": ["auth_failure"]}}]),
+
+        # Row 4: Action breakdown + services
+        viz("prx-v8-actions", "Action Breakdown", "pie",
+            {"type":"pie","addTooltip":True,"addLegend":True,"legendPosition":"right","isDonut":True,
+             "labels":{"show":True,"values":True,"last_level":True,"truncate":100}},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":"action","size":15,"order":"desc","orderBy":"1"}}]),
+
+        viz("prx-v9-services", "Log Volume by Service", "horizontal_bar",
+            {"type":"histogram","grid":{"categoryLines":False},
+             "categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],
+             "valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Log entries"}}],
+             "seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],
+             "addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":"ident","size":15,"order":"desc","orderBy":"1"}}]),
+    ]
+
+    print("Creating visualizations...")
+    for v in vizs:
+        r, s = osd("POST", f"/api/saved_objects/{v['type']}/{v['id']}?overwrite=true",
+                   {"attributes": v["attributes"], "references": v.get("references", [])})
+        ok = "✅" if s < 300 else f"❌ {s}: {r.get('message','?')[:80]}"
+        print(f"  {v['attributes']['title']}: {ok}")
+
+    print("Creating dashboard...")
+    panels = [
+        # Row 1: KPIs h=9
+        {"id":"prx-v1-attacks",   "x":0,  "y":0,  "w":12, "h":9},
+        {"id":"prx-v2-api-fails", "x":12, "y":0,  "w":12, "h":9},
+        {"id":"prx-v3-unique-ips","x":24, "y":0,  "w":12, "h":9},
+        {"id":"prx-v4-success",   "x":36, "y":0,  "w":12, "h":9},
+        # Row 2: Timeline (full width)
+        {"id":"prx-v5-timeline",  "x":0,  "y":9,  "w":48, "h":12},
+        # Row 3: Top attackers + usernames
+        {"id":"prx-v6-top-ips",   "x":0,  "y":21, "w":24, "h":14},
+        {"id":"prx-v7-usernames", "x":24, "y":21, "w":24, "h":14},
+        # Row 4: Action breakdown + services
+        {"id":"prx-v8-actions",   "x":0,  "y":35, "w":24, "h":12},
+        {"id":"prx-v9-services",  "x":24, "y":35, "w":24, "h":12},
+    ]
+
+    p_json, refs = [], []
+    for i, p in enumerate(panels):
+        pid = f"panel_{i+1}"
+        p_json.append({"version":"3.6.0","gridData":{"x":p["x"],"y":p["y"],"w":p["w"],"h":p["h"],"i":str(i+1)},"panelIndex":str(i+1),"embeddableConfig":{},"panelRefName":pid})
+        refs.append({"name":pid,"type":"visualization","id":p["id"]})
+
+    r, s = osd("POST", "/api/saved_objects/dashboard/proxmox-security?overwrite=true", {
+        "attributes": {
+            "title": "Proxmox — Security Overview",
+            "description": "SSH brute-force attacks, API auth failures and service activity on Proxmox.",
+            "panelsJSON": json.dumps(p_json),
+            "optionsJSON": json.dumps({"useMargins":True,"syncColors":False,"hidePanelTitles":False}),
+            "version": 1, "timeRestore": False,
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query":{"match_all":{}},"filter":[]})}
+        },
+        "references": refs
+    })
+    print(f"  Dashboard: {s} — ID: proxmox-security")
+    print()
+    print("=== Proxmox Security Dashboard ready ===")
+    print("  URL: <OSD>/app/dashboards#/view/proxmox-security")
