@@ -314,19 +314,19 @@ data:
 
     # Panel layout: 48 columns wide
     panels = [
-        # Row 1: KPI metrics (each 12 wide, 6 high — enough to show numbers)
-        {"id": "trivy-v1-critical", "x": 0,  "y": 0, "w": 12, "h": 6},
-        {"id": "trivy-v2-high",     "x": 12, "y": 0, "w": 12, "h": 6},
-        {"id": "trivy-v3-images",   "x": 24, "y": 0, "w": 12, "h": 6},
-        {"id": "trivy-v4-severity", "x": 36, "y": 0, "w": 12, "h": 6},
-        # Row 2: Charts (y adjusted for taller KPI row)
-        {"id": "trivy-v5-top-images", "x": 0,  "y": 6, "w": 24, "h": 10},
-        {"id": "trivy-v6-namespace",  "x": 24, "y": 6, "w": 24, "h": 10},
+        # Row 1: KPI metrics (each 12 wide, 9 high — shows number + count label)
+        {"id": "trivy-v1-critical", "x": 0,  "y": 0, "w": 12, "h": 9},
+        {"id": "trivy-v2-high",     "x": 12, "y": 0, "w": 12, "h": 9},
+        {"id": "trivy-v3-images",   "x": 24, "y": 0, "w": 12, "h": 9},
+        {"id": "trivy-v4-severity", "x": 36, "y": 0, "w": 12, "h": 9},
+        # Row 2: Charts
+        {"id": "trivy-v5-top-images", "x": 0,  "y": 9, "w": 24, "h": 10},
+        {"id": "trivy-v6-namespace",  "x": 24, "y": 9, "w": 24, "h": 10},
         # Row 3: Tables
-        {"id": "trivy-v7-with-fix",   "x": 0,  "y": 16, "w": 24, "h": 12},
-        {"id": "trivy-v8-no-fix",     "x": 24, "y": 16, "w": 24, "h": 12},
+        {"id": "trivy-v7-with-fix",   "x": 0,  "y": 19, "w": 24, "h": 12},
+        {"id": "trivy-v8-no-fix",     "x": 24, "y": 19, "w": 24, "h": 12},
         # Row 4: Trend
-        {"id": "trivy-v9-trend",      "x": 0,  "y": 28, "w": 48, "h": 8},
+        {"id": "trivy-v9-trend",      "x": 0,  "y": 31, "w": 48, "h": 8},
     ]
 
     panels_json = []
