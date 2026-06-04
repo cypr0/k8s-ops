@@ -202,9 +202,9 @@ data:
                 seen_controls.add(dedup_key)
                 # Extract remediation from first rule's paths
                 remediation = ""
-                for rule in ctrl.get("rules", []):
-                    for path in rule.get("paths", []):
-                        if path.get("fixPath"):
+                for rule in ctrl.get("rules", []) or []:
+                    for path in rule.get("paths", []) or []:
+                        if path and path.get("fixPath"):
                             remediation = f"Set {path['fixPath']}={path.get('fixPathValue','<value>')}"
                             break
                     if remediation:
