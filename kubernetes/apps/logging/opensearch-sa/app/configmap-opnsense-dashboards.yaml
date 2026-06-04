@@ -110,7 +110,7 @@ data:
           fw_filter + [{"term":{"fw_action":"block"}}]),
 
         v("fw-v10-iface",   "Traffic by Interface", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("fw_interface.keyword", 10)], fw_filter),
+          count_agg() + [terms_agg("fw_interface_name.keyword", 10)], fw_filter),
     ]
 
     print("\nCreating Firewall Traffic visualizations...")

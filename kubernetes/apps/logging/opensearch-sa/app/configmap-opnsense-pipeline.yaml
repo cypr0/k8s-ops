@@ -95,6 +95,11 @@ data:
                     "if": "ctx.containsKey('ident') && ctx.ident == 'filterlog'"
                 }
             },
+            # Map interface names to human-readable labels
+            {"set": {"field": "fw_interface_name", "value": "WAN",  "if": "ctx.containsKey('fw_interface') && ctx.fw_interface == 'vtnet0'", "ignore_failure": True}},
+            {"set": {"field": "fw_interface_name", "value": "LAN",  "if": "ctx.containsKey('fw_interface') && ctx.fw_interface == 'vtnet1'", "ignore_failure": True}},
+            {"set": {"field": "fw_interface_name", "value": "VPN",  "if": "ctx.containsKey('fw_interface') && ctx.fw_interface == 'wg0'",    "ignore_failure": True}},
+            {"set": {"field": "fw_interface_name", "value": "{{fw_interface}}", "if": "ctx.containsKey('fw_interface') && !ctx.containsKey('fw_interface_name')", "ignore_failure": True}},
             # Suricata: parse JSON from message field into _suricata_raw
             {
                 "json": {
@@ -157,6 +162,7 @@ data:
                 "fw_rule_num":          {"type": "keyword"},
                 "fw_ip_version":        {"type": "keyword"},
                 "fw_rule_uuid":         {"type": "keyword"},
+                "fw_interface_name":    {"type": "keyword"},
                 "suricata_event_type":  {"type": "keyword"},
                 "suricata_signature":   {"type": "keyword"},
                 "suricata_category":    {"type": "keyword"},
