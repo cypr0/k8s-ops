@@ -66,7 +66,7 @@ spec:
           secretKeyRef:
             name: falcosidekick-pushover
             key: PUSHOVER_USERKEY
-      - name: FALCOSIDEKICK_CONFIG_ELASTICSEARCH_PASSWORD
+      - name: ELASTICSEARCH_PASSWORD
         valueFrom:
           secretKeyRef:
             name: falcosidekick-opensearch
