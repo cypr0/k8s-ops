@@ -12,12 +12,13 @@ data:
     echo "Ansible $(ansible --version | head -1)"
 
     # Fix SSH key: 1Password collapses newlines to spaces in password fields.
-    # tr replaces every space with a newline; grep removes blank lines.
-    # Base64 and PEM headers/footers never contain spaces, so this is safe.
+    # Replace space after BEGIN header and before END footer, then remaining
+    # spaces (base64 line breaks). Headers contain spaces so plain tr fails.
     mkdir -p /tmp/ssh-rw
-    tr ' ' '\n' < /tmp/ssh/id_rsa | grep -v '^$' > /tmp/ssh-rw/id_rsa
+    python3 -c 'import re; k=open("/tmp/ssh/id_rsa").read().strip(); k=k.replace("-----BEGIN OPENSSH PRIVATE KEY----- ","-----BEGIN OPENSSH PRIVATE KEY-----\n"); k=re.sub(r" -----END OPENSSH PRIVATE KEY-----.*","\n-----END OPENSSH PRIVATE KEY-----",k); k=k.replace(" ","\n"); open("/tmp/ssh-rw/id_rsa","w").write(k+"\n")'
     chmod 600 /tmp/ssh-rw/id_rsa
     echo "SSH key lines: $(wc -l < /tmp/ssh-rw/id_rsa)"
+    head -1 /tmp/ssh-rw/id_rsa
 
     # $${VAR} → Flux ignores and passes through as ${VAR} to the shell at runtime.
     # Without $$, Flux's postBuild.substituteFrom would replace ${VAR} with empty
