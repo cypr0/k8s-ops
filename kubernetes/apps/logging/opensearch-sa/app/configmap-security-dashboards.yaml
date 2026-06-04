@@ -110,10 +110,10 @@ data:
         mkv("f-v2-critical", "🔴 Critical",             "metric", METRIC_P, c(), FI, crit_flt),
         mkv("f-v3-warning",  "🟠 Warning+",             "metric", METRIC_P, c(), FI, warn_flt),
         mkv("f-v4-pods",     "📦 Affected Pods",        "metric", METRIC_P,
-            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"output_fields.k8s.pod.name"}}], FI),
+            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"output_fields.k8s.pod.name.keyword"}}], FI),
 
         mkv("f-v5-timeline", "Event Timeline by Priority", "line", line_p(),
-            c() + [dh(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"priority","size":5,"order":"desc","orderBy":"1"}}], FI),
+            c() + [dh(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"priority.keyword","size":5,"order":"desc","orderBy":"1"}}], FI),
 
         mkv("f-v6-rules",    "Top Rules",               "horizontal_bar", hbar_p(),
             c() + [t("rule.keyword", 15)], FI),
@@ -122,7 +122,7 @@ data:
             c() + [t("output_fields.k8s.ns.name.keyword", 15)], FI),
 
         mkv("f-v8-priority", "Priority Distribution",   "pie", pie_p(),
-            c() + [t("priority", 8)], FI),
+            c() + [t("priority.keyword", 8)], FI),
 
         mkv("f-v9-images",   "Top Affected Images",     "horizontal_bar", hbar_p(),
             c() + [t("output_fields.container.image.repository.keyword", 15)], FI),
