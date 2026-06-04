@@ -149,36 +149,47 @@ data:
     except Exception as e:
         print(f"  Trivy config audit error: {e}", file=sys.stderr)
 
-    # ── Kubescape WorkloadConfigurationScans ─────────────────────────────
-    print("=== Kubescape WorkloadConfigurationScans ===")
+    # ── Kubescape ConfigurationScanSummaries ─────────────────────────────
+    # Uses configurationscansummaries which contains actual severity counts
+    print("=== Kubescape ConfigurationScanSummaries ===")
     ks_index = f"kubescape-{TODAY}"
     ks_docs  = []
     try:
-        for item in k8s_get_all("/apis/spdx.softwarecomposition.kubescape.io/v1beta1/workloadconfigurationscans"):
-            meta     = item.get("metadata", {})
-            ns       = meta.get("namespace", "")
-            controls = item.get("spec", {}).get("controls") or {}
-            for ctrl in controls.values():
-                status = ctrl.get("status", {}).get("status", "")
-                if status != "failed":
-                    continue
-                sev = ctrl.get("severity", {}).get("scoreFactor", 0)
-                sev_label = "Critical" if sev >= 8 else "High" if sev >= 5 else "Medium"
-                if sev_label not in ("Critical", "High"):
-                    continue
-                ks_docs.append({
-                    "@timestamp":  ts,
-                    "namespace":   ns,
-                    "resource":    meta.get("name", ""),
-                    "kind":        meta.get("labels", {}).get("kubescape.io/workload-kind", ""),
-                    "ruleName":    ctrl.get("name", ""),
-                    "severity":    sev_label,
-                    "scoreFactor": sev,
-                    "remediation": ctrl.get("remediation", ""),
-                    "source":      "kubescape"
-                })
+        for item in k8s_get_all("/apis/spdx.softwarecomposition.kubescape.io/v1beta1/configurationscansummaries"):
+            meta = item.get("metadata", {})
+            spec = item.get("spec", {})
+            ns   = meta.get("name", "")  # name = namespace for summaries
+            sev  = spec.get("severities", {})
+            ref  = spec.get("summaryRef", {})
+            # Export one doc per namespace-level summary
+            doc = {
+                "@timestamp":        ts,
+                "namespace":         ns,
+                "kind":              ref.get("kind", "Namespace"),
+                "resource":          ref.get("name", ns),
+                "severity_critical": sev.get("critical", 0),
+                "severity_high":     sev.get("high", 0),
+                "severity_medium":   sev.get("medium", 0),
+                "severity_low":      sev.get("low", 0),
+                "source":            "kubescape"
+            }
+            # Create one finding per failed severity level
+            for sev_label, count_key in [("Critical","critical"),("High","high"),("Medium","medium")]:
+                count = sev.get(count_key, 0)
+                if count > 0:
+                    for _ in range(min(count, 10)):  # max 10 per level to avoid too many docs
+                        ks_docs.append({
+                            "@timestamp":  ts,
+                            "namespace":   ns,
+                            "kind":        ref.get("kind", "Namespace"),
+                            "resource":    ref.get("name", ns),
+                            "ruleName":    f"{sev_label} CIS violation in {ns}",
+                            "severity":    sev_label,
+                            "scoreFactor": 9 if sev_label == "Critical" else 6 if sev_label == "High" else 3,
+                            "source":      "kubescape"
+                        })
         indexed = os_bulk(ks_index, ks_docs)
-        print(f"  Indexed {indexed}/{len(ks_docs)} Critical+High CIS findings to {ks_index}")
+        print(f"  Indexed {indexed}/{len(ks_docs)} Kubescape findings to {ks_index}")
     except Exception as e:
         print(f"  Kubescape export error: {e}", file=sys.stderr)
 
