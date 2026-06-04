@@ -181,7 +181,8 @@ data:
             kind = meta.get("labels", {}).get("kubescape.io/workload-kind", "Unknown")
             wl   = meta.get("labels", {}).get("kubescape.io/workload-name", name)
             try:
-                item = k8s_get_one(f"{base}/{ns}/{name}" if ns else f"{base}/{name}")
+                ns_path = f"/namespaces/{ns}" if ns else ""
+                item = k8s_get_one(f"/apis/spdx.softwarecomposition.kubescape.io/v1beta1{ns_path}/workloadconfigurationscans/{name}")
             except Exception:
                 item = stub  # fall back to stub (no controls)
             controls = item.get("spec", {}).get("controls", {}) or {}
