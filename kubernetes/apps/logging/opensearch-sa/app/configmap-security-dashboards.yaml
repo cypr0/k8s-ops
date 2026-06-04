@@ -1,0 +1,216 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: security-dashboards-script
+data:
+  create_security_dashboards.py: |
+    import json, os, time, base64, urllib.request, urllib.error
+
+    OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    OSD_USER = os.environ.get("OSD_USER", "admin")
+    OSD_PASS = os.environ.get("OSD_PASS", "")
+    _b64     = base64.b64encode((OSD_USER + ":" + OSD_PASS).encode()).decode()
+    HEADERS  = {"Content-Type": "application/json", "osd-xsrf": "true", "Authorization": "Basic " + _b64}
+
+    def osd(method, path, body=None):
+        data = json.dumps(body).encode() if body else None
+        req  = urllib.request.Request(OSD + path, data=data, headers=HEADERS, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read()), r.status
+        except urllib.error.HTTPError as e:
+            try:    return json.loads(e.read()), e.code
+            except: return {}, e.code
+
+    print("Waiting for Dashboards...")
+    for _ in range(30):
+        try:
+            r, s = osd("GET", "/api/status")
+            if s == 200 and r.get("status", {}).get("overall", {}).get("state") == "green":
+                print("Ready."); break
+        except: pass
+        time.sleep(10)
+
+    METRIC_P = {
+        "addTooltip": True, "addLegend": False, "type": "gauge",
+        "gauge": {
+            "verticalSplit": False, "extendRange": True, "percentageMode": False,
+            "gaugeType": "Metric", "gaugeColorMode": "None",
+            "colorsRange": [{"from": 0, "to": 10000000}], "invertColors": False,
+            "labels": {"show": True, "color": "black"},
+            "scale": {"show": False, "labels": False, "color": "#333"},
+            "type": "simple",
+            "style": {"bgFill": "#000", "bgColor": False, "labelColor": False, "subText": "", "fontSize": 60}
+        }
+    }
+
+    def pie_p(): return {"type":"pie","addTooltip":True,"addLegend":True,"legendPosition":"right","isDonut":True,"labels":{"show":True,"values":True,"last_level":True,"truncate":100}}
+    def hbar_p(): return {"type":"histogram","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],"seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False,"truncateLegend":True,"maxLegendLines":1}
+    def line_p(): return {"type":"line","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"bottom","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"filter":True,"truncate":100},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"left","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],"seriesParams":[{"show":True,"type":"line","mode":"normal","data":{"label":"Events","id":"1"},"drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True,"interpolate":"linear","valueAxis":"ValueAxis-1"}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False}
+    def c(): return [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}]
+    def t(f, sz=15): return {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":f,"size":sz,"order":"desc","orderBy":"1","otherBucket":False,"missingBucket":False}}
+    def dh(): return {"id":"2","enabled":True,"type":"date_histogram","schema":"segment","params":{"field":"@timestamp","useNormalizedEsInterval":True,"interval":"auto","drop_partials":False,"min_doc_count":1,"extended_bounds":{}}}
+
+    def mkv(vid, title, vis_type, params, aggs, idx, flt=None):
+        return {
+            "type": "visualization", "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({"title": title, "type": vis_type, "params": params, "aggs": aggs}),
+                "uiStateJSON": "{}",
+                "description": "",
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
+                    "index": idx,
+                    "query": {"bool": {"filter": flt or [], "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })}
+            },
+            "references": [{"id": idx, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    def mkdash(did, title, desc, panels, refs):
+        p_json = []
+        for i, p in enumerate(panels):
+            p_json.append({"version":"3.6.0","gridData":{"x":p["x"],"y":p["y"],"w":p["w"],"h":p["h"],"i":str(i+1)},"panelIndex":str(i+1),"embeddableConfig":{},"panelRefName":"panel_"+str(i+1)})
+        return osd("POST", "/api/saved_objects/dashboard/" + did + "?overwrite=true", {
+            "attributes": {
+                "title": title, "description": desc,
+                "panelsJSON": json.dumps(p_json),
+                "optionsJSON": json.dumps({"useMargins":True,"syncColors":False,"hidePanelTitles":False}),
+                "version": 1, "timeRestore": False,
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query":{"match_all":{}},"filter":[]})}
+            },
+            "references": refs
+        })
+
+    # ════════════════════════════════════════════════════════════════════════
+    # INDEX PATTERNS
+    # ════════════════════════════════════════════════════════════════════════
+    for idx_id, pattern, ts in [
+        ("falco-idx",      "falco-*",      "@timestamp"),
+        ("kubescape-idx",  "kubescape-*",  "@timestamp"),
+    ]:
+        r, s = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
+                   {"attributes": {"title": pattern, "timeFieldName": ts, "fields": "[]"}})
+        print("Index pattern " + pattern + ": " + str(s))
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DASHBOARD 1 — Falco Runtime Security
+    # Falcosidekick sends: rule, priority, output, hostname,
+    #   output_fields.k8s.ns.name, output_fields.k8s.pod.name,
+    #   output_fields.container.image.repository, output_fields.proc.name
+    # ════════════════════════════════════════════════════════════════════════
+    FI = "falco-idx"
+    crit_flt = [{"term": {"priority": "Critical"}}]
+    warn_flt  = [{"terms": {"priority": ["Warning", "Critical", "Error"]}}]
+
+    falco_vizs = [
+        mkv("f-v1-total",    "🚨 Total Events",         "metric", METRIC_P, c(), FI),
+        mkv("f-v2-critical", "🔴 Critical",             "metric", METRIC_P, c(), FI, crit_flt),
+        mkv("f-v3-warning",  "🟠 Warning+",             "metric", METRIC_P, c(), FI, warn_flt),
+        mkv("f-v4-pods",     "📦 Affected Pods",        "metric", METRIC_P,
+            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"output_fields.k8s.pod.name"}}], FI),
+
+        mkv("f-v5-timeline", "Event Timeline by Priority", "line", line_p(),
+            c() + [dh(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"priority","size":5,"order":"desc","orderBy":"1"}}], FI),
+
+        mkv("f-v6-rules",    "Top Rules",               "horizontal_bar", hbar_p(),
+            c() + [t("rule.keyword", 15)], FI),
+
+        mkv("f-v7-ns",       "Events by Namespace",     "horizontal_bar", hbar_p(),
+            c() + [t("output_fields.k8s.ns.name.keyword", 15)], FI),
+
+        mkv("f-v8-priority", "Priority Distribution",   "pie", pie_p(),
+            c() + [t("priority", 8)], FI),
+
+        mkv("f-v9-images",   "Top Affected Images",     "horizontal_bar", hbar_p(),
+            c() + [t("output_fields.container.image.repository.keyword", 15)], FI),
+    ]
+
+    print("\nCreating Falco visualizations...")
+    refs_f = []
+    for viz in falco_vizs:
+        r, s = osd("POST", "/api/saved_objects/" + viz["type"] + "/" + viz["id"] + "?overwrite=true",
+                   {"attributes": viz["attributes"], "references": viz.get("references", [])})
+        ok = "OK" if s < 300 else ("ERR " + str(s) + ": " + str(r.get("message","?"))[:60])
+        print("  " + viz["attributes"]["title"] + ": " + ok)
+        refs_f.append({"name": "panel_" + str(len(refs_f)+1), "type": "visualization", "id": viz["id"]})
+
+    fp = [
+        {"id":"f-v1-total",    "x":0,  "y":0,  "w":12, "h":9},
+        {"id":"f-v2-critical", "x":12, "y":0,  "w":12, "h":9},
+        {"id":"f-v3-warning",  "x":24, "y":0,  "w":12, "h":9},
+        {"id":"f-v4-pods",     "x":36, "y":0,  "w":12, "h":9},
+        {"id":"f-v5-timeline", "x":0,  "y":9,  "w":48, "h":12},
+        {"id":"f-v6-rules",    "x":0,  "y":21, "w":24, "h":14},
+        {"id":"f-v8-priority", "x":24, "y":21, "w":12, "h":14},
+        {"id":"f-v7-ns",       "x":36, "y":21, "w":12, "h":14},
+        {"id":"f-v9-images",   "x":0,  "y":35, "w":48, "h":12},
+    ]
+    refs_f2 = [{"name":"panel_"+str(i+1),"type":"visualization","id":p["id"]} for i,p in enumerate(fp)]
+    r, s = mkdash("falco-runtime", "Falco — Runtime Security",
+                   "Container runtime security events from Falco: rules, priorities, namespaces and affected images.",
+                   fp, refs_f2)
+    print("  Dashboard Falco: " + str(s))
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DASHBOARD 2 — Kubescape CIS Compliance
+    # CRD exporter sends: namespace, resource, kind, ruleName, severity,
+    #   scoreFactor, remediation, source=kubescape
+    # ════════════════════════════════════════════════════════════════════════
+    KI = "kubescape-idx"
+    ks_crit  = [{"term": {"severity": "Critical"}}]
+    ks_high  = [{"term": {"severity": "High"}}]
+
+    ks_vizs = [
+        mkv("ks-v1-total",    "📋 Total Violations",      "metric", METRIC_P, c(), KI),
+        mkv("ks-v2-critical", "🔴 Critical",              "metric", METRIC_P, c(), KI, ks_crit),
+        mkv("ks-v3-high",     "🟠 High",                  "metric", METRIC_P, c(), KI, ks_high),
+        mkv("ks-v4-ns",       "📁 Affected Namespaces",   "metric", METRIC_P,
+            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"namespace"}}], KI),
+
+        mkv("ks-v5-timeline", "Violations Over Time",     "line", line_p(),
+            c() + [dh(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"severity","size":4,"order":"desc","orderBy":"1"}}], KI),
+
+        mkv("ks-v6-rules",    "Top Failing Rules",        "horizontal_bar", hbar_p(),
+            c() + [t("ruleName.keyword", 15)], KI),
+
+        mkv("ks-v7-ns",       "Violations by Namespace",  "horizontal_bar", hbar_p(),
+            c() + [t("namespace", 15)], KI),
+
+        mkv("ks-v8-sev",      "Severity Distribution",    "pie", pie_p(),
+            c() + [t("severity", 5)], KI),
+
+        mkv("ks-v9-kind",     "Violations by Resource Kind","horizontal_bar", hbar_p(),
+            c() + [t("kind.keyword", 10)], KI),
+    ]
+
+    print("\nCreating Kubescape visualizations...")
+    kp = [
+        {"id":"ks-v1-total",    "x":0,  "y":0,  "w":12, "h":9},
+        {"id":"ks-v2-critical", "x":12, "y":0,  "w":12, "h":9},
+        {"id":"ks-v3-high",     "x":24, "y":0,  "w":12, "h":9},
+        {"id":"ks-v4-ns",       "x":36, "y":0,  "w":12, "h":9},
+        {"id":"ks-v5-timeline", "x":0,  "y":9,  "w":48, "h":12},
+        {"id":"ks-v6-rules",    "x":0,  "y":21, "w":32, "h":14},
+        {"id":"ks-v8-sev",      "x":32, "y":21, "w":16, "h":14},
+        {"id":"ks-v7-ns",       "x":0,  "y":35, "w":24, "h":12},
+        {"id":"ks-v9-kind",     "x":24, "y":35, "w":24, "h":12},
+    ]
+    for viz in ks_vizs:
+        r, s = osd("POST", "/api/saved_objects/" + viz["type"] + "/" + viz["id"] + "?overwrite=true",
+                   {"attributes": viz["attributes"], "references": viz.get("references", [])})
+        ok = "OK" if s < 300 else ("ERR " + str(s) + ": " + str(r.get("message","?"))[:60])
+        print("  " + viz["attributes"]["title"] + ": " + ok)
+
+    refs_k = [{"name":"panel_"+str(i+1),"type":"visualization","id":p["id"]} for i,p in enumerate(kp)]
+    r, s = mkdash("kubescape-compliance", "Kubescape — CIS Compliance",
+                   "CIS benchmark violations from Kubescape: failing rules, severity breakdown, affected namespaces.",
+                   kp, refs_k)
+    print("  Dashboard Kubescape: " + str(s))
+
+    print("\n=== Security Dashboards ready ===")
+    print("  Falco:     <OSD>/app/dashboards#/view/falco-runtime")
+    print("  Kubescape: <OSD>/app/dashboards#/view/kubescape-compliance")
+    print("Note: Dashboards show 'No data' until Falco events fire and Kubescape scans at 02:00.")

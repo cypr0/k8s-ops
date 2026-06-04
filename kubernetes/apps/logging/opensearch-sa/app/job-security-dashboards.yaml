@@ -1,0 +1,55 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: security-dashboards-setup
+  annotations:
+    dashboard-version: "1"
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+      containers:
+        - name: dashboard
+          image: python:3.12-alpine
+          command: ["python3", "/scripts/create_security_dashboards.py"]
+          env:
+            - name: OSD_HOST
+              value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
+            - name: OSD_USER
+              value: "admin"
+            - name: OSD_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-sa-credentials
+                  key: OPENSEARCH_PASSWORD
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: scripts
+          configMap:
+            name: security-dashboards-script
+            defaultMode: 0755
