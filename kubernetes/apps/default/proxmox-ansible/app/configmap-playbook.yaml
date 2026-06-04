@@ -36,6 +36,7 @@ data:
       -i /tmp/inventory.ini \
       /scripts/hardening.yml \
       -e "allowed_ip=$${ALLOWED_IP}" \
+      -e "proxmox_host=$${PROXMOX_SSH_HOST}" \
       -e "ansible_pubkey_env_name=PROXMOX_ANSIBLE_SSH_PUBKEY"
 
   fix_key.py: |
@@ -71,6 +72,7 @@ data:
 
       vars:
         allowed_ip: "{{ allowed_ip }}"
+        proxmox_host: "{{ proxmox_host }}"
         ansible_pubkey: "{{ lookup('env', 'PROXMOX_ANSIBLE_SSH_PUBKEY') }}"
 
       tasks:
@@ -209,7 +211,7 @@ data:
 
         - name: Configure node-level PVE firewall rules
           ansible.builtin.shell: >-
-            printf '[OPTIONS]\nenable: 1\n\n[RULES]\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"\nIN ACCEPT -source 10.0.0.0/8 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 172.16.0.0/12 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 192.168.0.0/16 -p tcp -dport 22 -comment "SSH internal"\nIN DROP -p tcp -dport 22 -comment "Block external SSH"\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"\nIN DROP -p tcp -dport 8006 -comment "Block external Proxmox UI"\n'
+            printf '[OPTIONS]\nenable: 1\n\n[RULES]\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"\nIN ACCEPT -source {{ proxmox_host }} -p tcp -dport 22 -comment "SSH self (k8s pods)"\nIN ACCEPT -source 10.0.0.0/8 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 172.16.0.0/12 -p tcp -dport 22 -comment "SSH internal"\nIN ACCEPT -source 192.168.0.0/16 -p tcp -dport 22 -comment "SSH internal"\nIN DROP -p tcp -dport 22 -comment "Block external SSH"\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"\nIN DROP -p tcp -dport 8006 -comment "Block external Proxmox UI"\n'
             > /etc/pve/firewall/{{ pve_node.stdout }}.fw
           args:
             executable: /bin/bash
