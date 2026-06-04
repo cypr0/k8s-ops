@@ -1,0 +1,179 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opnsense-pipeline-script
+data:
+  setup_opnsense_pipeline.py: |
+    import json, os, time, base64, ssl, urllib.request, urllib.error
+
+    OS   = "https://opensearch.logging.svc.cluster.local:9200"
+    PASS = os.environ.get("OPENSEARCH_PASSWORD", "")
+    AUTH = base64.b64encode(("admin:" + PASS).encode()).decode()
+    CTX  = ssl.create_default_context()
+    CTX.check_hostname = False
+    CTX.verify_mode = ssl.CERT_NONE
+
+    def req(method, path, body=None):
+        data = json.dumps(body).encode() if body else None
+        r = urllib.request.Request(OS + path, data=data, method=method,
+            headers={"Content-Type": "application/json", "Authorization": "Basic " + AUTH})
+        try:
+            with urllib.request.urlopen(r, context=CTX, timeout=60) as resp:
+                return json.loads(resp.read()), resp.status
+        except urllib.error.HTTPError as e:
+            try:    return json.loads(e.read()), e.code
+            except: return {}, e.code
+
+    print("Waiting for OpenSearch...")
+    for _ in range(30):
+        try:
+            r, s = req("GET", "/_cluster/health")
+            if s == 200: print("Ready."); break
+        except: pass
+        time.sleep(10)
+
+    # ── Ingest Pipeline: OPNsense syslog enrichment ───────────────────────
+    # filterlog: CSV -> structured fields
+    # suricata:  JSON message -> structured fields
+    print("Creating OPNsense ingest pipeline...")
+
+    # Painless: set fw_action_category based on action
+    fw_action_script = (
+        'if (ctx.containsKey("fw_action")) {'
+        '  if (ctx.fw_action == "block") { ctx.fw_action_category = "blocked"; }'
+        '  else if (ctx.fw_action == "pass") { ctx.fw_action_category = "allowed"; }'
+        '  else { ctx.fw_action_category = "other"; }'
+        '}'
+    )
+
+    # Painless: parse Suricata JSON from message field
+    suricata_script = (
+        'if (ctx.containsKey("ident") && ctx.ident == "suricata" && ctx.containsKey("message")) {'
+        '  try {'
+        '    Map s = new JsonSlurper().parseText(ctx.message);'
+        '    if (s.containsKey("src_ip"))  ctx.src_ip   = s.src_ip;'
+        '    if (s.containsKey("dest_ip")) ctx.dst_ip   = s.dest_ip;'
+        '    if (s.containsKey("src_port")) ctx.src_port = s.src_port;'
+        '    if (s.containsKey("dest_port")) ctx.dst_port = s.dest_port;'
+        '    if (s.containsKey("proto"))   ctx.fw_protocol = s.proto;'
+        '    if (s.containsKey("in_iface")) ctx.fw_interface = s.in_iface;'
+        '    if (s.containsKey("event_type")) ctx.suricata_event_type = s.event_type;'
+        '    if (s.containsKey("alert")) {'
+        '      Map a = (Map)s.alert;'
+        '      if (a.containsKey("signature"))  ctx.suricata_signature  = a.signature;'
+        '      if (a.containsKey("category"))   ctx.suricata_category   = a.category;'
+        '      if (a.containsKey("severity"))   ctx.suricata_severity   = a.severity;'
+        '      if (a.containsKey("action"))     ctx.fw_action           = a.action;'
+        '    }'
+        '  } catch (Exception e) {}'
+        '}'
+    )
+
+    pipeline = {
+        "description": "Enrich OPNsense syslog: parse filterlog CSV and Suricata JSON alerts",
+        "processors": [
+            # filterlog: parse CSV into structured fields
+            {
+                "grok": {
+                    "field": "message",
+                    "patterns": [
+                        # IPv4 TCP/UDP with ports
+                        "%{INT:fw_rule_num},%{DATA},%{DATA},%{DATA:fw_rule_uuid},%{WORD:fw_interface},%{WORD:fw_reason},%{WORD:fw_action},%{WORD:fw_direction},%{INT:fw_ip_version},%{DATA},%{DATA},%{INT:fw_ttl},%{DATA},%{DATA},%{DATA},%{INT},%{WORD:fw_protocol},%{INT},%{IP:src_ip},%{IP:dst_ip},%{INT:src_port},%{INT:dst_port},%{GREEDYDATA}",
+                        # IPv4 ICMP/other (no ports)
+                        "%{INT:fw_rule_num},%{DATA},%{DATA},%{DATA:fw_rule_uuid},%{WORD:fw_interface},%{WORD:fw_reason},%{WORD:fw_action},%{WORD:fw_direction},%{INT:fw_ip_version},%{DATA},%{DATA},%{INT:fw_ttl},%{DATA},%{DATA},%{DATA},%{INT},%{WORD:fw_protocol},%{INT},%{IP:src_ip},%{IP:dst_ip},%{GREEDYDATA}"
+                    ],
+                    "if": "ctx.containsKey('ident') && ctx.ident == 'filterlog'",
+                    "ignore_failure": True
+                }
+            },
+            # Set action category for filterlog
+            {
+                "script": {
+                    "lang": "painless",
+                    "source": fw_action_script,
+                    "if": "ctx.containsKey('ident') && ctx.ident == 'filterlog'"
+                }
+            },
+            # Suricata: parse JSON message
+            {
+                "script": {
+                    "lang": "painless",
+                    "source": suricata_script,
+                    "if": "ctx.containsKey('ident') && ctx.ident == 'suricata'"
+                }
+            },
+            # Convert port fields to integer where possible
+            {
+                "convert": {"field": "src_port", "type": "integer", "ignore_missing": True, "ignore_failure": True}
+            },
+            {
+                "convert": {"field": "dst_port", "type": "integer", "ignore_missing": True, "ignore_failure": True}
+            },
+            {
+                "convert": {"field": "suricata_severity", "type": "integer", "ignore_missing": True, "ignore_failure": True}
+            }
+        ]
+    }
+
+    r, s = req("PUT", "/_ingest/pipeline/opnsense-syslog-enrich", pipeline)
+    print("  Pipeline:", "OK" if r.get("acknowledged") else ("ERROR " + str(s) + ": " + str(r)[:200]))
+
+    # ── Update syslog index template ──────────────────────────────────────
+    # Note: syslog-* template already has proxmox pipeline as default.
+    # We need a SEPARATE template for opnsense OR update existing to use
+    # a combined pipeline. We'll use a separate higher-priority template.
+    print("Updating index template for OPNsense...")
+    r, s = req("PUT", "/_index_template/syslog-template", {
+        "index_patterns": ["syslog-*"],
+        "priority": 200,
+        "template": {
+            "settings": {"index.default_pipeline": "opnsense-syslog-enrich"},
+            "mappings": {"properties": {
+                "@timestamp":           {"type": "date"},
+                "host":                 {"type": "keyword"},
+                "source":               {"type": "keyword"},
+                "ident":                {"type": "keyword"},
+                "severity":             {"type": "keyword"},
+                "message":              {"type": "text"},
+                "src_ip":               {"type": "ip",      "ignore_malformed": True},
+                "dst_ip":               {"type": "ip",      "ignore_malformed": True},
+                "src_port":             {"type": "integer", "ignore_malformed": True},
+                "dst_port":             {"type": "integer", "ignore_malformed": True},
+                "fw_action":            {"type": "keyword"},
+                "fw_action_category":   {"type": "keyword"},
+                "fw_direction":         {"type": "keyword"},
+                "fw_protocol":          {"type": "keyword"},
+                "fw_interface":         {"type": "keyword"},
+                "fw_rule_num":          {"type": "keyword"},
+                "fw_ip_version":        {"type": "keyword"},
+                "fw_rule_uuid":         {"type": "keyword"},
+                "suricata_event_type":  {"type": "keyword"},
+                "suricata_signature":   {"type": "keyword"},
+                "suricata_category":    {"type": "keyword"},
+                "suricata_severity":    {"type": "integer"},
+                # Proxmox fields (shared template)
+                "username":             {"type": "keyword"},
+                "auth_method":          {"type": "keyword"},
+                "action":               {"type": "keyword"},
+                "action_category":      {"type": "keyword"}
+            }}
+        }
+    })
+    print("  Template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
+
+    # ── Reindex existing OPNsense data ────────────────────────────────────
+    print("Reindexing existing syslog indices through OPNsense pipeline...")
+    r, s = req("GET", "/_cat/indices/syslog-*?h=index&format=json")
+    base_indices = [i["index"] for i in (r if isinstance(r, list) else []) if "-enriched" not in i["index"]]
+    for idx in base_indices:
+        dest = idx + "-enriched"
+        r2, s2 = req("POST", "/_reindex?wait_for_completion=false", {
+            "source": {"index": idx},
+            "dest":   {"index": dest, "pipeline": "opnsense-syslog-enrich"}
+        })
+        print("  " + idx + " -> " + dest + ": task " + r2.get("task", "error"))
+
+    print("=== OPNsense pipeline setup complete ===")
+    print("Fields: src_ip, dst_ip, src_port, dst_port, fw_action, fw_direction,")
+    print("        fw_protocol, fw_interface, suricata_signature, suricata_category")

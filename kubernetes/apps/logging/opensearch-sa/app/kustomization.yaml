@@ -15,3 +15,6 @@ resources:
   - ./job-proxmox-pipeline.yaml
   - ./configmap-proxmox-dashboard.yaml
   - ./job-proxmox-dashboard.yaml
+  - ./configmap-opnsense-pipeline.yaml
+  - ./configmap-opnsense-dashboards.yaml
+  - ./job-opnsense.yaml
