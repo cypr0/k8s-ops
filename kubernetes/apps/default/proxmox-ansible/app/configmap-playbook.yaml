@@ -190,37 +190,45 @@ data:
             enabled: yes
             state: started
 
-        # ── Proxmox Host Firewall ─────────────────────────────────────────────
-        # Uses PVE's native firewall — restricts ports 22 and 8006.
-        # RFC1918 ranges (10/8, 172.16/12, 192.168/16) are allowed for SSH
-        # so the Ansible CronJob (running on an in-cluster node) can connect.
+        # ── Proxmox Host Firewall — disabled ──────────────────────────────────
+        # PVE firewall caused a full lockout when allowed_ip was stale.
+        # Protection is provided by: iptables rules in /etc/network/interfaces
+        # (ports 22+8006 excluded from DNAT, WAN DROP), fail2ban, and OPNsense.
         - name: Retrieve node hostname
           ansible.builtin.command: hostname -s
           register: pve_node
           changed_when: false
 
-        - name: Detect WAN interface (interface carrying the public IP)
-          ansible.builtin.shell: ip -o addr show | grep '{{ proxmox_host }}' | awk '{print $2}'
-          register: wan_iface
-          changed_when: false
-
-        # /etc/pve/firewall is PMXCFS (FUSE) — no atomic rename support.
-        # ansible.builtin.copy fails because it writes a temp file then renames.
-        # Use shell with printf so content stays on one line (no YAML indent issues).
-        - name: Enable cluster-level PVE firewall
+        - name: Disable cluster-level PVE firewall
           ansible.builtin.shell: >-
-            printf '[OPTIONS]\nenable: 1\nlog_level_in: warning\nlog_level_out: warning\n'
+            printf '[OPTIONS]\nenable: 0\n'
             > /etc/pve/firewall/cluster.fw
           args:
             executable: /bin/bash
 
-        - name: Configure node-level PVE firewall rules
+        - name: Disable node-level PVE firewall
           ansible.builtin.shell: >-
-            printf '[OPTIONS]\nenable: 1\n\n[RULES]\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 22 -comment "SSH admin"\nIN ACCEPT -source {{ proxmox_host }} -p tcp -dport 22 -comment "SSH self"\nIN DROP -i {{ wan_iface.stdout }} -p tcp -dport 22 -comment "Block external SSH"\nIN ACCEPT -source {{ allowed_ip }} -p tcp -dport 8006 -comment "Proxmox UI admin"\nIN DROP -i {{ wan_iface.stdout }} -p tcp -dport 8006 -comment "Block external Proxmox UI"\n'
+            printf '[OPTIONS]\nenable: 0\n'
             > /etc/pve/firewall/{{ pve_node.stdout }}.fw
           args:
             executable: /bin/bash
-          notify: Restart pve-firewall
+          notify: Stop pve-firewall
+
+        # ── /etc/network/interfaces — DNAT & post-down safeguards ─────────────
+        # Corrects any DNAT typo (e.g. 192.10.100.1) to the canonical OPNsense
+        # WAN IP and fixes the post-down -A/-D bug that duplicates MASQUERADE
+        # rules on every interface restart.
+        - name: Enforce correct DNAT target in /etc/network/interfaces
+          ansible.builtin.replace:
+            path: /etc/network/interfaces
+            regexp: '-j DNAT --to 192\.\d+\.100\.1'
+            replace: '-j DNAT --to 192.168.100.1'
+
+        - name: Fix post-down iptables rules (must use -D not -A to delete)
+          ansible.builtin.replace:
+            path: /etc/network/interfaces
+            regexp: 'post-down iptables -t nat -A'
+            replace: 'post-down iptables -t nat -D'
 
         # ── SSH Hardening (CIS Debian 13 / Trixie) ───────────────────────────
         - name: Deploy hardened sshd_config (CIS Benchmark Debian 13)
@@ -338,7 +346,8 @@ data:
             name: ssh
             state: restarted
 
-        - name: Restart pve-firewall
+        - name: Stop pve-firewall
           ansible.builtin.service:
             name: pve-firewall
-            state: restarted
+            state: stopped
+            enabled: false
