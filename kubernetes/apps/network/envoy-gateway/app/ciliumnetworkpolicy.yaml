@@ -53,7 +53,18 @@ spec:
     matchLabels:
       app.kubernetes.io/name: envoy
   ingress:
-    # External/internal load balancer traffic (world → 80/443)
+    # Cloudflare Tunnel forwards all *.cisotop.de traffic to envoy-external (primary path)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: cloudflare-tunnel
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    # Direct LoadBalancer access (fallback / health checks from world)
     - fromEntities:
         - world
       toPorts:

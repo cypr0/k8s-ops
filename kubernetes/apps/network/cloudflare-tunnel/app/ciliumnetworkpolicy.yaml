@@ -32,3 +32,14 @@ spec:
               protocol: UDP
             - port: "7844"
               protocol: TCP
+    # Forward all *.cisotop.de traffic to envoy-external (the actual ingress backend)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
