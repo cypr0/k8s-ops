@@ -20,6 +20,15 @@ spec:
         - ports:
             - port: "9292"
               protocol: TCP
+    # Intra-flux: kustomize/helm-controller download artifacts from source-controller:80
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": flux-system
+            app.kubernetes.io/part-of: flux
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
     # Prometheus metrics
     - fromEndpoints:
         - matchLabels:
@@ -42,6 +51,24 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
+    # Intra-flux: kustomize/helm-controller download artifacts from source-controller:80
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": flux-system
+            app.kubernetes.io/part-of: flux
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+    # notification-controller webhook receiver (intra-flux alerts)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": flux-system
+            app.kubernetes.io/part-of: flux
+      toPorts:
+        - ports:
+            - port: "9292"
+              protocol: TCP
     # Pull from OCI registries, Git repos (GitHub), Helm repos
     - toEntities:
         - world
