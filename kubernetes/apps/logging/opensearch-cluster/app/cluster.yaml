@@ -38,10 +38,10 @@ spec:
       resources:
         requests:
           cpu: 200m
-          memory: 2Gi
+          memory: 8Gi
         limits:
-          memory: 2Gi
-      jvm: "-Xmx1g -Xms1g"
+          memory: 8Gi
+      jvm: "-Xmx4g -Xms4g"
       persistence:
         pvc:
           storageClass: zfs-nfs
