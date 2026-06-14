@@ -2,12 +2,14 @@
 # K8s Gateway: CoreDNS plugin exposing K8s Services/Ingresses as DNS records.
 # CoreDNS in kube-system forwards selected zones here; replies on port 1053.
 #
-# Cilium kube-proxy-replacement policy enforcement timing:
-# - North-South (LB, external): policy evaluated PRE-DNAT at the L2-owner node
-#   → service port 53 must be allowed (world/OPNsense queries go via LB IP)
+# Cilium kube-proxy-replacement + bpf-lb-mode: snat policy enforcement:
+# - North-South (LB, external via 192.168.10.102:53):
+#   L2-owner node (k8s-cp-0) receives packet, SNATs client IP → node IP,
+#   then DNATs to backend pod:1053. The backend pod sees src=node-IP (remote-node
+#   entity) on port 1053. Policy must allow fromEntities: remote-node port 1053.
+#   Also allow fromEntities: world port 53 for any pre-SNAT enforcement path.
 # - East-West (ClusterIP, coredns→k8s-gateway): policy evaluated POST-DNAT
 #   → container port 1053 must be allowed (coredns uses ClusterIP:53 → DNAT → 1053)
-# Both ports are allowed to cover both traffic paths.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -33,6 +35,17 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
             k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "1053"
+              protocol: UDP
+            - port: "1053"
+              protocol: TCP
+    # SNAT mode: L2-owner node SNATs client IP to its own node IP before forwarding
+    # to this backend pod. Node IPs are identified as remote-node (or kube-apiserver
+    # for CP nodes). Must allow remote-node on 1053 so SNAT'd LB traffic is accepted.
+    - fromEntities:
+        - remote-node
       toPorts:
         - ports:
             - port: "1053"
