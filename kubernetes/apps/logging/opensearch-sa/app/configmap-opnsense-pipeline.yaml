@@ -139,10 +139,10 @@ data:
     # a combined pipeline. We'll use a separate higher-priority template.
     print("Updating index template for OPNsense...")
     r, s = req("PUT", "/_index_template/syslog-template", {
-        "index_patterns": ["syslog-*"],
+        "index_patterns": ["syslog-[0-9]*"],
         "priority": 200,
         "template": {
-            "settings": {"index.default_pipeline": "opnsense-syslog-enrich"},
+            "settings": {"index.default_pipeline": "syslog-enrich"},
             "mappings": {"properties": {
                 "@timestamp":           {"type": "date"},
                 "host":                 {"type": "keyword"},
@@ -167,7 +167,6 @@ data:
                 "suricata_signature":   {"type": "keyword"},
                 "suricata_category":    {"type": "keyword"},
                 "suricata_severity":    {"type": "integer"},
-                # Proxmox fields (shared template)
                 "username":             {"type": "keyword"},
                 "auth_method":          {"type": "keyword"},
                 "action":               {"type": "keyword"},
@@ -176,18 +175,6 @@ data:
         }
     })
     print("  Template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
-
-    # ── Reindex existing OPNsense data ────────────────────────────────────
-    print("Reindexing existing syslog indices through OPNsense pipeline...")
-    r, s = req("GET", "/_cat/indices/syslog-*?h=index&format=json")
-    base_indices = [i["index"] for i in (r if isinstance(r, list) else []) if "-enriched" not in i["index"]]
-    for idx in base_indices:
-        dest = idx + "-enriched"
-        r2, s2 = req("POST", "/_reindex?wait_for_completion=false", {
-            "source": {"index": idx},
-            "dest":   {"index": dest, "pipeline": "opnsense-syslog-enrich"}
-        })
-        print("  " + idx + " -> " + dest + ": task " + r2.get("task", "error"))
 
     print("=== OPNsense pipeline setup complete ===")
     print("Fields: src_ip, dst_ip, src_port, dst_port, fw_action, fw_direction,")

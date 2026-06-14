@@ -68,32 +68,30 @@ data:
     })
     print("  Pipeline:", "OK" if r.get("acknowledged") else ("ERROR " + str(s) + ": " + str(r)[:150]))
 
-    print("Updating syslog index template...")
-    r, s = req("PUT", "/_index_template/syslog-template", {
-        "index_patterns": ["syslog-*"], "priority": 200,
-        "template": {
-            "settings": {"index.default_pipeline": "proxmox-syslog-enrich"},
-            "mappings": {"properties": {
-                "@timestamp": {"type": "date"}, "host": {"type": "keyword"},
-                "source": {"type": "keyword"}, "ident": {"type": "keyword"},
-                "severity": {"type": "keyword"}, "message": {"type": "text"},
-                "src_ip": {"type": "ip", "ignore_malformed": True},
-                "src_port": {"type": "integer", "ignore_malformed": True},
-                "username": {"type": "keyword"}, "auth_method": {"type": "keyword"},
-                "action": {"type": "keyword"}, "action_category": {"type": "keyword"}
-            }}
-        }
+    # Router pipeline: routes to opnsense or proxmox sub-pipeline based on ident.
+    # This is the single pipeline set on the index template, avoiding conflicts
+    # when both setup scripts write syslog-template independently.
+    print("Creating syslog router pipeline...")
+    r, s = req("PUT", "/_ingest/pipeline/syslog-enrich", {
+        "description": "Route syslog documents to the correct enrichment pipeline",
+        "processors": [
+            {
+                "pipeline": {
+                    "name": "opnsense-syslog-enrich",
+                    "if": "ctx.containsKey('ident') && (ctx.ident == 'filterlog' || ctx.ident == 'suricata')",
+                    "ignore_failure": True
+                }
+            },
+            {
+                "pipeline": {
+                    "name": "proxmox-syslog-enrich",
+                    "if": "!ctx.containsKey('ident') || (ctx.ident != 'filterlog' && ctx.ident != 'suricata')",
+                    "ignore_failure": True
+                }
+            }
+        ]
     })
-    print("  Template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
-
-    print("Reindexing existing syslog indices through pipeline...")
-    r, s = req("GET", "/_cat/indices/syslog-*?h=index&format=json")
-    for idx in [i["index"] for i in (r if isinstance(r, list) else [])]:
-        dest = idx + "-enriched"
-        r2, s2 = req("POST", "/_reindex?wait_for_completion=false", {
-            "source": {"index": idx}, "dest": {"index": dest, "pipeline": "proxmox-syslog-enrich"}
-        })
-        print("  " + idx + " -> " + dest + ": task " + r2.get("task", "error"))
+    print("  Router pipeline:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
 
     print("=== Pipeline setup complete ===")
     print("Fields: src_ip, src_port, username, auth_method, action, action_category")
