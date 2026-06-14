@@ -36,7 +36,7 @@ data:
 
     print("Creating index pattern...")
     r, s = osd("POST", "/api/saved_objects/index-pattern/" + IDX + "?overwrite=true", {
-        "attributes": {"title": "syslog-*-enriched", "timeFieldName": "@timestamp", "fields": "[]"}
+        "attributes": {"title": "syslog-*", "timeFieldName": "@timestamp", "fields": "[]"}
     })
     print("  " + str(s))
 
