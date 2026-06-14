@@ -40,15 +40,17 @@ spec:
             - port: "53"
               protocol: TCP
     # k8s-gateway zone delegation (network namespace)
+    # coredns connects to k8s-gateway ClusterIP:53 → DNAT → container:1053
+    # Cilium kube-proxy-replacement enforces egress policy POST-DNAT → allow 1053
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
             app.kubernetes.io/name: k8s-gateway
       toPorts:
         - ports:
-            - port: "53"
+            - port: "1053"
               protocol: UDP
-            - port: "53"
+            - port: "1053"
               protocol: TCP
     # Service/Endpoint discovery from Kubernetes API
     - toEntities:

@@ -1,6 +1,13 @@
 ---
 # K8s Gateway: CoreDNS plugin exposing K8s Services/Ingresses as DNS records.
-# CoreDNS in kube-system forwards selected zones here; replies on port 53.
+# CoreDNS in kube-system forwards selected zones here; replies on port 1053.
+#
+# Cilium kube-proxy-replacement policy enforcement timing:
+# - North-South (LB, external): policy evaluated PRE-DNAT at the L2-owner node
+#   → service port 53 must be allowed (world/OPNsense queries go via LB IP)
+# - East-West (ClusterIP, coredns→k8s-gateway): policy evaluated POST-DNAT
+#   → container port 1053 must be allowed (coredns uses ClusterIP:53 → DNAT → 1053)
+# Both ports are allowed to cover both traffic paths.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -11,7 +18,8 @@ spec:
     matchLabels:
       app.kubernetes.io/name: k8s-gateway
   ingress:
-    # Public DNS queries — k8s-gateway is the authoritative nameserver for cisotop.de
+    # Public DNS queries via LoadBalancer (OPNsense Split-DNS for cisotop.de)
+    # Policy evaluated PRE-DNAT at L2-owner node → service port 53
     - fromEntities:
         - world
       toPorts:
@@ -20,18 +28,18 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # CoreDNS upstream forwarding (zone delegation for cluster-internal queries)
+    # CoreDNS upstream forwarding via ClusterIP → POST-DNAT → container port 1053
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
             k8s-app: kube-dns
       toPorts:
         - ports:
-            - port: "53"
+            - port: "1053"
               protocol: UDP
-            - port: "53"
+            - port: "1053"
               protocol: TCP
-    # Prometheus metrics scraping
+    # Prometheus metrics scraping (pod-direct, no service DNAT)
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
@@ -41,6 +49,7 @@ spec:
             - port: "9153"
               protocol: TCP
   egress:
+    # k8s-gateway queries CoreDNS for its own resolution (no DNAT port change)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
