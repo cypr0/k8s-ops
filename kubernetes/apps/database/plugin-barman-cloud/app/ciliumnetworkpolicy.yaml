@@ -1,0 +1,31 @@
+---
+# Barman Cloud plugin: CloudNativePG plugin for WAL archiving and backup to S3-compatible storage
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: barman-cloud
+  namespace: database
+spec:
+  endpointSelector:
+    matchLabels:
+      app: barman-cloud
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # S3-compatible backup storage (Backblaze B2, Cloudflare R2, AWS S3)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

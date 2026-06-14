@@ -1,0 +1,31 @@
+---
+# Echo server: test/demo service, exposed via Envoy Gateway (echo.cisotop.de)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: echo
+  namespace: default
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: echo
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

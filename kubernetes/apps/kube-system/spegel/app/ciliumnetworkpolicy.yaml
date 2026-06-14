@@ -1,0 +1,67 @@
+---
+# Spegel: P2P image distribution — nodes share layers to avoid repeated registry pulls.
+# Each node runs a registry on 5000 and a P2P tracker on 5001.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: spegel
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: spegel
+  ingress:
+    # Peer-to-peer layer sharing (any spegel pod on any node)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: spegel
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP
+            - port: "5001"
+              protocol: TCP
+    # Containerd / kubelet on the same node pulls from local registry
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP
+    # Prometheus metrics
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # P2P tracker and layer exchange with peer spegel pods
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: spegel
+      toPorts:
+        - ports:
+            - port: "5000"
+              protocol: TCP
+            - port: "5001"
+              protocol: TCP
+    # Upstream pull when no peer has the layer
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

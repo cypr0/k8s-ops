@@ -1,0 +1,55 @@
+---
+# CoreDNS: cluster DNS server — must accept queries from every pod in every namespace.
+# Broad cluster ingress is intentional and required for DNS to work cluster-wide.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: coredns
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  ingress:
+    # Any pod in the cluster can query DNS
+    - fromEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Prometheus metrics scraping
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9153"
+              protocol: TCP
+  egress:
+    # Upstream recursive DNS (e.g. 1.1.1.1, 8.8.8.8 or router)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # k8s-gateway zone delegation (network namespace)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: k8s-gateway
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Service/Endpoint discovery from Kubernetes API
+    - toEntities:
+        - kube-apiserver

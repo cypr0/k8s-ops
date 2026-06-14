@@ -1,0 +1,86 @@
+---
+# Trivy Operator: scans workloads for vulnerabilities, misconfigs, and exposed secrets
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: trivy-operator
+  namespace: trivy-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: trivy-operator
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # Trivy server for cached vulnerability DB
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": trivy-system
+            app.kubernetes.io/name: trivy-server
+      toPorts:
+        - ports:
+            - port: "4954"
+              protocol: TCP
+    # Pull vulnerability DBs from GitHub/AquaSec and scan container registries
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Trivy Server: caches vulnerability DBs locally, serves trivy-operator scan requests
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: trivy-server
+  namespace: trivy-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: trivy-server
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": trivy-system
+            app.kubernetes.io/name: trivy-operator
+      toPorts:
+        - ports:
+            - port: "4954"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9198"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Initial DB download from GitHub releases
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

@@ -6,3 +6,4 @@ resources:
   - ./externalsecret.yaml
   - ./configmap-playbook.yaml
   - ./cronjob.yaml
+  - ./ciliumnetworkpolicy.yaml

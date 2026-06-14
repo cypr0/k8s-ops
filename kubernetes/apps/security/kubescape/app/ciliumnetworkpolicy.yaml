@@ -1,0 +1,65 @@
+---
+# Kubescape operator + node-agent + storage: runtime security and compliance scanning.
+# All components share the kubescape-operator label — node-agent is a DaemonSet.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kubescape-operator
+  namespace: kubescape
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: kubescape-operator
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+    # Node-agent to operator gRPC
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kubescape
+            app.kubernetes.io/name: kubescape-operator
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # Intra-component communication (operator ↔ storage ↔ node-agent)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kubescape
+            app.kubernetes.io/name: kubescape-operator
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+            - port: "8888"
+              protocol: TCP
+    # ARMO cloud for compliance data, CVE feeds, and scan reporting
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

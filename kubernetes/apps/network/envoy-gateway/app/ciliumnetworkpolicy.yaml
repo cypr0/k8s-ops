@@ -1,0 +1,137 @@
+---
+# Envoy Gateway controller: manages xDS config for envoy proxy deployments
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: envoy-gateway
+  namespace: network
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gateway-helm
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "19001"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # xDS config push to envoy proxy pods
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "18000"
+              protocol: TCP
+---
+# Envoy proxy pods: terminate TLS, route to backend services.
+# Both envoy-external (public LB) and envoy-internal (private LB) share this label.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: envoy-proxy
+  namespace: network
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: envoy
+  ingress:
+    # External/internal load balancer traffic (world → 80/443)
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "443"
+              protocol: UDP
+    # Prometheus stats scraping (port 19001)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "19001"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Envoy Gateway controller xDS (receive config)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: gateway-helm
+      toPorts:
+        - ports:
+            - port: "18000"
+              protocol: TCP
+    # Backend: monitoring namespace (Grafana :3000, Gatus :8080)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+            - port: "8080"
+              protocol: TCP
+    # Backend: logging namespace (OpenSearch Dashboards :5601)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": logging
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+    # Backend: security namespace (Authentik :9000)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": security
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP
+    # Backend: default namespace (echo :8080)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": default
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    # Backend: flux-system namespace (webhook-receiver :9292)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": flux-system
+      toPorts:
+        - ports:
+            - port: "9292"
+              protocol: TCP

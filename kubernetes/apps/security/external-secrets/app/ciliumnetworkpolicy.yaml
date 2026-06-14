@@ -1,0 +1,95 @@
+---
+# External Secrets controller: syncs secrets from 1Password into Kubernetes Secrets
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: external-secrets
+  namespace: security
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": security
+            app.kubernetes.io/name: onepassword-connect
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+# Cert Controller: rotates the webhook's TLS certificate
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: external-secrets-cert-controller
+  namespace: security
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets-cert-controller
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+---
+# Webhook: validates ExternalSecret/ClusterSecretStore CRDs — called by kube-apiserver
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: external-secrets-webhook
+  namespace: security
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets-webhook
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver

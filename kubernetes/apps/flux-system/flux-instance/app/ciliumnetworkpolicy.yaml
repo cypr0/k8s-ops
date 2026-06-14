@@ -1,0 +1,51 @@
+---
+# Flux controllers (source, kustomize, helm, notification): GitOps reconciliation engine.
+# All four share app.kubernetes.io/part-of=flux; source and helm controllers also pull from world.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: flux-controllers
+  namespace: flux-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: flux
+  ingress:
+    # Notification-controller webhook receiver (GitHub webhooks via Envoy Gateway)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "9292"
+              protocol: TCP
+    # Prometheus metrics
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # Pull from OCI registries, Git repos (GitHub), Helm repos
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

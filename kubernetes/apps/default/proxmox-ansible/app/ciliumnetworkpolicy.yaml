@@ -1,0 +1,39 @@
+---
+# Proxmox Ansible CronJob: runs hardening playbook against the Proxmox server via SSH
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: proxmox-ansible
+  namespace: default
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: batch.kubernetes.io/job-name
+        operator: Exists
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # SSH to Proxmox host (95.216.8.94 or via VPN)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "22"
+              protocol: TCP
+    # pip install during playbook run (Python Alpine image pulls packages)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP

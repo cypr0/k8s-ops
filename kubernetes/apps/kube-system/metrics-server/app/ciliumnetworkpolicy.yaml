@@ -1,0 +1,48 @@
+---
+# Metrics Server: aggregates CPU/memory usage from kubelet for HPA and kubectl top
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: metrics-server
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: metrics-server
+  ingress:
+    # kube-apiserver aggregation layer calls metrics-server
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
+    # Prometheus metrics scraping
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # Kubelet /metrics/resource endpoint on each node
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP

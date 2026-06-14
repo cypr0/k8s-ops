@@ -1,0 +1,68 @@
+---
+# CSI NFS Controller: provisions NFS PersistentVolumes via the Kubernetes CSI interface
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: csi-driver-nfs-controller
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: csi-driver-nfs
+      app: csi-nfs-controller
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # NFS server (2049/TCP+UDP)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "2049"
+              protocol: TCP
+            - port: "2049"
+              protocol: UDP
+---
+# CSI NFS Node DaemonSet: mounts NFS volumes on each node
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: csi-driver-nfs-node
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: csi-driver-nfs
+      app: csi-nfs-node
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # NFS server mounts
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "2049"
+              protocol: TCP
+            - port: "2049"
+              protocol: UDP

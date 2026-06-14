@@ -1,0 +1,48 @@
+---
+# Hubble Relay: aggregates flow data from all cilium-agent nodes for UI/CLI queries.
+# cilium-agent itself is NOT policy-restricted here — restricting the eBPF dataplane
+# that enforces the policies would risk deadlocks or loss of cluster connectivity.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hubble-relay
+  namespace: kube-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: hubble-relay
+  ingress:
+    # Hubble CLI / UI queries
+    - fromEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "4245"
+              protocol: TCP
+    # Prometheus metrics
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9966"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Collect flows from cilium-agent on every node (hubble-peer gRPC port 4244)
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "4244"
+              protocol: TCP

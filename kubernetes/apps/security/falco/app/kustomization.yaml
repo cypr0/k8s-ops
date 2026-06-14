@@ -9,3 +9,4 @@ resources:
   - ./externalsecret-opensearch.yaml
   - ./helmrelease-falco.yaml
   - ./helmrelease-sidekick.yaml
+  - ./ciliumnetworkpolicy.yaml
