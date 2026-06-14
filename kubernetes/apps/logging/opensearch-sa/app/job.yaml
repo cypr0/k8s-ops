@@ -21,7 +21,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: setup
-          image: python:3.12-alpine
+          image: python:3.14-alpine
           command: ["/bin/sh", "-c", "apk add -q curl && /bin/sh /scripts/setup.sh"]
           env:
             - name: OPENSEARCH_PASSWORD
