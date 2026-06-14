@@ -11,7 +11,16 @@ spec:
     matchLabels:
       app.kubernetes.io/name: k8s-gateway
   ingress:
-    # CoreDNS upstream forwarding (zone delegation)
+    # Public DNS queries — k8s-gateway is the authoritative nameserver for cisotop.de
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # CoreDNS upstream forwarding (zone delegation for cluster-internal queries)
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
