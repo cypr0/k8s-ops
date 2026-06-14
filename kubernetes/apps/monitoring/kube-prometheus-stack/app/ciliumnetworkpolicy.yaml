@@ -1,0 +1,244 @@
+---
+# Prometheus: scrapes all cluster namespaces via ServiceMonitors/PodMonitors
+# Broad cluster egress is intentional — scraper must reach arbitrary metric endpoints.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  ingress:
+    # Grafana queries
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: grafana
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+    # Gatus health checks
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Kubernetes API (ServiceMonitor/PodMonitor discovery)
+    - toEntities:
+        - kube-apiserver
+    # Alertmanager (fire alerts)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: alertmanager
+      toPorts:
+        - ports:
+            - port: "9093"
+              protocol: TCP
+    # All in-cluster metric endpoints (ServiceMonitors span all namespaces)
+    - toEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "2020"   # fluent-bit
+              protocol: TCP
+            - port: "3000"   # grafana
+              protocol: TCP
+            - port: "3100"   # loki
+              protocol: TCP
+            - port: "8001"   # envoy proxy stats
+              protocol: TCP
+            - port: "8080"   # kube-state-metrics, gatus, various
+              protocol: TCP
+            - port: "9090"   # prometheus self-scrape
+              protocol: TCP
+            - port: "9093"   # alertmanager
+              protocol: TCP
+            - port: "9100"   # node-exporter
+              protocol: TCP
+            - port: "10250"  # kubelet
+              protocol: TCP
+            - port: "10255"  # kubelet read-only
+              protocol: TCP
+            - port: "12345"  # alloy
+              protocol: TCP
+---
+# Alertmanager: receives alerts from Prometheus, queried by Grafana
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+  ingress:
+    # Prometheus fires alerts
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9093"
+              protocol: TCP
+    # Grafana queries alert state
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: grafana
+      toPorts:
+        - ports:
+            - port: "9093"
+              protocol: TCP
+    # Gatus health checks
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "9093"
+              protocol: TCP
+    # Alertmanager HA gossip (if multiple replicas)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alertmanager
+      toPorts:
+        - ports:
+            - port: "9094"
+              protocol: TCP
+            - port: "9094"
+              protocol: UDP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # External notifications (Slack, PagerDuty, Pushover, etc.)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Kube-State-Metrics: watches k8s resources, exposes metrics for Prometheus
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kube-state-metrics
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Kubernetes API (watches all resources)
+    - toEntities:
+        - kube-apiserver
+---
+# Prometheus Operator: manages Prometheus/Alertmanager CRDs
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: prometheus-operator
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
+  ingress: []
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Kubernetes API
+    - toEntities:
+        - kube-apiserver
+---
+# Node Exporter: DaemonSet, exposes host metrics per node
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: prometheus-node-exporter
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus-node-exporter
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9100"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
