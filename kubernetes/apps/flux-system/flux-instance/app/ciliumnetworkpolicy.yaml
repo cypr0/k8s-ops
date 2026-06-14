@@ -1,6 +1,11 @@
 ---
 # Flux controllers (source, kustomize, helm, notification): GitOps reconciliation engine.
 # All four share app.kubernetes.io/part-of=flux; source and helm controllers also pull from world.
+#
+# NOTE: Cilium kube-proxy-replacement enforces egress policy POST-DNAT.
+# source-controller service maps :80 → container :9090 ("http" named port).
+# notification-controller service maps :80 → container :9090 (internal http).
+# Intra-flux rules must allow the container ports (9090), NOT the service ports (80).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -20,14 +25,17 @@ spec:
         - ports:
             - port: "9292"
               protocol: TCP
-    # Intra-flux: kustomize/helm-controller download artifacts from source-controller:80
+    # Intra-flux: kustomize/helm-controller download artifacts from source-controller
+    # Container port 9090 = service port 80 after DNAT
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": flux-system
             app.kubernetes.io/part-of: flux
       toPorts:
         - ports:
-            - port: "80"
+            - port: "9090"
+              protocol: TCP
+            - port: "9292"
               protocol: TCP
     # Prometheus metrics
     - fromEndpoints:
@@ -51,22 +59,16 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    # Intra-flux: kustomize/helm-controller download artifacts from source-controller:80
+    # Intra-flux: kustomize/helm-controller download artifacts from source-controller
+    # Container port 9090 = service port 80 after DNAT; 9292 for notification-controller webhook
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": flux-system
             app.kubernetes.io/part-of: flux
       toPorts:
         - ports:
-            - port: "80"
+            - port: "9090"
               protocol: TCP
-    # notification-controller webhook receiver (intra-flux alerts)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": flux-system
-            app.kubernetes.io/part-of: flux
-      toPorts:
-        - ports:
             - port: "9292"
               protocol: TCP
     # Pull from OCI registries, Git repos (GitHub), Helm repos
