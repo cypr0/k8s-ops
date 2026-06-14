@@ -56,6 +56,15 @@ spec:
               protocol: TCP
             - port: "7946"
               protocol: UDP
+    # Loki canary: pushes sample logs and reads them back to verify loki health
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/component: canary
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:
@@ -78,3 +87,12 @@ spec:
               protocol: TCP
             - port: "7946"
               protocol: UDP
+    # Loki canary egress: canary pods write/read to loki single-binary on port 3100
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/component: single-binary
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP

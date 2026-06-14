@@ -27,6 +27,9 @@ spec:
     # External: GeoIP updates, email, OIDC federation
     - toEntities:
         - world
+    # Kubernetes API: authentik-worker uses k8s service account APIs
+    - toEntities:
+        - kube-apiserver
     # DNS
     - toEndpoints:
         - matchLabels:

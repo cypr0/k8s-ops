@@ -52,3 +52,10 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
+    # External: Grafana update checks (grafana.com via Cloudflare CDN)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
