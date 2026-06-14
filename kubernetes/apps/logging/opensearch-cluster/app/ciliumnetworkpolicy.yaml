@@ -1,0 +1,132 @@
+---
+# OpenSearch masters: REST API + inter-node transport
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: opensearch-masters
+  namespace: logging
+spec:
+  endpointSelector:
+    matchLabels:
+      opensearch.org/opensearch-cluster: opensearch
+  ingress:
+    # Inter-node transport (9300) — only between OpenSearch peers
+    - fromEndpoints:
+        - matchLabels:
+            opensearch.org/opensearch-cluster: opensearch
+      toPorts:
+        - ports:
+            - port: "9300"
+              protocol: TCP
+    # REST API from logging namespace (fluent-bit, operator, jobs)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": logging
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # REST API from monitoring (alloy, gatus)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # REST API from security (falcosidekick, trivy, kubescape)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": security
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Kubernetes API (operator lifecycle management)
+    - toEntities:
+        - kube-apiserver
+    # Inter-node transport
+    - toEndpoints:
+        - matchLabels:
+            opensearch.org/opensearch-cluster: opensearch
+      toPorts:
+        - ports:
+            - port: "9300"
+              protocol: TCP
+---
+# OpenSearch Dashboards: ingress from Envoy + egress to OpenSearch + OIDC
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: opensearch-dashboards
+  namespace: logging
+spec:
+  endpointSelector:
+    matchLabels:
+      opensearch.cluster.dashboards: opensearch
+  ingress:
+    # External access via Envoy Gateway (logs.cisotop.de)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+    # Health checks from gatus
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+    # Dashboard setup jobs (logging namespace)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": logging
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # OpenSearch REST API
+    - toEndpoints:
+        - matchLabels:
+            opensearch.org/opensearch-cluster: opensearch
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # Authentik OIDC (external)
+    - toFQDNs:
+        - matchPattern: "*.cisotop.de"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

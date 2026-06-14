@@ -20,3 +20,4 @@ resources:
   - ./job-opnsense.yaml
   - ./configmap-security-dashboards.yaml
   - ./job-security-dashboards.yaml
+  - ./ciliumnetworkpolicy.yaml

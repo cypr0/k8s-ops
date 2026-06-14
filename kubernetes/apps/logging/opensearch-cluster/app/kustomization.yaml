@@ -7,3 +7,4 @@ resources:
   - ./externalsecret-securityconfig.yaml
   - ./cluster.yaml
   - ./httproute.yaml
+  - ./ciliumnetworkpolicy.yaml

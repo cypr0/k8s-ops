@@ -1,0 +1,52 @@
+---
+# opensearch-sa jobs and CronJobs: setup, export, dashboard, pipeline jobs
+# Job pods are identified by the batch.kubernetes.io/job-name label being present.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: opensearch-sa-jobs
+  namespace: logging
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: batch.kubernetes.io/job-name
+        operator: Exists
+  ingress: []
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Kubernetes API (crd-to-opensearch reads Trivy/Kubescape CRDs)
+    - toEntities:
+        - kube-apiserver
+    # OpenSearch REST API
+    - toEndpoints:
+        - matchLabels:
+            opensearch.org/opensearch-cluster: opensearch
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # OpenSearch Dashboards (dashboard setup jobs)
+    - toEndpoints:
+        - matchLabels:
+            opensearch.cluster.dashboards: opensearch
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+    # External alerts (Pushover API)
+    - toFQDNs:
+        - matchName: "api.pushover.net"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

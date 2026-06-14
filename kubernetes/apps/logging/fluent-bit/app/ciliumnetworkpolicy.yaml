@@ -1,0 +1,59 @@
+---
+# Fluent Bit: syslog ingestion from external + forward to OpenSearch and Loki
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: fluent-bit
+  namespace: logging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+  ingress:
+    # Syslog from external hosts (Proxmox, OPNsense) via LoadBalancer
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "5514"
+              protocol: TCP
+            - port: "5514"
+              protocol: UDP
+    # Prometheus metrics scraping (port 2020)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "2020"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # OpenSearch REST API
+    - toEndpoints:
+        - matchLabels:
+            opensearch.org/opensearch-cluster: opensearch
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # Loki (dual-write)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: loki
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP

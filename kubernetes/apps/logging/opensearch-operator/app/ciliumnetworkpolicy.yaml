@@ -1,0 +1,43 @@
+---
+# OpenSearch Operator: manages cluster lifecycle via k8s API and OpenSearch REST
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: opensearch-operator
+  namespace: logging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: opensearch-operator
+  ingress: []
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Kubernetes API (watches/patches OpenSearch CRDs and StatefulSets)
+    - toEntities:
+        - kube-apiserver
+    # OpenSearch REST API (health checks, cluster config)
+    - toEndpoints:
+        - matchLabels:
+            opensearch.org/opensearch-cluster: opensearch
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # OpenSearch Dashboards (managed resource health)
+    - toEndpoints:
+        - matchLabels:
+            opensearch.cluster.dashboards: opensearch
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
