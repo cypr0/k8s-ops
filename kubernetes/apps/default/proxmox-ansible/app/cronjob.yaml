@@ -27,7 +27,7 @@ spec:
                         operator: DoesNotExist
           containers:
             - name: ansible
-              image: python:3.12-alpine
+              image: python:3.14-alpine
               command: ["/bin/sh", "/scripts/run.sh"]
               env:
                 - name: PROXMOX_SSH_HOST

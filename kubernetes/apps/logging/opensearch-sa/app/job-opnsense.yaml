@@ -21,7 +21,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: pipeline
-          image: python:3.12-alpine
+          image: python:3.14-alpine
           command: ["python3", "/scripts/setup_opnsense_pipeline.py"]
           env:
             - name: OPENSEARCH_PASSWORD
@@ -71,7 +71,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: dashboard
-          image: python:3.12-alpine
+          image: python:3.14-alpine
           command: ["python3", "/scripts/create_opnsense_dashboards.py"]
           env:
             - name: OSD_HOST

@@ -20,7 +20,7 @@ spec:
                     operator: DoesNotExist
       containers:
         - name: dashboard
-          image: python:3.12-alpine
+          image: python:3.14-alpine
           command: ["python3", "/scripts/create_security_dashboards.py"]
           env:
             - name: OSD_HOST
