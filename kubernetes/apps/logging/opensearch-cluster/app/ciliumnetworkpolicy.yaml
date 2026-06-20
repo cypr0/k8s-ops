@@ -65,6 +65,20 @@ spec:
         - ports:
             - port: "9300"
               protocol: TCP
+    # OIDC JWT validation: the security plugin on the data nodes fetches the
+    # IdP's JWKS keys from id.cisotop.de to verify tokens. A hostAlias points
+    # id.cisotop.de at the envoy-external ClusterIP, so this reaches Authentik
+    # in-cluster via the Envoy proxy (post-DNAT container port 10443). Without
+    # this, JWT validation times out ("Authentication backend timed out") and
+    # every OIDC login is rejected with 401.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
 ---
 # OpenSearch Dashboards: ingress from Envoy + egress to OpenSearch + OIDC
 apiVersion: cilium.io/v2

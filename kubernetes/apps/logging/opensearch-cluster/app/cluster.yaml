@@ -35,6 +35,15 @@ spec:
         - cluster_manager
         - data
         - ingest
+      # The security plugin on the data nodes validates OIDC JWTs by fetching the
+      # IdP JWKS from id.${SECRET_DOMAIN}. Resolve that to the envoy-external
+      # ClusterIP so the lookup stays in-cluster (data node -> envoy -> authentik)
+      # instead of the broken public Cloudflare hairpin, which otherwise times
+      # out and rejects every login with 401 ("Authentication backend timed out").
+      hostAliases:
+        - ip: "10.43.173.224"
+          hostnames:
+            - "id.${SECRET_DOMAIN}"
       # Sized to fit alongside other workloads on the 3 worker nodes (~11-14Gi
       # allocatable each, already ~40-70% committed). 8Gi/4g-heap masters could
       # not be scheduled (masters-1/-2 stuck Pending -> no quorum -> masters-0
