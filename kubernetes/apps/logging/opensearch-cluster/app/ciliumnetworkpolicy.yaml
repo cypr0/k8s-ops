@@ -129,16 +129,16 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
-    # Authentik OIDC discovery to id.cisotop.de. The hostname resolves via the
-    # Cloudflare edge (public IPs) and, due to the default ndots:5 search-domain
-    # behaviour + Cloudflare wildcard DNS, the pod queries the suffixed name
-    # (id.cisotop.de.logging.svc.cluster.local). Cilium does not reliably map
-    # those CDN IPs to a toFQDNs identity in that case, so we allow egress to
-    # the `world` entity on 443 instead. This keeps east-west (in-cluster
-    # pod-to-pod) traffic fully restricted while permitting only outbound HTTPS.
-    - toEntities:
-        - world
+    # Authentik OIDC (discovery / token / JWKS) for id.cisotop.de. A hostAlias
+    # on the dashboards pod points id.cisotop.de at the envoy-external ClusterIP,
+    # so these server-side calls go in-cluster to the Envoy proxy (which routes
+    # to authentik) instead of the public Cloudflare hairpin. Enforced post-DNAT
+    # -> the Envoy data-plane container port is 10443 (service 443 -> 10443).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
       toPorts:
         - ports:
-            - port: "443"
+            - port: "10443"
               protocol: TCP

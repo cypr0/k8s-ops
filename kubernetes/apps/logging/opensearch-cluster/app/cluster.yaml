@@ -83,6 +83,17 @@ spec:
         memory: 512Mi
       limits:
         memory: 1Gi
+    # Resolve id.${SECRET_DOMAIN} to the envoy-external ClusterIP so the server-
+    # side OIDC discovery/token/JWKS calls stay INSIDE the cluster
+    # (dashboards -> envoy-external -> authentik) instead of taking the public
+    # Cloudflare hairpin (pod -> Cloudflare -> tunnel -> envoy), which Cloudflare
+    # terminates without a response (cdn-loop) and caused the securityDashboards
+    # plugin OIDC setup to time out after 30s and crash-loop. Browser redirects
+    # still use the public name; only the pod's own resolution is overridden.
+    hostAliases:
+      - ip: "10.43.173.224"
+        hostnames:
+          - "id.${SECRET_DOMAIN}"
     additionalConfig:
       opensearch_security.auth.type: "openid"
       opensearch_security.openid.connect_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/.well-known/openid-configuration"
