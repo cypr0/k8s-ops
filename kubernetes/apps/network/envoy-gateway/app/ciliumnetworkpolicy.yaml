@@ -58,27 +58,34 @@ spec:
     matchLabels:
       app.kubernetes.io/name: envoy
   ingress:
-    # Cloudflare Tunnel forwards all *.cisotop.de traffic to envoy-external (primary path)
+    # IMPORTANT: ingress is enforced POST-DNAT (kubeProxyReplacement). The Envoy
+    # data-plane container listens on 10080 (HTTP) and 10443 (HTTPS); the
+    # LoadBalancer/ClusterIP services map 80 -> 10080 and 443 -> 10443. All
+    # ingress rules below therefore allow the CONTAINER ports 10080/10443, not
+    # the service ports 80/443 (using 80/443 silently dropped everything).
+    #
+    # Cloudflare Tunnel forwards all *.cisotop.de traffic to
+    # envoy-external.network.svc:443 -> container 10443 (primary public path).
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
             app.kubernetes.io/name: cloudflare-tunnel
       toPorts:
         - ports:
-            - port: "80"
+            - port: "10080"
               protocol: TCP
-            - port: "443"
+            - port: "10443"
               protocol: TCP
     # Direct LoadBalancer access (fallback / health checks from world)
     - fromEntities:
         - world
       toPorts:
         - ports:
-            - port: "80"
+            - port: "10080"
               protocol: TCP
-            - port: "443"
+            - port: "10443"
               protocol: TCP
-            - port: "443"
+            - port: "10443"
               protocol: UDP
     # SNAT mode (loadBalancer.mode: snat + kubeProxyReplacement): the L2-owner
     # node SNATs the client IP to its own node IP before forwarding to this
@@ -90,11 +97,11 @@ spec:
         - remote-node
       toPorts:
         - ports:
-            - port: "80"
+            - port: "10080"
               protocol: TCP
-            - port: "443"
+            - port: "10443"
               protocol: TCP
-            - port: "443"
+            - port: "10443"
               protocol: UDP
     # Prometheus stats scraping (port 19001)
     - fromEndpoints:
