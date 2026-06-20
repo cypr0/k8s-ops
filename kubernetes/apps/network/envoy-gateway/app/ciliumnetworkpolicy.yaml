@@ -10,6 +10,19 @@ spec:
     matchLabels:
       app.kubernetes.io/name: gateway-helm
   ingress:
+    # xDS: the envoy proxy data-plane pods INITIATE the gRPC stream to this
+    # controller's xDS server on :18000 to receive their listener/cluster config.
+    # Without this, every envoy pod fails to fetch config and crash-loops
+    # (1/2 Ready), so both gateways have no healthy backends and are unreachable.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "18000"
+              protocol: TCP
+    # Prometheus metrics scraping
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
@@ -29,17 +42,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+    # Watch/manage Gateway API + EnvoyProxy resources, create proxy deployments
     - toEntities:
         - kube-apiserver
-    # xDS config push to envoy proxy pods
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": network
-            app.kubernetes.io/name: envoy
-      toPorts:
-        - ports:
-            - port: "18000"
-              protocol: TCP
 ---
 # Envoy proxy pods: terminate TLS, route to backend services.
 # Both envoy-external (public LB) and envoy-internal (private LB) share this label.
