@@ -200,11 +200,17 @@ spec:
             Line_Format      json
             Retry_Limit      5
 
-    # Expose syslog port on pods
+    # Expose syslog port on pods. The chart also adds these entries to the
+    # Service, which requires a valid `port` (1-65535); without it the Service
+    # port defaults to 0 and the Helm upgrade fails ("port: Invalid value: 0").
     extraPorts:
       - name: syslog-udp
+        port: 5514
         containerPort: 5514
         protocol: UDP
+        targetPort: 5514
       - name: syslog-tcp
+        port: 5514
         containerPort: 5514
         protocol: TCP
+        targetPort: 5514
