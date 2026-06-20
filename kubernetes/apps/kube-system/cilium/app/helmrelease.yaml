@@ -108,4 +108,11 @@ spec:
           - SYS_RESOURCE
     socketLB:
       enabled: true
-      hostNamespaceOnly: true
+      # hostNamespaceOnly=true bypasses socket-LB inside pod namespaces and
+      # falls back to the per-packet tc LB at the veth. On this Talos setup that
+      # breaks pods connecting to a LoadBalancer/ClusterIP that hairpins back to
+      # the same node (e.g. dashboards -> envoy LB -> authentik), and is only
+      # needed for Multus/KubeVirt/Istio-sidecar style setups — none of which are
+      # deployed here. Disabling it enables in-pod socket-LB so ClusterIP/LB
+      # hairpin works cluster-wide.
+      hostNamespaceOnly: false
