@@ -10,6 +10,14 @@ spec:
     - name: envoy-external
       namespace: network
       sectionName: https
+    # Also expose via the internal gateway so in-cluster OIDC clients
+    # (opensearch dashboards + data nodes) can reach Authentik internally
+    # (id.${SECRET_DOMAIN} is resolved to the envoy-internal ClusterIP by
+    # CoreDNS) instead of taking the public Cloudflare hairpin, which Cloudflare
+    # drops as a cdn-loop and which broke OIDC token/JWKS validation.
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
   rules:
     - backendRefs:
         - name: authentik-server

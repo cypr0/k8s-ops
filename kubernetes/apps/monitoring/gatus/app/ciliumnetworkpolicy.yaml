@@ -87,11 +87,18 @@ spec:
               protocol: TCP
             - port: "443"
               protocol: TCP
-    # External HTTPS endpoints (id.cisotop.de, echo.cisotop.de, Pushover).
-    # These resolve to public CDN IPs; with the default ndots:5 search-domain
-    # behaviour Cilium cannot reliably map the resolved IPs to a toFQDNs
-    # identity, so allow egress to the `world` entity on 443. East-west
-    # (in-cluster pod-to-pod) traffic stays fully restricted.
+    # id.cisotop.de is resolved in-cluster to the envoy-internal gateway by the
+    # CoreDNS rewrite, so Gatus health checks against it go to the Envoy proxy
+    # (post-DNAT container port 10443) rather than out to the internet.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
+    # Other external HTTPS endpoints (echo.cisotop.de, Pushover, etc.).
     - toEntities:
         - world
       toPorts:

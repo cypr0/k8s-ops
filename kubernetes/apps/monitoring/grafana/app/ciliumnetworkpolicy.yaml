@@ -63,11 +63,18 @@ spec:
         - ports:
             - port: "9093"
               protocol: TCP
-    # Authentik OIDC (id.cisotop.de) + dashboard JSON from grafana.com/.net.
-    # These resolve to public CDN IPs; with the default ndots:5 search-domain
-    # behaviour Cilium cannot reliably map the resolved IPs to a toFQDNs
-    # identity, so allow egress to the `world` entity on 443. East-west
-    # (in-cluster pod-to-pod) traffic stays fully restricted.
+    # Authentik OIDC: id.cisotop.de is resolved in-cluster to the envoy-internal
+    # gateway by the CoreDNS rewrite, so Grafana's OIDC calls go to the Envoy
+    # proxy (post-DNAT container port 10443), not out to the internet.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
+    # Dashboard JSON from grafana.com/.net and any other external HTTPS.
     - toEntities:
         - world
       toPorts:

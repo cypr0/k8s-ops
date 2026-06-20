@@ -35,15 +35,6 @@ spec:
         - cluster_manager
         - data
         - ingest
-      # The security plugin on the data nodes validates OIDC JWTs by fetching the
-      # IdP JWKS from id.${SECRET_DOMAIN}. Resolve that to the envoy-external
-      # ClusterIP so the lookup stays in-cluster (data node -> envoy -> authentik)
-      # instead of the broken public Cloudflare hairpin, which otherwise times
-      # out and rejects every login with 401 ("Authentication backend timed out").
-      hostAliases:
-        - ip: "10.43.173.224"
-          hostnames:
-            - "id.${SECRET_DOMAIN}"
       # Sized to fit alongside other workloads on the 3 worker nodes (~11-14Gi
       # allocatable each, already ~40-70% committed). 8Gi/4g-heap masters could
       # not be scheduled (masters-1/-2 stuck Pending -> no quorum -> masters-0
@@ -92,17 +83,9 @@ spec:
         memory: 512Mi
       limits:
         memory: 1Gi
-    # Resolve id.${SECRET_DOMAIN} to the envoy-external ClusterIP so the server-
-    # side OIDC discovery/token/JWKS calls stay INSIDE the cluster
-    # (dashboards -> envoy-external -> authentik) instead of taking the public
-    # Cloudflare hairpin (pod -> Cloudflare -> tunnel -> envoy), which Cloudflare
-    # terminates without a response (cdn-loop) and caused the securityDashboards
-    # plugin OIDC setup to time out after 30s and crash-loop. Browser redirects
-    # still use the public name; only the pod's own resolution is overridden.
-    hostAliases:
-      - ip: "10.43.173.224"
-        hostnames:
-          - "id.${SECRET_DOMAIN}"
+    # NOTE: id.${SECRET_DOMAIN} is resolved in-cluster to the envoy-internal
+    # gateway by the CoreDNS rewrite (kube-system/coredns), so the OIDC
+    # discovery/token calls from this pod stay internal without a hostAlias.
     additionalConfig:
       opensearch_security.auth.type: "openid"
       opensearch_security.openid.connect_url: "https://id.${SECRET_DOMAIN}/application/o/opensearch/.well-known/openid-configuration"

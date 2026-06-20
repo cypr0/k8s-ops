@@ -42,6 +42,16 @@ spec:
             configBlock: |-
               lameduck 5s
           - name: ready
+          # Split-horizon DNS: resolve id.${SECRET_DOMAIN} (Authentik) in-cluster
+          # to the envoy-INTERNAL gateway service instead of the public Cloudflare
+          # edge. The authentik-ui HTTPRoute is attached to envoy-internal too, so
+          # in-cluster OIDC clients (opensearch dashboards + data nodes validating
+          # tokens/JWKS) reach Authentik via the internal gateway rather than the
+          # public Cloudflare hairpin (which Cloudflare drops as a cdn-loop and
+          # which broke OIDC). Must precede the kubernetes plugin so the rewritten
+          # name resolves against cluster.local.
+          - name: rewrite
+            parameters: name id.${SECRET_DOMAIN} envoy-internal.network.svc.cluster.local
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
             configBlock: |-
