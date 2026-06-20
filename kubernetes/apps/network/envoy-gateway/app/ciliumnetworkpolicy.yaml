@@ -112,6 +112,18 @@ spec:
         - ports:
             - port: "19001"
               protocol: TCP
+    # OpenSearch Dashboards performs its server-side OIDC discovery/token/JWKS
+    # calls to id.cisotop.de via a hostAlias pointing at the envoy-external
+    # ClusterIP, so it reaches Authentik through this proxy internally instead
+    # of the public Cloudflare hairpin. Post-DNAT container port is 10443.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": logging
+            opensearch.cluster.dashboards: opensearch
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
