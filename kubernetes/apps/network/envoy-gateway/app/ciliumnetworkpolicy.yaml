@@ -75,6 +75,22 @@ spec:
               protocol: TCP
             - port: "443"
               protocol: UDP
+    # SNAT mode (loadBalancer.mode: snat + kubeProxyReplacement): the L2-owner
+    # node SNATs the client IP to its own node IP before forwarding to this
+    # backend pod. Cilium then classifies the source as remote-node (or
+    # kube-apiserver for CP nodes), NOT world. Without this rule, all north-south
+    # LoadBalancer traffic to envoy-external (192.168.10.103) and envoy-internal
+    # (192.168.10.101) is dropped. Mirrors the k8s-gateway policy.
+    - fromEntities:
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "443"
+              protocol: UDP
     # Prometheus stats scraping (port 19001)
     - fromEndpoints:
         - matchLabels:
@@ -130,13 +146,14 @@ spec:
         - ports:
             - port: "9000"
               protocol: TCP
-    # Backend: default namespace (echo :8080)
+    # Backend: default namespace (echo container listens on :80; service maps
+    # 80 -> 80. Egress is enforced POST-DNAT against the container port.)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": default
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "80"
               protocol: TCP
     # Backend: flux-system namespace (webhook-receiver :9292)
     - toEndpoints:
