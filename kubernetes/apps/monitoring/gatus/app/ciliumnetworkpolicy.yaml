@@ -87,9 +87,12 @@ spec:
               protocol: TCP
             - port: "443"
               protocol: TCP
-    # External endpoints (HTTPS: id.cisotop.de, echo.cisotop.de, Pushover)
+    # External endpoints (HTTPS: id.cisotop.de, echo.cisotop.de, Pushover).
+    # The "*.cisotop.de.*" pattern also covers names resolved with the appended
+    # search domain (default ndots:5 + Cloudflare wildcard DNS).
     - toFQDNs:
         - matchPattern: "*.cisotop.de"
+        - matchPattern: "*.cisotop.de.*"
         - matchName: "api.pushover.net"
       toPorts:
         - ports:

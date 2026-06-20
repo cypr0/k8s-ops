@@ -129,9 +129,14 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
-    # Authentik OIDC discovery (id.cisotop.de resolves to Cloudflare edge IPs)
+    # Authentik OIDC discovery (id.cisotop.de resolves to Cloudflare edge IPs).
+    # The pod resolves the name WITH the appended search domain
+    # (id.cisotop.de.logging.svc.cluster.local) because ndots:5 is the default,
+    # and the Cloudflare wildcard answers it. Match both the bare name and the
+    # search-domain-suffixed variant so the resolved IPs are allowed.
     - toFQDNs:
         - matchPattern: "*.cisotop.de"
+        - matchPattern: "*.cisotop.de.*"
       toPorts:
         - ports:
             - port: "443"

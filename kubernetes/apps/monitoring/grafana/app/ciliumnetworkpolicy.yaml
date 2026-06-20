@@ -63,9 +63,13 @@ spec:
         - ports:
             - port: "9093"
               protocol: TCP
-    # Authentik OIDC + dashboard JSON from grafana.com
+    # Authentik OIDC + dashboard JSON from grafana.com.
+    # The "*.cisotop.de.*" pattern also covers names resolved with the appended
+    # search domain (e.g. id.cisotop.de.monitoring.svc.cluster.local) due to the
+    # default ndots:5 + Cloudflare wildcard DNS.
     - toFQDNs:
         - matchPattern: "*.cisotop.de"
+        - matchPattern: "*.cisotop.de.*"
         - matchName: "grafana.com"
         - matchName: "grafana.net"
       toPorts:
