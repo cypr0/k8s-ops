@@ -35,13 +35,19 @@ spec:
         - cluster_manager
         - data
         - ingest
+      # Sized to fit alongside other workloads on the 3 worker nodes (~11-14Gi
+      # allocatable each, already ~40-70% committed). 8Gi/4g-heap masters could
+      # not be scheduled (masters-1/-2 stuck Pending -> no quorum -> masters-0
+      # crash-looped "cluster-manager not discovered"). 3Gi req/limit with a
+      # 1.5g heap (~50% of the container memory, OpenSearch recommendation)
+      # leaves headroom and lets all three replicas schedule and form quorum.
       resources:
         requests:
           cpu: 200m
-          memory: 8Gi
+          memory: 3Gi
         limits:
-          memory: 8Gi
-      jvm: "-Xmx4g -Xms4g"
+          memory: 3Gi
+      jvm: "-Xmx1536m -Xms1536m"
       persistence:
         pvc:
           storageClass: zfs-nfs
