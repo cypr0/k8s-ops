@@ -20,7 +20,9 @@ spec:
             - port: "3000"
               protocol: TCP
   egress:
-    # DNS
+    # DNS — L7 dns rule required so Cilium learns the IPs behind the toFQDNs
+    # entries below (*.cisotop.de OIDC, grafana.com/.net); otherwise Authentik
+    # OIDC login and dashboard downloads are dropped.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
@@ -31,6 +33,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     # Prometheus datasource
     - toEndpoints:
         - matchLabels:

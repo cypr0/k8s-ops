@@ -13,7 +13,8 @@ spec:
         operator: Exists
   ingress: []
   egress:
-    # DNS
+    # DNS — L7 dns rule required so Cilium learns the IPs behind the toFQDNs
+    # entries below (api.pushover.net); otherwise toFQDNs resolves to nothing.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
@@ -24,6 +25,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     # Kubernetes API (crd-to-opensearch reads Trivy/Kubescape CRDs)
     - toEntities:
         - kube-apiserver

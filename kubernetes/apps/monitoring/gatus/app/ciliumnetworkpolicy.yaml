@@ -29,7 +29,9 @@ spec:
             - port: "8080"
               protocol: TCP
   egress:
-    # DNS
+    # DNS — L7 dns rule required so Cilium learns the IPs behind the toFQDNs
+    # entries below (*.cisotop.de, api.pushover.net); otherwise external health
+    # checks via toFQDNs are dropped.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
@@ -40,6 +42,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     # Monitoring namespace health checks (prometheus, alertmanager, loki)
     - toEndpoints:
         - matchLabels:

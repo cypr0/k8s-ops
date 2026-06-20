@@ -104,7 +104,10 @@ spec:
             - port: "5601"
               protocol: TCP
   egress:
-    # DNS
+    # DNS — MUST include the L7 dns rule so Cilium's DNS proxy can observe the
+    # answers for *.cisotop.de and populate the toFQDNs IP set below. Without
+    # this matchPattern, toFQDNs never resolves any IP and the OIDC egress to
+    # Authentik (id.cisotop.de) is dropped, crash-looping the dashboards pod.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
@@ -115,6 +118,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     # OpenSearch REST API
     - toEndpoints:
         - matchLabels:
@@ -123,7 +129,7 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
-    # Authentik OIDC (external)
+    # Authentik OIDC discovery (id.cisotop.de resolves to Cloudflare edge IPs)
     - toFQDNs:
         - matchPattern: "*.cisotop.de"
       toPorts:
