@@ -63,15 +63,13 @@ spec:
         - ports:
             - port: "9093"
               protocol: TCP
-    # Authentik OIDC + dashboard JSON from grafana.com.
-    # The "*.cisotop.de.*" pattern also covers names resolved with the appended
-    # search domain (e.g. id.cisotop.de.monitoring.svc.cluster.local) due to the
-    # default ndots:5 + Cloudflare wildcard DNS.
-    - toFQDNs:
-        - matchPattern: "*.cisotop.de"
-        - matchPattern: "*.cisotop.de.*"
-        - matchName: "grafana.com"
-        - matchName: "grafana.net"
+    # Authentik OIDC (id.cisotop.de) + dashboard JSON from grafana.com/.net.
+    # These resolve to public CDN IPs; with the default ndots:5 search-domain
+    # behaviour Cilium cannot reliably map the resolved IPs to a toFQDNs
+    # identity, so allow egress to the `world` entity on 443. East-west
+    # (in-cluster pod-to-pod) traffic stays fully restricted.
+    - toEntities:
+        - world
       toPorts:
         - ports:
             - port: "443"

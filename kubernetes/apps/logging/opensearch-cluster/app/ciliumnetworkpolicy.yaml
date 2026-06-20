@@ -129,14 +129,15 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
-    # Authentik OIDC discovery (id.cisotop.de resolves to Cloudflare edge IPs).
-    # The pod resolves the name WITH the appended search domain
-    # (id.cisotop.de.logging.svc.cluster.local) because ndots:5 is the default,
-    # and the Cloudflare wildcard answers it. Match both the bare name and the
-    # search-domain-suffixed variant so the resolved IPs are allowed.
-    - toFQDNs:
-        - matchPattern: "*.cisotop.de"
-        - matchPattern: "*.cisotop.de.*"
+    # Authentik OIDC discovery to id.cisotop.de. The hostname resolves via the
+    # Cloudflare edge (public IPs) and, due to the default ndots:5 search-domain
+    # behaviour + Cloudflare wildcard DNS, the pod queries the suffixed name
+    # (id.cisotop.de.logging.svc.cluster.local). Cilium does not reliably map
+    # those CDN IPs to a toFQDNs identity in that case, so we allow egress to
+    # the `world` entity on 443 instead. This keeps east-west (in-cluster
+    # pod-to-pod) traffic fully restricted while permitting only outbound HTTPS.
+    - toEntities:
+        - world
       toPorts:
         - ports:
             - port: "443"
