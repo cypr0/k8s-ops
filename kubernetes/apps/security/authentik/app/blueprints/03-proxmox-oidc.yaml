@@ -12,10 +12,22 @@ entries:
       name: proxmox-scope
     attrs:
       scope_name: proxmox
-      description: Proxmox VE username claim
+      description: Proxmox VE username and groups claim
       expression: |
         return {
             "username": request.user.username,
+        }
+
+  # ── Groups scope mapping (Proxmox expects "groups" claim as array of group names) ──
+  - model: authentik_providers_oauth2.scopemapping
+    id: proxmox-groups-mapping
+    identifiers:
+      name: proxmox-groups
+    attrs:
+      scope_name: groups
+      description: Groups claim for Proxmox VE
+      expression: |
+        return {
             "groups": [group.name for group in request.user.ak_groups.all()],
         }
 
@@ -45,6 +57,7 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
         - !Find [authentik_providers_oauth2.scopemapping, [scope_name, proxmox]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, groups]]
 
   # ── Application ───────────────────────────────────────────────────────
   - model: authentik_core.application
