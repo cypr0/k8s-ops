@@ -335,6 +335,25 @@ data:
             group: root
             mode: "0600"
 
+        # ── Syslog Forwarding to Fluent-Bit ──────────────────────────────────
+        - name: Configure rsyslog to forward logs to Fluent-Bit
+          ansible.builtin.copy:
+            dest: /etc/rsyslog.d/90-fluentbit.conf
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              # Forward all logs to Fluent-Bit syslog-ingress in Kubernetes
+              # UDP for performance, TCP as fallback
+              *.* @192.168.10.110:514
+          notify: Restart rsyslog
+
+        - name: Ensure rsyslog is enabled and running
+          ansible.builtin.service:
+            name: rsyslog
+            enabled: yes
+            state: started
+
       handlers:
         - name: Restart fail2ban
           ansible.builtin.service:
@@ -351,3 +370,8 @@ data:
             name: pve-firewall
             state: stopped
             enabled: false
+
+        - name: Restart rsyslog
+          ansible.builtin.service:
+            name: rsyslog
+            state: restarted
