@@ -65,9 +65,20 @@ spec:
             HTTP_Port     2020
 
       customParsers: |
-        # RFC5424 without mandatory fractional seconds (Proxmox, OPNsense)
+        # RFC5424 with optional fractional seconds (Proxmox rsyslog, OPNsense)
+        # Matches: <PRI>1 TIMESTAMP HOST APP PID MSGID SD MSG
+        # rsyslog sends: <38>1 2026-06-21T16:06:29.738928+02:00 proxmox sshd 12345 - - message
         [PARSER]
             Name        syslog-rfc5424-nofrac
+            Format      regex
+            Regex       ^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>(\[(.*?)\]|-)) (?<message>.+)$
+            Time_Key    time
+            Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+            Time_Keep   Off
+        
+        # Fallback parser without fractional seconds
+        [PARSER]
+            Name        syslog-rfc5424-simple
             Format      regex
             Regex       ^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>(\[(.*?)\]|-)) (?<message>.+)$
             Time_Key    time

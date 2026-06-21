@@ -434,13 +434,13 @@ data:
               # Forward all logs to Fluent-Bit syslog-ingress in Kubernetes
               # RFC5424 format matching Fluent-Bit parser: <PRI>1 TIMESTAMP HOST APP PID MSGID SD MSG
               # UDP for performance (@ = UDP, @@ = TCP)
-              
+
               # RFC5424 template - must match Fluent-Bit regex:
               # ^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>...) (?<message>.+)$
               template(name="FluentBitRFC5424" type="string"
                 string="<%PRI%>1 %TIMESTAMP:::date-rfc3339% %HOSTNAME% %APP-NAME% %PROCID% - - %msg%\n"
               )
-              
+
               # Forward all logs using RFC5424
               *.* @192.168.10.110:514;FluentBitRFC5424
           notify: Restart rsyslog
