@@ -153,31 +153,57 @@ data:
     print("  Dashboard Firewall: " + str(s))
 
     # ════════════════════════════════════════════════════════════════════════
-    # DASHBOARD B — Suricata IDS Alerts
+    # DASHBOARD B — Suricata IDS Alerts (uses suricata-* index)
     # ════════════════════════════════════════════════════════════════════════
-    ids_filter = [{"term": {"ident": "suricata"}}, {"term": {"suricata_event_type": "alert"}}]
+    SURICATA_IDX = "suricata-idx"
+    print("\nCreating index pattern for suricata-*...")
+    r, s = osd("POST", "/api/saved_objects/index-pattern/" + SURICATA_IDX + "?overwrite=true", {
+        "attributes": {"title": "suricata-*", "timeFieldName": "@timestamp", "fields": "[]"}
+    })
+    print("  Index pattern: " + str(s))
+
+    # Suricata Eve-JSON uses nested alert.* fields
+    ids_filter = [{"term": {"event_type": "alert"}}]
+
+    def sv(vid, title, vis_type, params, aggs, flt=None):
+        """Create visualization for suricata-* index"""
+        return {
+            "type": "visualization", "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({"title": title, "type": vis_type, "params": params, "aggs": aggs}),
+                "uiStateJSON": "{}",
+                "description": "",
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
+                    "index": SURICATA_IDX,
+                    "query": {"bool": {"filter": flt or [], "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })}
+            },
+            "references": [{"id": SURICATA_IDX, "name": "indexPatternId", "type": "index-pattern"}]
+        }
 
     ids_vizs = [
-        v("ids-v1-total",    "🚨 Total Alerts",          "metric", METRIC_P, count_agg(), ids_filter),
-        v("ids-v2-sev1",     "🔴 Severity 1 (Critical)", "metric", METRIC_P, count_agg(), ids_filter + [{"term":{"suricata_severity":1}}]),
-        v("ids-v3-sev2",     "🟠 Severity 2 (High)",     "metric", METRIC_P, count_agg(), ids_filter + [{"term":{"suricata_severity":2}}]),
-        v("ids-v4-blocked",  "🛡️ Blocked by IDS",        "metric", METRIC_P, count_agg(), ids_filter + [{"term":{"fw_action":"blocked"}}]),
+        sv("ids-v1-total",    "🚨 Total Alerts",          "metric", METRIC_P, count_agg(), ids_filter),
+        sv("ids-v2-sev1",     "🔴 Severity 1 (Critical)", "metric", METRIC_P, count_agg(), ids_filter + [{"term":{"alert.severity":1}}]),
+        sv("ids-v3-sev2",     "🟠 Severity 2 (High)",     "metric", METRIC_P, count_agg(), ids_filter + [{"term":{"alert.severity":2}}]),
+        sv("ids-v4-blocked",  "🛡️ Blocked by IDS",        "metric", METRIC_P, count_agg(), ids_filter + [{"term":{"alert.action.keyword":"blocked"}}]),
 
-        v("ids-v5-timeline", "Alert Timeline by Severity", "line", line_p(),
-          count_agg() + [date_agg(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"suricata_severity","size":4,"order":"desc","orderBy":"1"}}],
+        sv("ids-v5-timeline", "Alert Timeline by Severity", "line", line_p(),
+          count_agg() + [date_agg(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"alert.severity","size":4,"order":"desc","orderBy":"1"}}],
           ids_filter),
 
-        v("ids-v6-category", "Top Alert Categories", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("suricata_category.keyword", 15)], ids_filter),
+        sv("ids-v6-category", "Top Alert Categories", "horizontal_bar", hbar_p(),
+          count_agg() + [terms_agg("alert.category.keyword", 15)], ids_filter),
 
-        v("ids-v7-sigs",     "Top Signatures", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("suricata_signature.keyword", 15)], ids_filter),
+        sv("ids-v7-sigs",     "Top Signatures", "horizontal_bar", hbar_p(),
+          count_agg() + [terms_agg("alert.signature.keyword", 15)], ids_filter),
 
-        v("ids-v8-src-ips",  "Top Source IPs", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("src_ip", 15)], ids_filter),
+        sv("ids-v8-src-ips",  "Top Source IPs", "horizontal_bar", hbar_p(),
+          count_agg() + [terms_agg("src_ip.keyword", 15)], ids_filter),
 
-        v("ids-v9-sev-dist", "Severity Distribution", "pie", pie_p(),
-          count_agg() + [terms_agg("suricata_severity", 5)], ids_filter),
+        sv("ids-v9-sev-dist", "Severity Distribution", "pie", pie_p(),
+          count_agg() + [terms_agg("alert.severity", 5)], ids_filter),
     ]
 
     print("\nCreating Suricata IDS visualizations...")

@@ -18,8 +18,6 @@ resources:
   - ./configmap-opnsense-pipeline.yaml
   - ./configmap-opnsense-dashboards.yaml
   - ./job-opnsense.yaml
-  - ./configmap-suricata-dashboard.yaml
-  - ./job-suricata-dashboard.yaml
   - ./configmap-security-dashboards.yaml
   - ./job-security-dashboards.yaml
   - ./ciliumnetworkpolicy.yaml
