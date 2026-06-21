@@ -214,21 +214,88 @@ data:
             executable: /bin/bash
           notify: Stop pve-firewall
 
-        # ── /etc/network/interfaces — DNAT & post-down safeguards ─────────────
-        # Corrects any DNAT typo (e.g. 192.10.100.1) to the canonical OPNsense
-        # WAN IP and fixes the post-down -A/-D bug that duplicates MASQUERADE
-        # rules on every interface restart.
+        # ── /etc/network/interfaces — Validation & Safeguards ─────────────────
+        # Validates and corrects network configuration without touching structure.
+        # PVE firewall stays DISABLED - protection via iptables, fail2ban, OPNsense.
+
+        # Ensure DNAT target is correct (fix typos like 192.10.100.1)
         - name: Enforce correct DNAT target in /etc/network/interfaces
           ansible.builtin.replace:
             path: /etc/network/interfaces
             regexp: '-j DNAT --to 192\.\d+\.100\.1'
             replace: '-j DNAT --to 192.168.100.1'
 
+        # Ensure post-down uses -D (delete) not -A (append)
         - name: Fix post-down iptables rules (must use -D not -A to delete)
           ansible.builtin.replace:
             path: /etc/network/interfaces
             regexp: 'post-down iptables -t nat -A'
             replace: 'post-down iptables -t nat -D'
+
+        # Ensure TCP DNAT excludes ports 22 and 8006 (SSH + Proxmox UI)
+        - name: Ensure TCP DNAT excludes management ports (22, 8006)
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: 'post-up iptables -t nat -A PREROUTING -i enp5s0 -p tcp.*-j DNAT'
+            line: "        post-up iptables -t nat -A PREROUTING -i enp5s0 -p tcp -m multiport ! --dport 22,8006 -j DNAT --to 192.168.100.1"
+            backrefs: yes
+
+        # Ensure UDP DNAT is configured
+        - name: Ensure UDP DNAT forwards to OPNsense
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: 'post-up iptables -t nat -A PREROUTING -i enp5s0 -p udp -j DNAT'
+            line: "        post-up iptables -t nat -A PREROUTING -i enp5s0 -p udp -j DNAT --to 192.168.100.1"
+            backrefs: yes
+
+        # Ensure NFS ports are blocked on WAN interface
+        - name: Ensure NFS TCP ports blocked on WAN
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: 'post-up iptables -A INPUT -i enp5s0 -p tcp.*111,2049'
+            line: "        post-up iptables -A INPUT -i enp5s0 -p tcp -m multiport --dports 111,2049,20048,20049,20050 -j DROP"
+            backrefs: yes
+
+        # Ensure MASQUERADE for OPNsense WAN
+        - name: Ensure MASQUERADE configured for vmbr0
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: "post-up iptables -t nat -A POSTROUTING -s '192.168.100.1/31'"
+            line: "        post-up iptables -t nat -A POSTROUTING -s '192.168.100.1/31' -o enp5s0 -j MASQUERADE"
+            backrefs: yes
+
+        # Ensure LAN route to 192.168.200.0/24 via OPNsense
+        - name: Ensure LAN route via OPNsense (vmbr1)
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: 'post-up ip route add 192.168.200.0/24 via'
+            line: "        post-up ip route add 192.168.200.0/24 via 192.168.10.1"
+            backrefs: yes
+
+        # Validate sysctl forwarding is enabled
+        - name: Validate IPv4 forwarding sysctl in interfaces
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: 'post-up sysctl -w net.ipv4.ip_forward'
+            line: "        post-up sysctl -w net.ipv4.ip_forward=1"
+            backrefs: yes
+
+        - name: Validate IPv6 forwarding sysctl in interfaces
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: 'post-up sysctl -w net.ipv6.conf.all.forwarding'
+            line: "        post-up sysctl -w net.ipv6.conf.all.forwarding=1"
+            backrefs: yes
+
+        # Report current network configuration
+        - name: Show current /etc/network/interfaces (for audit)
+          ansible.builtin.shell: grep -E '(post-up|post-down|address|gateway|route)' /etc/network/interfaces
+          register: network_config
+          changed_when: false
+
+        - name: Report network configuration
+          ansible.builtin.debug:
+            msg: "{{ network_config.stdout_lines }}"
 
         # ── SSH Hardening (CIS Debian 13 / Trixie) ───────────────────────────
         - name: Deploy hardened sshd_config (CIS Benchmark Debian 13)
