@@ -75,7 +75,7 @@ spec:
             Time_Key    time
             Time_Format %Y-%m-%dT%H:%M:%S.%L%z
             Time_Keep   Off
-        
+
         # Fallback parser without fractional seconds
         [PARSER]
             Name        syslog-rfc5424-simple

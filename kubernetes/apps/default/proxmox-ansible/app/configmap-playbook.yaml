@@ -441,8 +441,8 @@ data:
                 string="<%PRI%>1 %TIMESTAMP:::date-rfc3339% %HOSTNAME% %APP-NAME% %PROCID% - - %msg%\n"
               )
 
-              # Forward all logs using RFC5424
-              *.* @192.168.10.110:514;FluentBitRFC5424
+              # Forward all logs using RFC5424 over TCP (@@ = TCP, more reliable)
+              *.* @@192.168.10.110:514;FluentBitRFC5424
           notify: Restart rsyslog
 
         - name: Ensure rsyslog is enabled and running
