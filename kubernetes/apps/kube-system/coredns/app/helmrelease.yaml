@@ -50,8 +50,10 @@ spec:
           # public Cloudflare hairpin (which Cloudflare drops as a cdn-loop and
           # which broke OIDC). Must precede the kubernetes plugin so the rewritten
           # name resolves against cluster.local.
+          # Use `answer auto` to rewrite the ANSWER section back to the original
+          # query name so clients see the expected hostname in the response.
           - name: rewrite
-            parameters: name id.${SECRET_DOMAIN} envoy-internal.network.svc.cluster.local
+            parameters: name id.${SECRET_DOMAIN} envoy-internal.network.svc.cluster.local answer auto
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
             configBlock: |-
