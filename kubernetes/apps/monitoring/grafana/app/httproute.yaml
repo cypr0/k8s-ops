@@ -7,6 +7,11 @@ metadata:
 spec:
   hostnames: ["grafana.${SECRET_DOMAIN}"]
   parentRefs:
+    # Public access via Cloudflare Tunnel
+    - name: envoy-external
+      namespace: network
+      sectionName: https
+    # Internal access for OIDC callbacks (grafana reaches id.cisotop.de via envoy-internal)
     - name: envoy-internal
       namespace: network
       sectionName: https
