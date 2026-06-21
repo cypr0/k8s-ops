@@ -21,14 +21,16 @@ spec:
       app.kubernetes.io/name: k8s-gateway
   ingress:
     # Public DNS queries via LoadBalancer (OPNsense Split-DNS for cisotop.de)
-    # Policy evaluated PRE-DNAT at L2-owner node → service port 53
+    # Cilium policy is evaluated POST-DNAT, so we need the container port (1053)
+    # not the service port (53). The "world" entity includes external clients
+    # like OPNsense that query via the LoadBalancer IP.
     - fromEntities:
         - world
       toPorts:
         - ports:
-            - port: "53"
+            - port: "1053"
               protocol: UDP
-            - port: "53"
+            - port: "1053"
               protocol: TCP
     # CoreDNS upstream forwarding via ClusterIP → POST-DNAT → container port 1053
     - fromEndpoints:
