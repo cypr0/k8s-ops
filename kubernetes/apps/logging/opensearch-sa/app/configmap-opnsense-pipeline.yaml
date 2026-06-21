@@ -139,7 +139,7 @@ data:
     # a combined pipeline. We'll use a separate higher-priority template.
     print("Updating index template for OPNsense...")
     r, s = req("PUT", "/_index_template/syslog-template", {
-        "index_patterns": ["syslog-[0-9]*"],
+        "index_patterns": ["syslog-*"],
         "priority": 200,
         "template": {
             "settings": {"index.default_pipeline": "syslog-enrich"},

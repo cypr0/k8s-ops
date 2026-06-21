@@ -121,11 +121,11 @@ spec:
             Condition     Key_value_matches host ^pve|^proxmox
             Set           source proxmox
 
-        # Label OPNsense by hostname
+        # Label OPNsense by hostname (secsrv = security server = OPNsense)
         [FILTER]
             Name          modify
             Match         syslog.*
-            Condition     Key_value_matches host ^OPNsense|^opnsense|^fw
+            Condition     Key_value_matches host ^OPNsense|^opnsense|^fw|^secsrv
             Set           source opnsense
 
         # Add job label for Loki
