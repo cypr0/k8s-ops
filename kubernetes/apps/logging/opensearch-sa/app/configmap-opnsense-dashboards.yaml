@@ -32,11 +32,11 @@ data:
         except: pass
         time.sleep(10)
 
-    IDX = "syslog-opnsense-idx"
+    IDX = "opnsense-idx"
 
-    print("Creating index pattern...")
+    print("Creating index pattern for opnsense-*...")
     r, s = osd("POST", "/api/saved_objects/index-pattern/" + IDX + "?overwrite=true", {
-        "attributes": {"title": "syslog-*", "timeFieldName": "@timestamp", "fields": "[]"}
+        "attributes": {"title": "opnsense-*", "timeFieldName": "@timestamp", "fields": "[]"}
     })
     print("  " + str(s))
 
@@ -53,8 +53,8 @@ data:
         }
     }
 
-    def v(vid, title, vis_type, params, aggs, src_filter=None, host_filter="secsrv.cisotop.de"):
-        flt = [{"term": {"host": host_filter}}]
+    def v(vid, title, vis_type, params, aggs, src_filter=None):
+        flt = []
         if src_filter:
             flt.extend(src_filter)
         return {

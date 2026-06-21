@@ -93,5 +93,29 @@ data:
     })
     print("  Router pipeline:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
 
+    # Index template for proxmox-* indices
+    print("Creating proxmox-* index template...")
+    r, s = req("PUT", "/_index_template/proxmox-template", {
+        "index_patterns": ["proxmox-*"],
+        "priority": 200,
+        "template": {
+            "settings": {"index.default_pipeline": "proxmox-syslog-enrich"},
+            "mappings": {"properties": {
+                "@timestamp":       {"type": "date"},
+                "host":             {"type": "keyword"},
+                "source":           {"type": "keyword"},
+                "ident":            {"type": "keyword"},
+                "message":          {"type": "text"},
+                "src_ip":           {"type": "ip", "ignore_malformed": True},
+                "src_port":         {"type": "integer", "ignore_malformed": True},
+                "username":         {"type": "keyword"},
+                "auth_method":      {"type": "keyword"},
+                "action":           {"type": "keyword"},
+                "action_category":  {"type": "keyword"}
+            }}
+        }
+    })
+    print("  Template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
+
     print("=== Pipeline setup complete ===")
     print("Fields: src_ip, src_port, username, auth_method, action, action_category")

@@ -40,17 +40,17 @@ data:
         except: pass
         time.sleep(10)
 
-    IDX = "syslog-proxmox-idx"
+    IDX = "proxmox-idx"
 
     # ── Index pattern ─────────────────────────────────────────────────────
-    print("Creating index pattern...")
+    print("Creating index pattern for proxmox-*...")
     r, s = osd("POST", f"/api/saved_objects/index-pattern/{IDX}?overwrite=true", {
-        "attributes": {"title": "syslog-*", "timeFieldName": "@timestamp", "fields": "[]"}
+        "attributes": {"title": "proxmox-*", "timeFieldName": "@timestamp", "fields": "[]"}
     })
     print(f"  {s}")
 
     def viz(vid, title, vis_type, params, aggs, src_filter=None):
-        flt = [{"term": {"source": "proxmox"}}]
+        flt = []  # No source filter needed - dedicated index
         if src_filter:
             flt.extend(src_filter)
         return {

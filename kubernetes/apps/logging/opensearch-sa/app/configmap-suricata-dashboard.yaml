@@ -1,0 +1,181 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: suricata-dashboard-script
+data:
+  create_suricata_dashboard.py: |
+    import json, os, time, base64, urllib.request, urllib.error
+
+    OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    OSD_USER = os.environ.get("OSD_USER", "admin")
+    OSD_PASS = os.environ.get("OSD_PASS", "")
+    _b64     = base64.b64encode((OSD_USER + ":" + OSD_PASS).encode()).decode()
+    HEADERS  = {"Content-Type": "application/json", "osd-xsrf": "true", "Authorization": "Basic " + _b64}
+
+    def osd(method, path, body=None):
+        data = json.dumps(body).encode() if body else None
+        req  = urllib.request.Request(OSD + path, data=data, headers=HEADERS, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read()), r.status
+        except urllib.error.HTTPError as e:
+            try:    return json.loads(e.read()), e.code
+            except: return {}, e.code
+
+    print("Waiting for Dashboards...")
+    for _ in range(30):
+        try:
+            r, s = osd("GET", "/api/status")
+            if s == 200 and r.get("status", {}).get("overall", {}).get("state") == "green":
+                print("Ready."); break
+        except: pass
+        time.sleep(10)
+
+    IDX = "suricata-idx"
+
+    print("Creating index pattern for suricata-*...")
+    r, s = osd("POST", "/api/saved_objects/index-pattern/" + IDX + "?overwrite=true", {
+        "attributes": {"title": "suricata-*", "timeFieldName": "@timestamp", "fields": "[]"}
+    })
+    print("  Index pattern: " + str(s))
+
+    METRIC_P = {
+        "addTooltip": True, "addLegend": False, "type": "gauge",
+        "gauge": {
+            "verticalSplit": False, "extendRange": True, "percentageMode": False,
+            "gaugeType": "Metric", "gaugeColorMode": "None",
+            "colorsRange": [{"from": 0, "to": 10000000}], "invertColors": False,
+            "labels": {"show": True, "color": "black"},
+            "scale": {"show": False, "labels": False, "color": "#333"},
+            "type": "simple",
+            "style": {"bgFill": "#000", "bgColor": False, "labelColor": False, "subText": "", "fontSize": 60}
+        }
+    }
+
+    def pie_p(): return {"type":"pie","addTooltip":True,"addLegend":True,"legendPosition":"right","isDonut":True,"labels":{"show":True,"values":True,"last_level":True,"truncate":100}}
+    def hbar_p(): return {"type":"histogram","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],"seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False,"truncateLegend":True,"maxLegendLines":1}
+    def line_p(): return {"type":"line","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"bottom","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"filter":True,"truncate":100},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"left","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],"seriesParams":[{"show":True,"type":"line","mode":"normal","data":{"label":"Events","id":"1"},"drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True,"interpolate":"linear","valueAxis":"ValueAxis-1"}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False}
+    def c(): return [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}]
+    def t(f, sz=15): return {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":f,"size":sz,"order":"desc","orderBy":"1","otherBucket":False,"missingBucket":False}}
+    def dh(): return {"id":"2","enabled":True,"type":"date_histogram","schema":"segment","params":{"field":"@timestamp","useNormalizedEsInterval":True,"interval":"auto","drop_partials":False,"min_doc_count":1,"extended_bounds":{}}}
+
+    def mkv(vid, title, vis_type, params, aggs, flt=None):
+        return {
+            "type": "visualization", "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({"title": title, "type": vis_type, "params": params, "aggs": aggs}),
+                "uiStateJSON": "{}",
+                "description": "",
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
+                    "index": IDX,
+                    "query": {"bool": {"filter": flt or [], "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })}
+            },
+            "references": [{"id": IDX, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    # ════════════════════════════════════════════════════════════════════════
+    # VISUALIZATIONS — Suricata IDS
+    # ════════════════════════════════════════════════════════════════════════
+    alert_flt = [{"term": {"event_type": "alert"}}]
+
+    vizs = [
+        # Metrics row
+        mkv("sur-v1-total",     "🔍 Total Events",     "metric", METRIC_P, c()),
+        mkv("sur-v2-alerts",    "🚨 Alerts",            "metric", METRIC_P, c(), alert_flt),
+        mkv("sur-v3-sev1",      "🔴 Severity 1",        "metric", METRIC_P, c(), alert_flt + [{"term": {"alert.severity": 1}}]),
+        mkv("sur-v4-sev2",      "🟠 Severity 2",        "metric", METRIC_P, c(), alert_flt + [{"term": {"alert.severity": 2}}]),
+
+        # Timeline
+        mkv("sur-v5-timeline",  "Alert Timeline", "line", line_p(),
+            c() + [dh(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"alert.severity","size":5,"order":"desc","orderBy":"1"}}],
+            alert_flt),
+
+        # Categories
+        mkv("sur-v6-category",  "Alert Categories", "pie", pie_p(),
+            c() + [t("alert.category")], alert_flt),
+
+        # Top Signatures
+        mkv("sur-v7-signatures", "Top Signatures", "histogram", hbar_p(),
+            c() + [t("alert.signature", 20)], alert_flt),
+
+        # Source IPs
+        mkv("sur-v8-src-ips",   "Top Source IPs", "histogram", hbar_p(),
+            c() + [t("src_ip", 15)], alert_flt),
+
+        # Dest IPs
+        mkv("sur-v9-dst-ips",   "Top Destination IPs", "histogram", hbar_p(),
+            c() + [t("dest_ip", 15)], alert_flt),
+
+        # Protocols
+        mkv("sur-v10-proto",    "Protocols", "pie", pie_p(),
+            c() + [t("proto")], alert_flt),
+
+        # App Protocols (DNS, HTTP, TLS, etc.)
+        mkv("sur-v11-app",      "Application Protocols", "pie", pie_p(),
+            c() + [t("app_proto")]),
+
+        # Event Types
+        mkv("sur-v12-evtype",   "Event Types", "pie", pie_p(),
+            c() + [t("event_type")]),
+    ]
+
+    print("Creating visualizations...")
+    for v in vizs:
+        r, s = osd("POST", "/api/saved_objects/visualization/" + v["id"] + "?overwrite=true", v)
+        print("  " + v["id"] + ": " + str(s))
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DASHBOARD — Suricata IDS
+    # ════════════════════════════════════════════════════════════════════════
+    panels = [
+        {"id": "sur-v1-total",     "x": 0,  "y": 0,  "w": 12, "h": 8},
+        {"id": "sur-v2-alerts",    "x": 12, "y": 0,  "w": 12, "h": 8},
+        {"id": "sur-v3-sev1",      "x": 24, "y": 0,  "w": 12, "h": 8},
+        {"id": "sur-v4-sev2",      "x": 36, "y": 0,  "w": 12, "h": 8},
+
+        {"id": "sur-v5-timeline",  "x": 0,  "y": 8,  "w": 48, "h": 12},
+
+        {"id": "sur-v6-category",  "x": 0,  "y": 20, "w": 16, "h": 14},
+        {"id": "sur-v10-proto",    "x": 16, "y": 20, "w": 16, "h": 14},
+        {"id": "sur-v11-app",      "x": 32, "y": 20, "w": 16, "h": 14},
+
+        {"id": "sur-v7-signatures","x": 0,  "y": 34, "w": 48, "h": 14},
+
+        {"id": "sur-v8-src-ips",   "x": 0,  "y": 48, "w": 24, "h": 14},
+        {"id": "sur-v9-dst-ips",   "x": 24, "y": 48, "w": 24, "h": 14},
+
+        {"id": "sur-v12-evtype",   "x": 0,  "y": 62, "w": 48, "h": 12},
+    ]
+
+    p_json = []
+    refs = [{"id": IDX, "name": "indexPatternId", "type": "index-pattern"}]
+    for i, p in enumerate(panels):
+        p_json.append({
+            "version": "3.6.0",
+            "gridData": {"x": p["x"], "y": p["y"], "w": p["w"], "h": p["h"], "i": str(i+1)},
+            "panelIndex": str(i+1),
+            "embeddableConfig": {},
+            "panelRefName": "panel_" + str(i+1)
+        })
+        refs.append({"id": p["id"], "name": "panel_" + str(i+1), "type": "visualization"})
+
+    print("Creating Suricata IDS dashboard...")
+    r, s = osd("POST", "/api/saved_objects/dashboard/suricata-ids?overwrite=true", {
+        "attributes": {
+            "title": "🛡️ Suricata IDS",
+            "description": "Network Intrusion Detection - Alerts, Signatures, Traffic Analysis",
+            "panelsJSON": json.dumps(p_json),
+            "optionsJSON": json.dumps({"useMargins": True, "syncColors": False, "hidePanelTitles": False}),
+            "version": 1,
+            "timeRestore": False,
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query": {"match_all": {}}, "filter": []})}
+        },
+        "references": refs
+    })
+    print("  Dashboard: " + str(s))
+
+    print("=== Suricata dashboard setup complete ===")

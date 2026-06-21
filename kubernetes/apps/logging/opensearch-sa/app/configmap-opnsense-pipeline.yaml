@@ -133,22 +133,18 @@ data:
     r, s = req("PUT", "/_ingest/pipeline/opnsense-syslog-enrich", pipeline)
     print("  Pipeline:", "OK" if r.get("acknowledged") else ("ERROR " + str(s) + ": " + str(r)[:200]))
 
-    # ── Update syslog index template ──────────────────────────────────────
-    # Note: syslog-* template already has proxmox pipeline as default.
-    # We need a SEPARATE template for opnsense OR update existing to use
-    # a combined pipeline. We'll use a separate higher-priority template.
-    print("Updating index template for OPNsense...")
-    r, s = req("PUT", "/_index_template/syslog-template", {
-        "index_patterns": ["syslog-*"],
+    # ── Create opnsense-* index template ─────────────────────────────────
+    print("Creating opnsense-* index template...")
+    r, s = req("PUT", "/_index_template/opnsense-template", {
+        "index_patterns": ["opnsense-*"],
         "priority": 200,
         "template": {
-            "settings": {"index.default_pipeline": "syslog-enrich"},
+            "settings": {"index.default_pipeline": "opnsense-syslog-enrich"},
             "mappings": {"properties": {
                 "@timestamp":           {"type": "date"},
                 "host":                 {"type": "keyword"},
                 "source":               {"type": "keyword"},
                 "ident":                {"type": "keyword"},
-                "severity":             {"type": "keyword"},
                 "message":              {"type": "text"},
                 "src_ip":               {"type": "ip",      "ignore_malformed": True},
                 "dst_ip":               {"type": "ip",      "ignore_malformed": True},
@@ -161,20 +157,60 @@ data:
                 "fw_interface":         {"type": "keyword"},
                 "fw_rule_num":          {"type": "keyword"},
                 "fw_ip_version":        {"type": "keyword"},
+                "fw_ttl":               {"type": "keyword"},
+                "fw_reason":            {"type": "keyword"},
                 "fw_rule_uuid":         {"type": "keyword"},
-                "fw_interface_name":    {"type": "keyword"},
-                "suricata_event_type":  {"type": "keyword"},
-                "suricata_signature":   {"type": "keyword"},
-                "suricata_category":    {"type": "keyword"},
-                "suricata_severity":    {"type": "integer"},
-                "username":             {"type": "keyword"},
-                "auth_method":          {"type": "keyword"},
-                "action":               {"type": "keyword"},
-                "action_category":      {"type": "keyword"}
+                "fw_interface_name":    {"type": "keyword"}
             }}
         }
     })
-    print("  Template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
+    print("  opnsense-* template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
+
+    # ── Create suricata-* index template ──────────────────────────────────
+    print("Creating suricata-* index template...")
+    r, s = req("PUT", "/_index_template/suricata-template", {
+        "index_patterns": ["suricata-*"],
+        "priority": 200,
+        "template": {
+            "settings": {"index.number_of_shards": 1, "index.number_of_replicas": 1},
+            "mappings": {"properties": {
+                "@timestamp":           {"type": "date"},
+                "timestamp":            {"type": "date"},
+                "host":                 {"type": "keyword"},
+                "ident":                {"type": "keyword"},
+                "event_type":           {"type": "keyword"},
+                "src_ip":               {"type": "ip", "ignore_malformed": True},
+                "dest_ip":              {"type": "ip", "ignore_malformed": True},
+                "src_port":             {"type": "integer", "ignore_malformed": True},
+                "dest_port":            {"type": "integer", "ignore_malformed": True},
+                "proto":                {"type": "keyword"},
+                "app_proto":            {"type": "keyword"},
+                "in_iface":             {"type": "keyword"},
+                "direction":            {"type": "keyword"},
+                "community_id":         {"type": "keyword"},
+                "flow_id":              {"type": "long"}
+            }}
+        }
+    })
+    print("  suricata-* template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
+
+    # ── Keep syslog-* as fallback ─────────────────────────────────────────
+    print("Creating syslog-* fallback template...")
+    r, s = req("PUT", "/_index_template/syslog-template", {
+        "index_patterns": ["syslog-*"],
+        "priority": 100,
+        "template": {
+            "settings": {"index.default_pipeline": "syslog-enrich"},
+            "mappings": {"properties": {
+                "@timestamp":           {"type": "date"},
+                "host":                 {"type": "keyword"},
+                "source":               {"type": "keyword"},
+                "ident":                {"type": "keyword"},
+                "message":              {"type": "text"}
+            }}
+        }
+    })
+    print("  syslog-* template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
 
     print("=== OPNsense pipeline setup complete ===")
     print("Fields: src_ip, dst_ip, src_port, dst_port, fw_action, fw_direction,")
