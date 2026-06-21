@@ -87,13 +87,13 @@ spec:
 
       inputs: |
         # ── Syslog from Proxmox + OPNsense ──────────────────────────────
+        # Fluent-Bit syslog plugin uses built-in decoder, not external parser
         [INPUT]
             Name          syslog
             Listen        0.0.0.0
             Port          5514
             Mode          udp
             Tag           syslog.udp
-            Parser        syslog-rfc5424-nofrac
 
         [INPUT]
             Name          syslog
@@ -101,7 +101,6 @@ spec:
             Port          5514
             Mode          tcp
             Tag           syslog.tcp
-            Parser        syslog-rfc5424-nofrac
 
       filters: |
         # Retag Suricata Eve-JSON records before any other processing
