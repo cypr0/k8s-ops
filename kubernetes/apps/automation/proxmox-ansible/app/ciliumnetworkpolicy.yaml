@@ -4,7 +4,6 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: proxmox-ansible
-  namespace: default
 spec:
   endpointSelector:
     matchExpressions:

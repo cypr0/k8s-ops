@@ -6,7 +6,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1h
-  path: ./kubernetes/apps/default/proxmox-ansible/app
+  path: ./kubernetes/apps/automation/proxmox-ansible/app
   postBuild:
     substituteFrom:
       - name: cluster-secrets
@@ -20,5 +20,5 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: default
+  targetNamespace: automation
   wait: false
