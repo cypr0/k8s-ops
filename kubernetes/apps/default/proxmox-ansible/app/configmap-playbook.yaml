@@ -403,6 +403,12 @@ data:
             mode: "0600"
 
         # ── Syslog Forwarding to Fluent-Bit ──────────────────────────────────
+        # Proxmox uses systemd-journald by default. Install rsyslog for remote forwarding.
+        - name: Install rsyslog for remote log forwarding
+          ansible.builtin.apt:
+            name: rsyslog
+            state: present
+
         - name: Configure rsyslog to forward logs to Fluent-Bit
           ansible.builtin.copy:
             dest: /etc/rsyslog.d/90-fluentbit.conf
@@ -411,7 +417,7 @@ data:
             mode: "0644"
             content: |
               # Forward all logs to Fluent-Bit syslog-ingress in Kubernetes
-              # UDP for performance, TCP as fallback
+              # UDP for performance (@ = UDP, @@ = TCP)
               *.* @192.168.10.110:514
           notify: Restart rsyslog
 
