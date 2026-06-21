@@ -7,9 +7,8 @@ metadata:
 spec:
   hostnames: ["logs.${SECRET_DOMAIN}"]
   parentRefs:
-    - name: envoy-external
-      namespace: network
-      sectionName: https
+    # Internal-only access via Split-DNS (VPN users reach via k8s-gateway → envoy-internal)
+    # Not exposed via Cloudflare Tunnel - requires VPN connection
     - name: envoy-internal
       namespace: network
       sectionName: https
