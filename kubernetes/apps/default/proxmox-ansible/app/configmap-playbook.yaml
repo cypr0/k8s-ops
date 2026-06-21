@@ -404,10 +404,25 @@ data:
 
         # ── Syslog Forwarding to Fluent-Bit ──────────────────────────────────
         # Proxmox uses systemd-journald by default. Install rsyslog for remote forwarding.
+        # Network path: Proxmox (192.168.100.0) → OPNsense (192.168.100.1) → K8s LAN (192.168.10.110)
         - name: Install rsyslog for remote log forwarding
           ansible.builtin.apt:
             name: rsyslog
             state: present
+
+        # Ensure route to K8s LAN exists via OPNsense
+        - name: Add route to K8s LAN (192.168.10.0/24) via OPNsense
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            insertafter: 'address 192.168.100.0/31'
+            line: "        post-up ip route add 192.168.10.0/24 via 192.168.100.1"
+            state: present
+          register: route_added
+
+        - name: Apply route immediately if added
+          ansible.builtin.command: ip route add 192.168.10.0/24 via 192.168.100.1
+          when: route_added.changed
+          ignore_errors: yes
 
         - name: Configure rsyslog to forward logs to Fluent-Bit
           ansible.builtin.copy:
