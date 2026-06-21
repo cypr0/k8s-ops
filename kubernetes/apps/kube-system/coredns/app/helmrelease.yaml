@@ -43,17 +43,20 @@ spec:
               lameduck 5s
           - name: ready
           # Split-horizon DNS: resolve id.${SECRET_DOMAIN} (Authentik) in-cluster
-          # to the envoy-INTERNAL gateway service instead of the public Cloudflare
+          # to the envoy-INTERNAL gateway ClusterIP instead of the public Cloudflare
           # edge. The authentik-ui HTTPRoute is attached to envoy-internal too, so
           # in-cluster OIDC clients (opensearch dashboards + data nodes validating
           # tokens/JWKS) reach Authentik via the internal gateway rather than the
           # public Cloudflare hairpin (which Cloudflare drops as a cdn-loop and
-          # which broke OIDC). Must precede the kubernetes plugin so the rewritten
-          # name resolves against cluster.local.
-          # Use `answer auto` to rewrite the ANSWER section back to the original
-          # query name so clients see the expected hostname in the response.
-          - name: rewrite
-            parameters: name id.${SECRET_DOMAIN} envoy-internal.network.svc.cluster.local answer auto
+          # which broke OIDC).
+          # Using `hosts` plugin with static IP instead of `rewrite` because:
+          # 1. `rewrite name` only affects A queries, AAAA queries still forward to upstream
+          # 2. Node.js prefers AAAA (IPv6), which resolves to Cloudflare and times out
+          # 3. `hosts` with fallthrough handles all query types and falls through for other names
+          - name: hosts
+            configBlock: |-
+              10.43.38.197 id.${SECRET_DOMAIN}
+              fallthrough
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
             configBlock: |-
