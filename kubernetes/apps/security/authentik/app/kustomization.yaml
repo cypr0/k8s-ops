@@ -9,6 +9,7 @@ resources:
   - ./externalsecret-grafana-oidc.yaml
   - ./externalsecret-opensearch-oidc.yaml
   - ./externalsecret-proxmox-oidc.yaml
+  - ./externalsecret-paperless-oidc.yaml
   - ./helmrepository.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml
@@ -20,5 +21,6 @@ configMapGenerator:
       - blueprints/01-grafana-oidc.yaml
       - blueprints/02-opensearch-oidc.yaml
       - blueprints/03-proxmox-oidc.yaml
+      - blueprints/04-paperless-oidc.yaml
     options:
       disableNameSuffixHash: true

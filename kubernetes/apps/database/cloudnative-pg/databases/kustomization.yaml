@@ -5,3 +5,5 @@ kind: Kustomization
 resources:
   - ./externalsecret-authentik.yaml
   - ./database-authentik.yaml
+  - ./externalsecret-paperless.yaml
+  - ./database-paperless.yaml

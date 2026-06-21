@@ -67,6 +67,15 @@ spec:
         inherit: true
         passwordSecret:
           name: authentik-db-role
+      - name: paperlessusr
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        passwordSecret:
+          name: paperless-db-role
 
   monitoring:
     enablePodMonitor: true
