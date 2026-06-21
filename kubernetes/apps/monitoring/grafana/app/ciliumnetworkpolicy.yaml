@@ -64,14 +64,18 @@ spec:
             - port: "9093"
               protocol: TCP
     # Authentik OIDC: id.cisotop.de is resolved in-cluster to the envoy-internal
-    # gateway by the CoreDNS rewrite, so Grafana's OIDC calls go to the Envoy
-    # proxy (post-DNAT container port 10443), not out to the internet.
+    # ClusterIP by CoreDNS hosts plugin. Grafana connects to ClusterIP:443, which
+    # is then DNAT'd to container port 10443. Cilium evaluates egress policy
+    # BEFORE DNAT for service traffic, so we need the service port (443) not
+    # the container port. Include both for safety.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
             app.kubernetes.io/name: envoy
       toPorts:
         - ports:
+            - port: "443"
+              protocol: TCP
             - port: "10443"
               protocol: TCP
     # Dashboard JSON from grafana.com/.net and any other external HTTPS.
