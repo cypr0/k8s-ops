@@ -102,11 +102,11 @@ data:
           count_agg() + [terms_agg("fw_protocol.keyword", 10)], fw_filter),
 
         v("fw-v8-top-src",  "Top 15 Source IPs (Blocked)", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("src_ip", 15)],
+          count_agg() + [terms_agg("src_ip.keyword", 15)],
           fw_filter + [{"term":{"fw_action":"block"}}]),
 
         v("fw-v9-top-dport","Top 15 Destination Ports (Blocked)", "horizontal_bar", hbar_p(),
-          count_agg() + [terms_agg("dst_port", 15)],
+          count_agg() + [terms_agg("dst_port.keyword", 15)],
           fw_filter + [{"term":{"fw_action":"block"}}]),
 
         v("fw-v10-iface",   "Traffic by Interface", "horizontal_bar", hbar_p(),
