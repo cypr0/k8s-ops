@@ -11,6 +11,26 @@ spec:
     requests:
       storage: 200Gi
 ---
+# Static PV — fixed path so external devices (scanner, etc.) can write to a known NFS share
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: paperless-consume-pv
+spec:
+  capacity:
+    storage: 50Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: paperless-consume-nfs
+  mountOptions:
+    - nfsvers=4.2
+    - hard
+  nfs:
+    server: ${SECRET_NFS_SERVER}
+    path: /rpool/k8s-rwx/paperless-consume
+    readOnly: false
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -18,7 +38,8 @@ metadata:
 spec:
   accessModes:
     - ReadWriteMany
-  storageClassName: zfs-nfs
+  storageClassName: paperless-consume-nfs
+  volumeName: paperless-consume-pv
   resources:
     requests:
-      storage: 5Gi
+      storage: 50Gi
