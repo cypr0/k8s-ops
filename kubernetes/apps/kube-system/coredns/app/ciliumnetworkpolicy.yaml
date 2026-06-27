@@ -30,9 +30,10 @@ spec:
             - port: "9153"
               protocol: TCP
   egress:
-    # Upstream recursive DNS (e.g. 1.1.1.1, 8.8.8.8 or router)
+    # Upstream recursive DNS — world for 1.1.1.1/8.8.8.8, host for Talos node-local DNS (169.254.116.108)
     - toEntities:
         - world
+        - host
       toPorts:
         - ports:
             - port: "53"
