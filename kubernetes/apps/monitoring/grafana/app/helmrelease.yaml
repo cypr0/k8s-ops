@@ -26,7 +26,7 @@ spec:
   values:
     image:
       repository: grafana/grafana
-      tag: 13.0.2
+      tag: 13.1.0
       sha: 2175aaa91c96733d86d31cf270d5310b278654b03f5718c59de12a865380a31f
 
     replicas: 1
