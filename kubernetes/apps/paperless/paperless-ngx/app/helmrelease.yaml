@@ -92,19 +92,6 @@ spec:
           http:
             port: *port
 
-    route:
-      paperless:
-        hostnames:
-          - paperless.${SECRET_DOMAIN}
-        parentRefs:
-          - name: envoy-internal
-            namespace: network
-            sectionName: https
-        rules:
-          - backendRefs:
-              - identifier: paperless
-                port: 80
-
     persistence:
       library:
         existingClaim: paperless-data-pvc

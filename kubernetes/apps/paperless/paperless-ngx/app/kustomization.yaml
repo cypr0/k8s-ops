@@ -8,4 +8,5 @@ resources:
   - ./helmrelease.yaml
  # - ./jobs.yaml
   - ./pvc.yaml
+  - ./httproute.yaml
   - ./ciliumnetworkpolicy.yaml
