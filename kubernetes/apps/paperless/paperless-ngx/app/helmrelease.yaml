@@ -86,14 +86,14 @@ spec:
                   periodSeconds: 5
 
     service:
-      paperless-ngx:
+      paperless:
         controller: main
         ports:
           http:
             port: *port
 
     route:
-      paperless-ngx:
+      paperless:
         hostnames:
           - paperless.${SECRET_DOMAIN}
         parentRefs:
@@ -102,7 +102,7 @@ spec:
             sectionName: https
         rules:
           - backendRefs:
-              - identifier: paperless-ngx
+              - identifier: paperless
                 port: 80
 
     persistence:
