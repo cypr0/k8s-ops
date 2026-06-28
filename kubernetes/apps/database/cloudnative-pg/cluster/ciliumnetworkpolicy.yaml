@@ -24,6 +24,14 @@ spec:
         - ports:
             - port: "8000"
               protocol: TCP
+    # Kubelet readiness/liveness probes: kubelet runs in host-network and probes
+    # https://<pod-ip>:8000/readyz — must allow host entity, not just cluster pods
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
     # Allow postgres access from any pod in the cluster
     - fromEntities:
         - cluster
