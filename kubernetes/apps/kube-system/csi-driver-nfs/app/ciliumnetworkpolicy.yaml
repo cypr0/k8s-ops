@@ -23,7 +23,7 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    # NFS server (2049/TCP+UDP)
+    # NFS server: port 2049 (nfs), 111 (portmapper/rpcbind), 20048 (mountd)
     - toEntities:
         - world
       toPorts:
@@ -31,6 +31,14 @@ spec:
             - port: "2049"
               protocol: TCP
             - port: "2049"
+              protocol: UDP
+            - port: "111"
+              protocol: TCP
+            - port: "111"
+              protocol: UDP
+            - port: "20048"
+              protocol: TCP
+            - port: "20048"
               protocol: UDP
 ---
 # CSI NFS Node DaemonSet: mounts NFS volumes on each node
