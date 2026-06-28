@@ -11,9 +11,9 @@ spec:
       app.kubernetes.io/name: *app
   dependsOn:
     - name: paperless
-      namespace: flux-system
+      namespace: paperless
     - name: external-secrets-stores
-      namespace: flux-system
+      namespace: security
   interval: 1h
   path: ./kubernetes/apps/paperless/paperless-ai/app
   prune: true
