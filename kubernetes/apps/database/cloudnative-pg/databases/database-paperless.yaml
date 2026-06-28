@@ -5,7 +5,7 @@ kind: Database
 metadata:
   name: paperless
 spec:
-  name: paperlessdb
+  name: paperless
   owner: paperlessusr
   cluster:
     name: postgres
