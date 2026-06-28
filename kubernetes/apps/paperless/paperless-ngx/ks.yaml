@@ -11,11 +11,11 @@ spec:
       app.kubernetes.io/name: *app
   dependsOn:
     - name: cloudnative-pg-databases
-      namespace: flux-system
+      namespace: database
     - name: csi-driver-nfs
       namespace: flux-system
     - name: external-secrets-stores
-      namespace: flux-system
+      namespace: security
   interval: 1h
   path: ./kubernetes/apps/paperless/paperless-ngx/app
   prune: true
