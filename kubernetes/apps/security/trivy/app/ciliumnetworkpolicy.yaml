@@ -54,6 +54,9 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": trivy-system
             app.kubernetes.io/name: trivy-operator
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": trivy-system
+            app.kubernetes.io/managed-by: trivy-operator
       toPorts:
         - ports:
             - port: "4954"
@@ -85,6 +88,46 @@ spec:
             - port: "53"
               protocol: TCP
     # Initial DB download from GitHub releases
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Trivy scan job pods: ephemeral pods created by trivy-operator for each workload scan
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: trivy-scan-jobs
+  namespace: trivy-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: trivy-operator
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    # Trivy server for vulnerability DB cache
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": trivy-system
+            app.kubernetes.io/name: trivy-server
+      toPorts:
+        - ports:
+            - port: "4954"
+              protocol: TCP
+    # Pull container image manifests/layers from registries
     - toEntities:
         - world
       toPorts:
