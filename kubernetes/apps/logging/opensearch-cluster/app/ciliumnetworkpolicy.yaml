@@ -42,6 +42,13 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:
@@ -113,6 +120,13 @@ spec:
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": logging
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
       toPorts:
         - ports:
             - port: "5601"

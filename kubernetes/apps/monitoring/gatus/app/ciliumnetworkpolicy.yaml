@@ -28,6 +28,13 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   egress:
     # DNS — L7 dns rule required so Cilium learns the IPs behind the toFQDNs
     # entries below (*.cisotop.de, api.pushover.net); otherwise external health

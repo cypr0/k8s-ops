@@ -18,6 +18,13 @@ spec:
         - ports:
             - port: "9090"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

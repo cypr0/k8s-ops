@@ -66,6 +66,13 @@ spec:
         - ports:
             - port: "9198"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "4954"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

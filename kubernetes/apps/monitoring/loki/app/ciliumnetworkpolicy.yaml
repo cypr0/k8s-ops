@@ -65,6 +65,13 @@ spec:
         - ports:
             - port: "3100"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:

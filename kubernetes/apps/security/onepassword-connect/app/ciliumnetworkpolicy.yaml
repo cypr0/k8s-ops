@@ -20,6 +20,16 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    # API server probe: port 80; sync server probe: port 8081
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "8081"
+              protocol: TCP
   egress:
     # Allow outbound to 1Password cloud + DNS
     - toEntities:

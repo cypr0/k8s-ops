@@ -19,6 +19,13 @@ spec:
         - ports:
             - port: "12345"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "12345"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:

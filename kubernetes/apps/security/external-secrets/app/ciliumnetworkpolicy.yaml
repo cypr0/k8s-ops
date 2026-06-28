@@ -72,6 +72,13 @@ spec:
         - ports:
             - port: "10250"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring

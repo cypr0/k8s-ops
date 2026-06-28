@@ -19,6 +19,13 @@ spec:
         - ports:
             - port: "4245"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity, not covered by cluster)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "4245"
+              protocol: TCP
     # Prometheus metrics
     - fromEndpoints:
         - matchLabels:

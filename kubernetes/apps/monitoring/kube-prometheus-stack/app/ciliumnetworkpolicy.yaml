@@ -29,6 +29,13 @@ spec:
         - ports:
             - port: "9090"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:
@@ -133,6 +140,13 @@ spec:
               protocol: TCP
             - port: "9094"
               protocol: UDP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9093"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:
@@ -172,6 +186,13 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:
@@ -198,7 +219,14 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
-  ingress: []
+  ingress:
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:

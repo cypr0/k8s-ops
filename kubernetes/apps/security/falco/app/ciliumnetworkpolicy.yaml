@@ -56,6 +56,13 @@ spec:
         - ports:
             - port: "2802"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "2801"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

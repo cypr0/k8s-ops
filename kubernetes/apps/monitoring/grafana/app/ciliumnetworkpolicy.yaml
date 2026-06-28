@@ -19,6 +19,13 @@ spec:
         - ports:
             - port: "3000"
               protocol: TCP
+    # Kubelet readiness/liveness probes (host network → host entity)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
   egress:
     # DNS — L7 dns rule required so Cilium learns the IPs behind the toFQDNs
     # entries below (*.cisotop.de OIDC, grafana.com/.net); otherwise Authentik
