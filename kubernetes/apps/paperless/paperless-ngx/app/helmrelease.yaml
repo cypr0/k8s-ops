@@ -102,7 +102,7 @@ spec:
             sectionName: https
         rules:
           - backendRefs:
-              - name: paperless
+              - identifier: paperless-ngx
                 port: 80
 
     persistence:
