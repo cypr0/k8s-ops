@@ -96,3 +96,10 @@ spec:
         - ports:
             - port: "3100"
               protocol: TCP
+    # S3/object store egress: Loki needs HTTPS to write/read chunks from object storage
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

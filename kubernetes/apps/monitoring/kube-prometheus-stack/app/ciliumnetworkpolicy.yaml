@@ -80,6 +80,10 @@ spec:
               protocol: TCP
             - port: "12345"  # alloy
               protocol: TCP
+            - port: "9187"   # cnpg postgres-exporter
+              protocol: TCP
+            - port: "8000"   # cnpg patroni REST API
+              protocol: TCP
 ---
 # Alertmanager: receives alerts from Prometheus, queried by Grafana
 apiVersion: cilium.io/v2
@@ -242,3 +246,6 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+    # Host network: on Talos, node-exporter may need to reach host-networked endpoints
+    - toEntities:
+        - host
