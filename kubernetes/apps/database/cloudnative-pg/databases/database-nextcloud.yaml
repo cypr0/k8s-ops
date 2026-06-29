@@ -5,7 +5,7 @@ kind: Database
 metadata:
   name: nextcloud
 spec:
-  name: nextclouddb
+  name: nextcloud
   owner: nextcloudusr
   encoding: UTF8
   cluster:
