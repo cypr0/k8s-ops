@@ -12,7 +12,7 @@ spec:
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
-      name: envoy-external
+      name: envoy-internal
       namespace: network
       sectionName: https
   rules:
