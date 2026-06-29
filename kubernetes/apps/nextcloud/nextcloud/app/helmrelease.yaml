@@ -330,8 +330,6 @@ spec:
         runAsGroup: 82
         runAsNonRoot: true
         readOnlyRootFilesystem: false
-        fsGroup: 82
-        fsGroupChangePolicy: OnRootMismatch
       resources:
         requests:
           cpu: 50m

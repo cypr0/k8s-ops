@@ -22,6 +22,18 @@ spec:
       elasticsearch:
         replicas: 1
         strategy: Recreate
+        initContainers:
+          fix-perms:
+            image:
+              repository: busybox
+              tag: "1.37.0"
+            command:
+              - sh
+              - -c
+              - "chown -R 1000:1000 /usr/share/elasticsearch/data && echo perms-fixed"
+            securityContext:
+              runAsUser: 0
+              runAsNonRoot: false
         containers:
           app:
             image:
