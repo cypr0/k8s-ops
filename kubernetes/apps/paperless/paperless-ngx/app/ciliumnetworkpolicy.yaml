@@ -75,6 +75,19 @@ spec:
               protocol: TCP
             - port: "9443"
               protocol: TCP
+    # Authentik via id.cisotop.de: CoreDNS resolves the hostname to the
+    # envoy-internal ClusterIP, which is DNAT'd to the envoy container port
+    # 10443. The OIDC discovery/token calls (server_url = https://id.cisotop.de)
+    # take this path, NOT the direct authentik rule above. Policy is enforced
+    # post-DNAT, so allow the container port 10443.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
 ---
 # tika: document text extraction service
 apiVersion: cilium.io/v2

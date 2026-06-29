@@ -138,6 +138,15 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
+    # Paperless: OIDC discovery/token exchange with Authentik (id.cisotop.de)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
