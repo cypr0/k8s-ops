@@ -9,14 +9,16 @@ spec:
     matchLabels:
       app.kubernetes.io/name: nextcloud
   ingress:
-    # Envoy proxy (network ns): nginx :8080 (cloud.${SECRET_DOMAIN})
+    # Envoy proxy (network ns): the nginx container listens on :80 (the
+    # Service maps 8080->80, and Cilium enforces policy POST-DNAT on the
+    # container port).
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
             app.kubernetes.io/name: envoy
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "80"
               protocol: TCP
     # Same namespace (collabora/whiteboard internal callbacks, exporters)
     - fromEndpoints:

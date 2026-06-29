@@ -247,14 +247,14 @@ spec:
         - ports:
             - port: "8090"
               protocol: TCP
-    # Backend: nextcloud namespace (nginx :8080, collabora :9980, whiteboard
-    # :3002; all served via envoy-external)
+    # Backend: nextcloud namespace. Ports are POST-DNAT container ports:
+    # nginx Service 8080->container :80, collabora :9980, whiteboard :3002.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": nextcloud
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "80"
               protocol: TCP
             - port: "9980"
               protocol: TCP
