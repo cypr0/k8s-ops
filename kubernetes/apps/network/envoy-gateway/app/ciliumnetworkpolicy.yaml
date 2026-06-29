@@ -201,3 +201,11 @@ spec:
         - ports:
             - port: "9292"
               protocol: TCP
+    # Backend: paperless namespace (paperless-ngx :80, served via envoy-internal)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
