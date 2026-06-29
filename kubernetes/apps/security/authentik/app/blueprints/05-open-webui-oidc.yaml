@@ -55,5 +55,5 @@ entries:
       group: Productivity
       provider: !KeyOf open-webui-oidc-provider
       meta_launch_url: https://ai.${SECRET_DOMAIN}
-      meta_icon: https://cdn.simpleicons.org/openai
+      meta_icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/open-webui-light.png
       policy_engine_mode: all
