@@ -1,0 +1,76 @@
+---
+# nextcloud: single pod hosting nextcloud-fpm + nginx + clamav + collabora +
+# languagetool + whiteboard. Intra-pod sidecar traffic that hops through a
+# ClusterIP (nginx->whiteboard, collabora->languagetool) is allowed via the
+# same-namespace rules below.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: nextcloud
+  namespace: nextcloud
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: nextcloud
+  ingress:
+    # Envoy proxy (network ns): nginx :8080 (cloud.) and collabora :9980 (office.)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+            - port: "9980"
+              protocol: TCP
+    # Same namespace (hairpin sidecar traffic via ClusterIP + post-install jobs)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # PostgreSQL + Redis/Dragonfly (database ns)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+            - port: "6379"
+              protocol: TCP
+    # Authentik OIDC via id.${SECRET_DOMAIN} (envoy-internal, DNAT to :10443)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
+    # Same namespace (hairpin sidecar traffic)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+    # External: app store, ClamAV/freshclam virus DB, SMTP, federation, fonts
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+            - port: "25"
+              protocol: TCP

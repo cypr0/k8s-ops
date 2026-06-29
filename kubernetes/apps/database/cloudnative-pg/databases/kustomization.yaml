@@ -10,3 +10,5 @@ resources:
   - ./externalsecret-open-webui.yaml
   - ./database-open-webui-app.yaml
   - ./database-open-webui-rag.yaml
+  - ./externalsecret-nextcloud.yaml
+  - ./database-nextcloud.yaml

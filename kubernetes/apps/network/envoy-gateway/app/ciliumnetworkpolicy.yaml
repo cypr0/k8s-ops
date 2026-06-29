@@ -156,6 +156,15 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
+    # Nextcloud: OIDC discovery/token exchange with Authentik (id.cisotop.de)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+            app.kubernetes.io/name: nextcloud
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
@@ -237,4 +246,14 @@ spec:
       toPorts:
         - ports:
             - port: "8090"
+              protocol: TCP
+    # Backend: nextcloud namespace (nginx :8080, collabora :9980; via envoy-external)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+            - port: "9980"
               protocol: TCP
