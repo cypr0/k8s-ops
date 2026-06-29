@@ -6,277 +6,231 @@ metadata:
   name: nextcloud
 spec:
   interval: 1h
-  chartRef:
-    kind: OCIRepository
-    name: app-template
+  chart:
+    spec:
+      chart: nextcloud
+      version: "9.1.2"
+      sourceRef:
+        kind: HelmRepository
+        name: nextcloud
   install:
+    timeout: 30m
     remediation:
-      retries: -1
+      retries: 3
   upgrade:
+    timeout: 30m
     cleanupOnFail: true
     remediation:
       retries: 3
+      remediateLastFailure: true
   values:
-    defaultPodOptions:
-      annotations:
-        reloader.stakater.com/auto: "true"
-        secret.reloader.stakater.com/reload: "nextcloud-secret"
-    controllers:
-      main:
-        replicas: 1
-        strategy: RollingUpdate
-        annotations:
-          reloader.stakater.com/auto: "true"
-        containers:
-          nextcloud:
-            image:
-              repository: docker.io/library/nextcloud
-              tag: 32.0.6-fpm-alpine
-            securityContext:
-              runAsUser: 3000
-              runAsGroup: 3000
-              fsGroup: 3000
-            env:
-              - name: TZ
-                value: "Europe/Berlin"
-              - name: NEXTCLOUD_ADMIN_USER
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: NEXTCLOUD_ADMIN_USER
-              - name: NEXTCLOUD_ADMIN_PASSWORD
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: NEXTCLOUD_ADMIN_PASSWORD
-              - name: SMTP_HOST
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: SMTP_HOST
-              - name: SMTP_PORT
-                value: "25"
-              - name: SMTP_AUTHTYPE
-                value: ""
-              - name: MAIL_FROM_ADDRESS
-                value: "mail"
-              - name: MAIL_DOMAIN
-                value: "${SECRET_DOMAIN}"
-              - name: POSTGRES_HOST
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: POSTGRES_HOST
-              - name: POSTGRES_USER
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: POSTGRES_USER
-              - name: POSTGRES_DB
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: POSTGRES_DB
-              - name: POSTGRES_PASSWORD
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: POSTGRES_PASSWORD
-              - name: REDIS_HOST
-                value: dragonfly.database.svc.cluster.local
-              - name: REDIS_HOST_PORT
-                value: "6379"
-              - name: REDIS_HOST_PASSWORD
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: REDIS_PASSWORD
-              - name: NEXTCLOUD_DATA_DIR
-                value: /data
-          nginx:
-            image:
-              repository: nginxinc/nginx-unprivileged
-              tag: 1.29-alpine
-          clamav:
-            image:
-              repository: clamav/clamav
-              tag: 1.5.1-25
-            env:
-              CLAMAV_NO_CLAMD: false
-              CLAMAV_NO_FRESHCLAMD: false
-              CLAMAV_NO_MILTERD: true
-              FRESHCLAM_CHECKS: 4
-            probes:
-              liveness:
-                enabled: true
-              readiness:
-                enabled: true
-            securityContext:
-              runAsUser: 0
-              runAsGroup: 0
-              fsGroup: 0
-          collabora:
-            image:
-              repository: collabora/code
-              tag: 25.04.8.3.1
-            env:
-              - name: username
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: COLLABORA_USERNAME
-              - name: password
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: COLLABORA_PASSWORD
-              - name: extra_params
-                value: "--o:ssl.termination=true --o:ssl.enable=false --o:welcome.enable=false --o:languagetool.enabled=true --o:languagetool.base_url=http://nextcloud-languagetool.nextcloud.svc.cluster.local:8010/v2 --o:net.proxy_allowed_hosts=192.168.0.0/16,10.0.0.0/8,cloud.${SECRET_DOMAIN} --o:admin_console.enable=false"
-              - name: dictionaries
-                value: "de_DE en_GB en_US es_ES fr_FR"
-              - name: server_name
-                value: "office.${SECRET_DOMAIN}"
-            securityContext:
-              runAsUser: 1001
-              runAsGroup: 1001
-              fsGroup: 1001
-          languagetool:
-            image:
-              repository: collabora/languagetool
-              tag: "6.6"
-          whiteboard:
-            image:
-              repository: ghcr.io/nextcloud-releases/whiteboard
-              tag: v1.5.6
-            env:
-              - name: NEXTCLOUD_URL
-                value: "https://cloud.${SECRET_DOMAIN}"
-              - name: JWT_SECRET_KEY
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: WHITEBOARD_JWT_SECRET_KEY
-              - name: STORAGE_STRATEGY
-                value: "redis"
-              - name: REDIS_URL
-                valueFrom:
-                  secretKeyRef:
-                    name: nextcloud-secret
-                    key: WHITEBOARD_REDIS_URL
-            securityContext:
-              runAsUser: 65534
-              runAsGroup: 65534
-              fsGroup: 65534
-        initContainers:
-          init-chmod-pvc:
-            image:
-              repository: docker.io/library/alpine
-              tag: "3.23.3"
-            command: ["/bin/sh"]
-            args: ["-c", "mkdir -p /var/www/html/config && chmod 0770 /var/www/html/config && chown 3000:3000 /var/www/html/config && mkdir -p /usr/local/etc/php/conf.d && chmod 0770 /usr/local/etc/php/conf.d && chown 3000:3000 /usr/local/etc/php/conf.d"]
-            securityContext:
-              runAsUser: 0
-              runAsGroup: 0
-    service:
-      nginx:
-        controller: main
-        ports:
-          http:
-            port: 8080
-      clamav:
-        controller: main
-        ports:
-          clamd:
-            port: 3310
-      collabora:
-        controller: main
-        ports:
-          http:
-            port: 9980
-      languagetool:
-        controller: main
-        ports:
-          http:
-            port: 8010
-      whiteboard:
-        controller: main
-        ports:
-          http:
-            port: 3002
-    configMaps:
-      nextcloud-config:
+    replicaCount: 1
+    image:
+      registry: docker.io
+      repository: library/nextcloud
+      flavor: fpm-alpine
+      tag: 33.0.5-fpm-alpine
+    phpClientHttpsFix:
+      enabled: true
+    nextcloud:
+      host: cloud.${SECRET_DOMAIN}
+      securityContext:
+        runAsUser: 82
+        runAsGroup: 82
+        runAsNonRoot: true
+        readOnlyRootFilesystem: false
+      extraInitContainers:
+        - name: validate-subpaths
+          image: busybox:1.37.0
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              for dir in /var/www /var/www/html /var/www/html/config /var/www/html/custom_apps /var/www/html/data; do
+                [ -d "$dir" ] || { echo "ERROR: SubPath mount missing: $dir"; exit 1; }
+                chown 82:82 "$dir" 2>/dev/null || echo "WARN chown $dir"
+                chmod 755 "$dir" 2>/dev/null || echo "WARN chmod $dir"
+              done
+              echo "SubPath mounts validated"
+          volumeMounts:
+            - name: nextcloud-main
+              mountPath: /var/www
+              subPath: root
+            - name: nextcloud-main
+              mountPath: /var/www/html
+              subPath: html
+            - name: nextcloud-main
+              mountPath: /var/www/html/config
+              subPath: config
+            - name: nextcloud-main
+              mountPath: /var/www/html/custom_apps
+              subPath: custom_apps
+            - name: nextcloud-data
+              mountPath: /var/www/html/data
+              subPath: data
+        - name: fix-data-permissions
+          image: busybox:1.37.0
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+          command:
+            - sh
+            - -c
+            - |
+              chown 82:82 /var/www/html/data
+              chmod 750 /var/www/html/data
+              echo "data dir permissions fixed"
+          volumeMounts:
+            - name: nextcloud-data
+              mountPath: /var/www/html/data
+              subPath: data
+      extraEnv:
+        - name: NEXTCLOUD_REDIS_HOST
+          value: dragonfly.database.svc.cluster.local
+        - name: NEXTCLOUD_REDIS_DATABASE
+          value: "1"
+        - name: NEXTCLOUD_REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: &secret nextcloud-credentials
+              key: DRAGONFLY_PASSWORD
+        - name: OIDC_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: *secret
+              key: OIDC_CLIENT_ID
+        - name: OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: *secret
+              key: OIDC_CLIENT_SECRET
+        - name: WHITEBOARD_JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: nextcloud-whiteboard-credentials
+              key: WHITEBOARD_JWT_SECRET_KEY
+        - name: PHP_INI_SCAN_DIR
+          value: "/usr/local/etc/php/conf.d:/var/www/html/config/php-extra"
+      existingSecret:
         enabled: true
-        data:
-          extra.config.php: |
-            <?php
-              $CONFIG = array(
+        secretName: *secret
+        usernameKey: ADMIN_USER
+        passwordKey: ADMIN_PASS
+        smtpHostKey: SMTP_HOST
+        smtpUsernameKey: SMTP_USERNAME
+        smtpPasswordKey: SMTP_PASSWORD
+      mail:
+        enabled: true
+        fromAddress: "noreply"
+        domain: "${SECRET_DOMAIN}"
+        smtp:
+          port: 25
+          secure: ''
+      defaultConfigs:
+        apache-pretty-urls.config.php: false
+        apcu.config.php: false
+        apps.config.php: false
+        redis.config.php: false
+        reverse-proxy.config.php: false
+        s3.config.php: false
+        smtp.config.php: false
+        swift.config.php: false
+        upgrade-disable-web.config.php: false
+      hooks:
+        before-starting: |-
+          #!/bin/sh
+          set -eu
+          # Shared PHP session storage via Redis (survives across replicas / OIDC state).
+          # $$ escapes keep these as runtime env refs (Flux must not substitute them).
+          mkdir -p /var/www/html/config/php-extra
+          cat > /var/www/html/config/php-extra/z-session-redis.ini << EOF
+          session.save_handler = redis
+          session.save_path = "tcp://$${NEXTCLOUD_REDIS_HOST}:6379?auth=$${NEXTCLOUD_REDIS_PASSWORD}&database=3"
+          EOF
+          for f in apache-pretty-urls.config.php apcu.config.php apps.config.php \
+                   redis.config.php reverse-proxy.config.php s3.config.php \
+                   smtp.config.php swift.config.php upgrade-disable-web.config.php; do
+            rm -f "/var/www/html/config/$$f"
+          done
+          echo "before-starting: redis sessions configured, default configs cleaned"
+        after-upgrade: |-
+          #!/bin/sh
+          set -eu
+          php /var/www/html/occ upgrade --no-interaction
+          php /var/www/html/occ db:add-missing-indices --no-interaction
+          php /var/www/html/occ db:add-missing-columns --no-interaction
+          php /var/www/html/occ db:add-missing-primary-keys --no-interaction
+          php /var/www/html/occ db:convert-filecache-bigint --no-interaction
+          php /var/www/html/occ maintenance:repair --include-expensive --no-interaction
+      configs:
+        local.config.php: |-
+          <?php
+          $$CONFIG = array(
                 'backgroundjobs_mode' => 'cron',
                 'activity_expire_days' => 14,
                 'allow_local_remote_servers' => true,
                 'auth.bruteforce.protection.enabled' => true,
                 'overwriteprotocol' => 'https',
+                'overwritehost' => 'cloud.${SECRET_DOMAIN}',
                 'overwrite.cli.url' => 'https://cloud.${SECRET_DOMAIN}',
                 'trusted_domains' => array(
                     0 => 'localhost',
                     1 => 'cloud.${SECRET_DOMAIN}',
-                    2 => 'id.${SECRET_DOMAIN}',
-                    3 => 'nextcloud-collabora.nextcloud.svc.cluster.local',
+                    2 => 'id.${SECRET_DOMAIN}'
                 ),
                 'trusted_proxies' => array(
                     0 => '127.0.0.1',
-                    1 => '10.0.0.0/8',
-                    2 => '172.16.0.0/12',
-                    3 => '192.168.0.0/16',
+                    1 => '10.0.0.0/8'
                 ),
                 'forwarded_for_headers' => array(
                   0 => 'HTTP_X_FORWARDED_FOR',
                 ),
-
                 'forbidden_filenames' =>
                   array (
                     0 => '.htaccess',
                     1 => 'Thumbs.db',
                     2 => 'thumbs.db',
                     ),
-
                 'appstoreenabled' => true,
                 'knowledgebaseenabled' => false,
                 'quota_include_external_storage' => false,
                 'share_folder' => '/Freigaben',
                 'skeletondirectory' => '',
                 'trashbin_retention_obligation' => 'auto, 7',
-
-                'log_type' => 'file',
-                'logfile' => '/var/log/nextcloud.log',
-                'loglevel' => 0,
-
                 'memcache.local' => '\OC\Memcache\APCu',
                 'memcache.distributed' => '\OC\Memcache\Redis',
                 'memcache.locking' => '\OC\Memcache\Redis',
                 'redis' => array(
-                  'host' => getenv('REDIS_HOST'),
-                  'port' => getenv('REDIS_HOST_PORT') ?: 6379,
-                  'password' => getenv('REDIS_HOST_PASSWORD'),
-                  'dbindex'       => 8,
+                  'host' => getenv('NEXTCLOUD_REDIS_HOST'),
+                  'port' => getenv('NEXTCLOUD_REDIS_PORT') ?: 6379,
+                  'password' => getenv('NEXTCLOUD_REDIS_PASSWORD'),
+                  'dbindex'       => 1,
                   'timeout'       => 1.5,
                   'read_timeout'  => 1.5,
                 ),
-
                 'apps_paths' => array(
                     0 => array (
-                            'path'     => OC::$SERVERROOT.'/apps',
+                            'path'     => OC::$$SERVERROOT.'/apps',
                             'url'      => '/apps',
                             'writable' => false,
                     ),
                     1 => array (
-                            'path'     => OC::$SERVERROOT.'/custom_apps',
+                            'path'     => OC::$$SERVERROOT.'/custom_apps',
                             'url'      => '/custom_apps',
                             'writable' => true,
                     ),
                 ),
-
                 'htaccess.RewriteBase' => '/',
-
                 'mail_smtpmode' => 'smtp',
                 'mail_smtptimeout' => 30,
                 'mail_sendmailmode' => 'smtp',
@@ -286,10 +240,9 @@ spec:
                 'mail_smtpauth' => false,
                 'mail_smtpauthtype' => '',
                 'mail_smtppassword' => getenv('SMTP_PASSWORD'),
-                'mail_smtpname' => getenv('SMTP_NAME'),
-                'mail_from_address' => getenv('MAIL_FROM_ADDRESS'),
-                'mail_domain' => getenv('MAIL_DOMAIN'),
-                "mail_smtptimeout"  => 30,
+                'mail_smtpname' => '',
+                'mail_from_address' => 'noreply',
+                'mail_domain' => '${SECRET_DOMAIN}',
                 'mail_smtpstreamoptions' => array (
                   'ssl' => array (
                     'allow_self_signed' => true,
@@ -297,7 +250,6 @@ spec:
                     'verify_peer_name' => false
                     ),
                   ),
-
                 'enable_previews' => true,
                 'enabledPreviewProviders' =>
                     array (
@@ -319,329 +271,89 @@ spec:
                 'preview_max_x' => 1024,
                 'preview_max_y' => 768,
                 'preview_max_scale_factor' => 1,
-
-                  // Circumvention for client freezes - https://github.com/nextcloud/desktop/issues/5094
                 'bulkupload.enabled' => false,
-
-                'backgroundjobs_mode' => 'webcron',
                 'default_language' => 'de',
                 'default_locale' => 'de_DE',
                 'default_phone_region' => 'DE',
                 'default_timezone' => 'Europe/Berlin',
                 'maintenance_window_start' => 1,
-
               );
-          opcache-recommended-ini: |
-            opcache.enable=1
-            opcache.interned_strings_buffer=64
-            opcache.max_accelerated_files=20000
-            opcache.memory_consumption=256
-            opcache.save_comments=1
-            opcache.revalidate_freq=60
-            opcache.validate_timestamps=0
-            opcache.jit=1255
-            opcache.jit_buffer_size=128M
-          redis-session.ini: |
-            session.save_handler = redis
-            session.save_path = "tcp://$${REDIS_HOST}:$${REDIS_HOST_PORT}?auth=$${REDIS_HOST_PASSWORD}"
-            redis.session.locking_enabled = 1
-            redis.session.lock_retries = -1
-            redis.session.lock_wait_time = 10000
-          uploadLimit.ini: |
-            upload_max_filesize = 16G
-            post_max_size = 16G
-            max_input_time = 3600
-            max_execution_time = 3600
-          www.conf: |
-            [www]
-            pm = dynamic
-            pm.max_children = 256
-            pm.start_servers = 14
-            pm.min_spare_servers = 14
-            pm.max_spare_servers = 236
-            pm.max_requests = 500
-            pm.process_idle_timeout = 10s
-      nginx-config:
-        enabled: true
-        data:
-          nginx.conf: |
-            worker_processes auto;
-
-            error_log  /var/log/nginx/error.log warn;
-            pid        /tmp/nginx.pid;
-
-            events {
-                worker_connections 2048;
-                multi_accept on;
-                use epoll;
-            }
-
-            http {
-                proxy_temp_path /tmp/proxy_temp;
-                client_body_temp_path /tmp/client_temp;
-                fastcgi_temp_path /tmp/fastcgi_temp;
-                uwsgi_temp_path /tmp/uwsgi_temp;
-                scgi_temp_path /tmp/scgi_temp;
-
-                include       /etc/nginx/mime.types;
-                default_type  application/octet-stream;
-
-                sendfile on;
-                tcp_nopush on;
-                tcp_nodelay on;
-                keepalive_timeout 65;
-                reset_timedout_connection on;
-                server_tokens off;
-
-                resolver 10.43.0.10 valid=30s;
-                resolver_timeout 5s;
-
-                limit_req_zone $binary_remote_addr zone=NextcloudRateLimit:10m rate=2r/s;
-
-                upstream php-handler {
-                    server 127.0.0.1:9000;
-                }
-
-                types {
-                    text/javascript mjs;
-                }
-
-                server {
-                    listen 8080;
-                    root /var/www/html;
-
-                    index index.php index.html /index.php$request_uri;
-
-                    # Security Headers
-                    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload;" always;
-                    add_header Permissions-Policy "interest-cohort=()";
-                    add_header Referrer-Policy "no-referrer" always;
-                    add_header X-Content-Type-Options "nosniff" always;
-                    add_header X-Download-Options "noopen" always;
-                    add_header X-Frame-Options "SAMEORIGIN" always;
-                    add_header X-Permitted-Cross-Domain-Policies "none" always;
-                    add_header X-Robots-Tag "noindex, nofollow" always;
-                    add_header X-XSS-Protection "1; mode=block" always;
-
-                    fastcgi_hide_header X-Powered-By;
-
-                    proxy_set_header X-Forwarded-Host $host;
-                    proxy_set_header X-Forwarded-Proto $scheme;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header Host $host;
-
-                    client_max_body_size 10G;
-                    client_body_timeout 3600s;
-                    client_body_buffer_size 512k;
-                    fastcgi_buffers 64 4K;
-
-                    gzip on;
-                    gzip_vary on;
-                    gzip_comp_level 4;
-                    gzip_min_length 256;
-                    gzip_proxied expired no-cache no-store private no_last_modified no_etag auth;
-                    gzip_types
-                        application/atom+xml
-                        text/javascript
-                        application/javascript
-                        application/json
-                        application/ld+json
-                        application/manifest+json
-                        application/rss+xml
-                        application/vnd.geo+json
-                        application/vnd.ms-fontobject
-                        application/wasm
-                        application/x-font-ttf
-                        application/x-web-app-manifest+json
-                        application/xhtml+xml
-                        application/xml
-                        font/opentype
-                        image/bmp
-                        image/svg+xml
-                        image/x-icon
-                        text/cache-manifest
-                        text/css
-                        text/plain
-                        text/vcard
-                        text/vnd.rim.location.xloc
-                        text/vtt
-                        text/x-component
-                        text/x-cross-domain-policy;
-
-                    location = / {
-                        if ($http_user_agent ~ ^DavClnt) {
-                            return 302 /remote.php/webdav/$is_args$args;
-                        }
-                    }
-
-                    location = /robots.txt {
-                        allow all;
-                        log_not_found off;
-                        access_log off;
-                    }
-
-                    # Well-known URLs
-                    location ^~ /.well-known {
-                        location = /.well-known/carddav { return 301 /remote.php/dav/; }
-                        location = /.well-known/caldav { return 301 /remote.php/dav/; }
-
-                        location /.well-known/acme-challenge { try_files $uri $uri/ =404; }
-                        location /.well-known/pki-validation { try_files $uri $uri/ =404; }
-
-                        return 301 /index.php$request_uri;
-                    }
-
-                    # Block unsafe paths
-                    location ~ ^/(?:build|tests|config|lib|3rdparty|templates|data)(?:$|/) { return 404; }
-                    location ~ ^/(?:\.|autotest|occ|issue|indie|db_|console) { return 404; }
-
-                    # PHP Handling
-                    location ~ \.php(?:$|/) {
-                        rewrite ^/(?!index|remote|public|cron|core\/ajax\/update|status|ocs\/v[12]|updater\/.+|oc[ms]-provider\/.+|.+\/richdocumentscode\/proxy) /index.php$request_uri;
-
-                        fastcgi_split_path_info ^(.+?\.php)(/.*)$;
-                        set $path_info $fastcgi_path_info;
-
-                        try_files $fastcgi_script_name =404;
-
-                        include fastcgi_params;
-                        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-                        fastcgi_param PATH_INFO $path_info;
-                        fastcgi_param HTTPS on;
-                        fastcgi_param modHeadersAvailable true;
-                        fastcgi_param front_controller_active true;
-
-                        fastcgi_pass php-handler;
-
-                        fastcgi_intercept_errors on;
-                        fastcgi_request_buffering off;
-                        fastcgi_read_timeout 3600;
-                        fastcgi_send_timeout 3600;
-                        fastcgi_connect_timeout 3600;
-                        fastcgi_max_temp_file_size 0;
-                    }
-
-                    # Static files
-                    location ~ \.(?:css|js|mjs|svg|gif|ico|jpg|png|webp|wasm|tflite|map|ogg|flac)$ {
-                        try_files $uri /index.php$request_uri;
-                        add_header Cache-Control "public, max-age=15768000, immutable";
-                        expires 6M;
-                        access_log off;
-                    }
-
-                    # Fonts
-                    location ~ \.(otf|woff2?)$ {
-                        try_files $uri /index.php$request_uri;
-                        expires 7d;
-                        access_log off;
-                    }
-
-                    # Remote redirect
-                    location /remote {
-                        return 301 /remote.php$request_uri;
-                    }
-
-                    # Login rate limiting
-                    location = /login {
-                        limit_req zone=NextcloudRateLimit burst=5 nodelay;
-                        limit_req_status 429;
-                        try_files $uri $uri/ /index.php$request_uri;
-                    }
-
-                    # Whiteboard reverse proxy
-                    location /whiteboard/ {
-                        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                        proxy_set_header Host $host;
-                        proxy_pass http://nextcloud-whiteboard.nextcloud.svc.cluster.local:3002/;
-                        proxy_http_version 1.1;
-                        proxy_set_header Upgrade $http_upgrade;
-                        proxy_set_header Connection "upgrade";
-                    }
-
-                    # Fallback
-                    location / {
-                        try_files $uri $uri/ /index.php$request_uri;
-                    }
-                }
-            }
+      phpConfigs:
+        uploadLimit.ini: |
+          upload_max_filesize = 16G
+          post_max_size = 16G
+          max_input_time = 3600
+          max_execution_time = 3600
+    deploymentStrategy:
+      type: Recreate
+    podSecurityContext:
+      fsGroup: 82
+      fsGroupChangePolicy: Always
     persistence:
-      data:
-        type: persistentVolumeClaim
+      enabled: true
+      existingClaim: nextcloud-pvc
+      nextcloudData:
+        enabled: true
         existingClaim: nextcloud-data-pvc
-        advancedMounts:
-          main:
-            nextcloud:
-              - path: /data
-                subPath: data
-                readOnly: false
-      app-config:
-        type: persistentVolumeClaim
-        existingClaim: nextcloud-app-pvc
-        advancedMounts:
-          main:
-            init-chmod-pvc:
-              - path: /var/www/html
-                subPath: config
-                readOnly: false
-            nginx:
-              - path: /var/www/html
-                subPath: config
-                readOnly: true
-            nextcloud:
-              - path: /var/www/html
-                subPath: config
-                readOnly: false
-      nginx-config:
-        type: "configMap"
-        name: nextcloud-nginx-config
-        advancedMounts:
-          main:
-            nginx:
-              - path: /etc/nginx/nginx.conf
-                subPath: nginx.conf
-                readOnly: true
-      upload-limit-ini:
-        type: "configMap"
-        name: nextcloud-nextcloud-config
-        advancedMounts:
-          main:
-            nextcloud:
-              - path: /usr/local/etc/php-fpm.d/uploadLimit.ini
-                subPath: uploadLimit.ini
-                readOnly: true
-      www-conf:
-        type: "configMap"
-        name: nextcloud-nextcloud-config
-        advancedMounts:
-          main:
-            nextcloud:
-              - path: /usr/local/etc/php-fpm.d/zz-www.conf
-                subPath: www.conf
-                readOnly: true
-      opcache-recommended-ini:
-        type: "configMap"
-        name: nextcloud-nextcloud-config
-        advancedMounts:
-          main:
-            nextcloud:
-              - path: /usr/local/etc/php/conf.d/opcache-recommended.ini
-                subPath: opcache-recommended-ini
-                readOnly: true
-      nextcloud-config:
-        type: "configMap"
-        name: nextcloud-nextcloud-config
-        advancedMounts:
-          main:
-            nextcloud:
-              - path: /var/www/html/config/extra.config.php
-                subPath: extra.config.php
-                readOnly: true
-      redis-session-ini:
-        type: "configMap"
-        name: nextcloud-nextcloud-config
-        advancedMounts:
-          main:
-            nextcloud:
-              - path: /usr/local/etc/php/conf.d/redis-session.ini
-                subPath: redis-session.ini
-                readOnly: true
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        memory: 2Gi
+    startupProbe:
+      enabled: true
+      initialDelaySeconds: 10
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 360
+    livenessProbe:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+    readinessProbe:
+      enabled: true
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 5
+    nginx:
+      enabled: true
+      image:
+        repository: nginxinc/nginx-unprivileged
+      config:
+        default: true
+      securityContext:
+        runAsUser: 82
+        runAsGroup: 82
+        runAsNonRoot: true
+        readOnlyRootFilesystem: false
+        fsGroup: 82
+        fsGroupChangePolicy: OnRootMismatch
+      resources:
+        requests:
+          cpu: 50m
+          memory: 20Mi
+        limits:
+          memory: 128Mi
+    internalDatabase:
+      enabled: false
+    externalDatabase:
+      enabled: true
+      type: postgresql
+      database: nextclouddb
+      existingSecret:
+        enabled: true
+        secretName: nextcloud-postgres-credentials
+        databaseKey: POSTGRES_DB
+        hostKey: POSTGRES_HOST
+        passwordKey: POSTGRES_PASSWORD
+        usernameKey: POSTGRES_USER
+    redis:
+      enabled: false
+    metrics:
+      enabled: false
+    cronjob:
+      enabled: true

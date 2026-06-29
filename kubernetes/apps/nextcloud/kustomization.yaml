@@ -9,3 +9,7 @@ components:
 resources:
   - ./namespace.yaml
   - ./nextcloud/ks.yaml
+  - ./collabora/ks.yaml
+  - ./clamav/ks.yaml
+  - ./whiteboard/ks.yaml
+  - ./elasticsearch/ks.yaml

@@ -247,7 +247,8 @@ spec:
         - ports:
             - port: "8090"
               protocol: TCP
-    # Backend: nextcloud namespace (nginx :8080, collabora :9980; via envoy-external)
+    # Backend: nextcloud namespace (nginx :8080, collabora :9980, whiteboard
+    # :3002; all served via envoy-external)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": nextcloud
@@ -256,4 +257,6 @@ spec:
             - port: "8080"
               protocol: TCP
             - port: "9980"
+              protocol: TCP
+            - port: "3002"
               protocol: TCP

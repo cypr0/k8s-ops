@@ -1,0 +1,137 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nextcloud-post-install
+  namespace: nextcloud
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 5
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nextcloud
+        app.kubernetes.io/component: post-install
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroup: 82
+        fsGroupChangePolicy: Always
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: configure
+          image: docker.io/library/nextcloud:33.0.5-fpm-alpine
+          securityContext:
+            runAsUser: 82
+            runAsGroup: 82
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "Waiting for Nextcloud DB to be initialized..."
+              attempts=0
+              until php /var/www/html/occ status 2>/dev/null | grep -q "installed: true"; do
+                attempts=$((attempts + 1))
+                if [ "$attempts" -ge 90 ]; then echo "ERROR: Nextcloud not ready, giving up"; exit 1; fi
+                echo "  not ready (attempt $${attempts}/90), retry in 10s..."; sleep 10
+              done
+              echo "Nextcloud is installed and ready."
+
+              for app in user_oidc richdocuments whiteboard files_antivirus \
+                         deck tables forms groupfolders \
+                         fulltextsearch fulltextsearch_elasticsearch files_fulltextsearch; do
+                if php /var/www/html/occ app:enable --no-interaction "$${app}" 2>/dev/null; then
+                  echo "  enabled: $${app}"; continue
+                fi
+                if php /var/www/html/occ app:install --no-interaction "$${app}" 2>/dev/null; then
+                  php /var/www/html/occ app:enable --no-interaction "$${app}" 2>/dev/null && echo "  installed+enabled: $${app}" || echo "  installed, enable failed: $${app}"
+                else
+                  echo "  skipped: $${app}"
+                fi
+              done
+
+              echo "Configuring OIDC (Authentik)..."
+              php /var/www/html/occ user_oidc:provider Authentik \
+                --clientid="$${OIDC_CLIENT_ID}" \
+                --clientsecret="$${OIDC_CLIENT_SECRET}" \
+                --discoveryuri="https://id.${SECRET_DOMAIN}/application/o/nextcloud/.well-known/openid-configuration" \
+                --endsessionendpointuri="https://id.${SECRET_DOMAIN}/application/o/nextcloud/end-session/" \
+                --scope="openid email profile groups" \
+                --mapping-uid="sub" \
+                --mapping-display-name="name" \
+                --mapping-email="email" \
+                --mapping-quota="quota" \
+                --mapping-groups="groups" \
+                --group-provisioning=1 \
+                --unique-uid=0 \
+                --no-interaction
+              php /var/www/html/occ config:app:set --value=0 user_oidc allow_multiple_user_backends
+
+              echo "Configuring Collabora (richdocuments)..."
+              php /var/www/html/occ config:app:set richdocuments wopi_url --value="https://collabora.${SECRET_DOMAIN}"
+              php /var/www/html/occ config:app:set richdocuments wopi_allowlist --value="10.0.0.0/8,192.168.0.0/16"
+              php /var/www/html/occ richdocuments:activate-config || true
+
+              echo "Configuring Antivirus (ClamAV)..."
+              php /var/www/html/occ config:app:set files_antivirus av_mode --value="daemon"
+              php /var/www/html/occ config:app:set files_antivirus av_host --value="clamav.nextcloud.svc.cluster.local"
+              php /var/www/html/occ config:app:set files_antivirus av_port --value="3310"
+              php /var/www/html/occ config:app:set files_antivirus av_stream_max_length --value="104857600"
+
+              echo "Configuring Whiteboard..."
+              php /var/www/html/occ config:app:set whiteboard collabBackendUrl --value="https://cloud.${SECRET_DOMAIN}/whiteboard/"
+              php /var/www/html/occ config:app:set whiteboard jwt_secret_key --value="$${WHITEBOARD_JWT_SECRET_KEY}"
+
+              echo "Configuring Full-text search (Elasticsearch)..."
+              php /var/www/html/occ config:app:set fulltextsearch search_platform --value="OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform"
+              php /var/www/html/occ config:app:set fulltextsearch_elasticsearch elastic_host --value="http://elasticsearch.nextcloud.svc.cluster.local:9200"
+              php /var/www/html/occ config:app:set fulltextsearch_elasticsearch elastic_index --value="nextcloud"
+              php /var/www/html/occ fulltextsearch:index < /dev/null || echo "  initial index skipped/failed (will run via cron)"
+
+              echo "Post-install configuration complete."
+          env:
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: nextcloud-credentials
+                  key: OIDC_CLIENT_ID
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: nextcloud-credentials
+                  key: OIDC_CLIENT_SECRET
+            - name: WHITEBOARD_JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nextcloud-whiteboard-credentials
+                  key: WHITEBOARD_JWT_SECRET_KEY
+          volumeMounts:
+            - name: nextcloud-main
+              mountPath: /var/www
+              subPath: root
+            - name: nextcloud-main
+              mountPath: /var/www/html
+              subPath: html
+            - name: nextcloud-main
+              mountPath: /var/www/html/config
+              subPath: config
+            - name: nextcloud-main
+              mountPath: /var/www/html/custom_apps
+              subPath: custom_apps
+            - name: nextcloud-data
+              mountPath: /var/www/html/data
+              subPath: data
+      volumes:
+        - name: nextcloud-main
+          persistentVolumeClaim:
+            claimName: nextcloud-pvc
+        - name: nextcloud-data
+          persistentVolumeClaim:
+            claimName: nextcloud-data-pvc

@@ -2,23 +2,23 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: nextcloud
+  name: whiteboard
   namespace: nextcloud
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: nextcloud
+      app.kubernetes.io/name: whiteboard
   ingress:
-    # Envoy proxy (network ns): nginx :8080 (cloud.${SECRET_DOMAIN})
+    # Envoy proxy (network ns): whiteboard :3002 (cloud.${SECRET_DOMAIN}/whiteboard)
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
             app.kubernetes.io/name: envoy
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "3002"
               protocol: TCP
-    # Same namespace (collabora/whiteboard internal callbacks, exporters)
+    # Same namespace
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": nextcloud
@@ -33,37 +33,18 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # PostgreSQL + Redis/Dragonfly
+    # Redis/Dragonfly (whiteboard session storage)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": database
       toPorts:
         - ports:
-            - port: "5432"
-              protocol: TCP
             - port: "6379"
               protocol: TCP
-    # Authentik OIDC via id.${SECRET_DOMAIN} (envoy-internal, DNAT :10443)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": network
-            app.kubernetes.io/name: envoy
-      toPorts:
-        - ports:
-            - port: "10443"
-              protocol: TCP
-    # Same namespace (clamav :3310, elasticsearch :9200, collabora :9980, whiteboard :3002)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": nextcloud
-    # External: app store, SMTP, federation, WOPI hairpin via public domain
+    # Nextcloud API via the public domain (cloud.${SECRET_DOMAIN})
     - toEntities:
         - world
       toPorts:
         - ports:
             - port: "443"
-              protocol: TCP
-            - port: "80"
-              protocol: TCP
-            - port: "25"
               protocol: TCP

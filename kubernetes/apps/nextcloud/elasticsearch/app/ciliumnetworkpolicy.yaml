@@ -1,0 +1,30 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: elasticsearch
+  namespace: nextcloud
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: elasticsearch
+  ingress:
+    # Nextcloud full-text search -> elasticsearch :9200
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

@@ -1,0 +1,39 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: clamav
+  namespace: nextcloud
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: clamav
+  ingress:
+    # Nextcloud files_antivirus -> clamd :3310
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+      toPorts:
+        - ports:
+            - port: "3310"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # freshclam virus-database updates over the internet
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
