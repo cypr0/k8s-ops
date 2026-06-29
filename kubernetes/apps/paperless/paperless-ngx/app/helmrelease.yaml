@@ -43,24 +43,9 @@ spec:
               PAPERLESS_MEDIA_ROOT: /library/media
               PAPERLESS_OCR_LANGUAGE: deu+eng+spa
               PAPERLESS_PORT: &port 80
-              PAPERLESS_SOCIALACCOUNT_PROVIDERS: >
-                    {
-                      "openid_connect": {
-                        "APPS": [
-                          {
-                            "provider_id": "authentik",
-                            "name": "Authentik",
-                            "client_id": "${PAPERLESS_OPENID_CLIENT_ID}",
-                            "secret": "${PAPERLESS_OPENID_CLIENT_SECRET}",
-                            "settings": {
-                              "server_url": "https://id.${SECRET_DOMAIN}/application/o/paperless-ngx/.well-known/openid-configuration"
-                            }
-                          }
-                        ],
-                        "OAUTH_PKCE_ENABLED": "True",
-                        "SCOPE": ["openid", "profile", "email", "groups"]
-                      }
-                    }
+              # PAPERLESS_SOCIALACCOUNT_PROVIDERS is built in externalsecret.yaml
+              # (client_id/secret come from 1Password) and injected via
+              # envFrom: secretRef: paperless-secret below.
               PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS: "true"
               PAPERLESS_TASK_WORKERS: 2
               PAPERLESS_TIKA_ENABLED: 1
