@@ -1,0 +1,192 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: open-webui
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controllers:
+      open-webui:
+        replicas: 1
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+          secret.reloader.stakater.com/reload: open-webui-secret
+        containers:
+          app:
+            image:
+              repository: ghcr.io/open-webui/open-webui
+              # renovate: datasource=docker depName=ghcr.io/open-webui/open-webui
+              tag: v0.9.6
+            env:
+              CORS_ALLOW_ORIGIN: https://ai.${SECRET_DOMAIN}
+              WEBUI_URL: https://ai.${SECRET_DOMAIN}
+              PORT: &webuiPort 8090
+              ENABLE_SIGNUP: "false"
+              ENABLE_OAUTH_SIGNUP: "true"
+              ENABLE_LOGIN_FORM: "false"
+              DEFAULT_LOCALE: de
+              DEFAULT_USER_ROLE: user
+              DATA_DIR: /data
+              ENV: prod
+              TZ: Europe/Berlin
+              ENABLE_DIRECT_CONNECTIONS: "false"
+
+              ENABLE_OLLAMA_API: "false"
+              OPENAI_API_BASE_URL: https://openrouter.ai/api/v1
+
+              # Web search via the SearXNG sidecar (localhost in the same pod)
+              ENABLE_WEB_SEARCH: "true"
+              ENABLE_SEARCH_QUERY_GENERATION: "true"
+              WEB_SEARCH_RESULT_COUNT: "5"
+              WEB_SEARCH_ENGINE: searxng
+              SEARXNG_QUERY_URL: http://localhost:8080/search?q=<query>
+
+              ENABLE_WEBSOCKET_SUPPORT: "true"
+              WEBSOCKET_MANAGER: redis
+
+              # OIDC via Authentik (id.${SECRET_DOMAIN} resolves to envoy-internal)
+              OAUTH_PROVIDER_NAME: Authentik
+              OAUTH_MERGE_ACCOUNTS_BY_EMAIL: "false"
+              OPENID_PROVIDER_URL: https://id.${SECRET_DOMAIN}/application/o/open-webui/.well-known/openid-configuration
+              OPENID_REDIRECT_URI: https://ai.${SECRET_DOMAIN}/oauth/oidc/callback
+              OAUTH_SCOPES: openid email profile groups
+              OAUTH_UPDATE_PICTURE_ON_LOGIN: "true"
+              ENABLE_OAUTH_GROUP_MANAGEMENT: "true"
+              OAUTH_GROUP_CLAIM: groups
+              ENABLE_OAUTH_GROUP_CREATION: "true"
+
+              # Dedicated Tika instance for document text extraction (RAG).
+              # NOTE: with the tika engine, web-search HTML result pages are not
+              # extracted (Tika returns empty for HTML). If web-search context is
+              # needed, set CONTENT_EXTRACTION_ENGINE to "" to use the built-in loader.
+              CONTENT_EXTRACTION_ENGINE: tika
+              TIKA_SERVER_URL: http://tika.open-webui.svc.cluster.local:9998
+
+              VECTOR_DB: pgvector
+              PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH: "1536"
+
+              ENABLE_API_KEY: "true"
+              JWT_EXPIRES_IN: 8h
+              # Empty = no client timeout; a numeric value cuts streaming LLM
+              # responses mid-stream (aiohttp TransferEncodingError).
+              AIOHTTP_CLIENT_TIMEOUT: ""
+              AIOHTTP_CLIENT_TIMEOUT_MODEL: ""
+              # Persist the HF / sentence-transformers embedding cache on the PVC.
+              HF_HOME: /data/cache/huggingface
+              SENTENCE_TRANSFORMERS_HOME: /data/cache/huggingface
+            envFrom:
+              - secretRef:
+                  name: open-webui-secret
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: *webuiPort
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                  failureThreshold: 3
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: *webuiPort
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 500m
+                memory: 1Gi
+              limits:
+                memory: 4Gi
+            # Runs as root so the NFS-backed /data PVC is writable (mirrors the
+            # proven k8s-home setup; csi-driver-nfs does not enforce fsGroup).
+            securityContext:
+              runAsNonRoot: false
+              runAsUser: 0
+              runAsGroup: 0
+
+          searxng:
+            image:
+              repository: searxng/searxng
+              # renovate: datasource=docker depName=searxng/searxng
+              tag: 2026.3.13-3c1f68c59
+            env:
+              SEARXNG_BASE_URL: http://localhost:8080
+              SEARXNG_SECRET:
+                valueFrom:
+                  secretKeyRef:
+                    name: open-webui-secret
+                    key: SEARXNG_SECRET
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            probes:
+              liveness:
+                enabled: true
+              readiness:
+                enabled: true
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+              runAsUser: 977
+              runAsNonRoot: true
+
+    service:
+      app:
+        controller: open-webui
+        ports:
+          http:
+            port: *webuiPort
+      searxng:
+        controller: open-webui
+        ports:
+          http:
+            port: 8080
+
+    persistence:
+      data:
+        existingClaim: open-webui-data-pvc
+        advancedMounts:
+          open-webui:
+            app:
+              - path: /data
+                subPath: data
+      searxng-config:
+        type: configMap
+        name: searxng-settings
+        advancedMounts:
+          open-webui:
+            searxng:
+              - path: /etc/searxng/settings.yml
+                subPath: settings.yml
+                readOnly: true
+      searxng-tmp:
+        type: emptyDir
+        advancedMounts:
+          open-webui:
+            searxng:
+              - path: /tmp

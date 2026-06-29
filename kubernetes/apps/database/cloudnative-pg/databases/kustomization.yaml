@@ -7,3 +7,6 @@ resources:
   - ./database-authentik.yaml
   - ./externalsecret-paperless.yaml
   - ./database-paperless.yaml
+  - ./externalsecret-open-webui.yaml
+  - ./database-open-webui-app.yaml
+  - ./database-open-webui-rag.yaml

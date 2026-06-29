@@ -28,7 +28,7 @@ spec:
   values:
     global:
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: "authentik-secret,authentik-grafana-oidc,authentik-paperless-oidc"
+        secret.reloader.stakater.com/reload: "authentik-secret,authentik-grafana-oidc,authentik-paperless-oidc,authentik-open-webui-oidc"
       deploymentStrategy:
         type: RollingUpdate
       podSecurityContext:
@@ -52,6 +52,8 @@ spec:
             name: authentik-proxmox-oidc
         - secretRef:
             name: authentik-paperless-oidc
+        - secretRef:
+            name: authentik-open-webui-oidc
       volumes:
         - name: authentik-templates
           configMap:

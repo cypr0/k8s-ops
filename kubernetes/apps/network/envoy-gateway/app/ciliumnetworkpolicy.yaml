@@ -147,6 +147,15 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
+    # Open WebUI: OIDC discovery/token exchange with Authentik (id.cisotop.de)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
@@ -220,4 +229,12 @@ spec:
             - port: "80"
               protocol: TCP
             - port: "3000"
+              protocol: TCP
+    # Backend: open-webui namespace (open-webui :8090, served via envoy-internal)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+      toPorts:
+        - ports:
+            - port: "8090"
               protocol: TCP

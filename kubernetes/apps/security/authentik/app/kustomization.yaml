@@ -10,6 +10,7 @@ resources:
   - ./externalsecret-opensearch-oidc.yaml
   - ./externalsecret-proxmox-oidc.yaml
   - ./externalsecret-paperless-oidc.yaml
+  - ./externalsecret-open-webui-oidc.yaml
   - ./helmrepository.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml
@@ -22,5 +23,6 @@ configMapGenerator:
       - blueprints/02-opensearch-oidc.yaml
       - blueprints/03-proxmox-oidc.yaml
       - blueprints/04-paperless-oidc.yaml
+      - blueprints/05-open-webui-oidc.yaml
     options:
       disableNameSuffixHash: true
