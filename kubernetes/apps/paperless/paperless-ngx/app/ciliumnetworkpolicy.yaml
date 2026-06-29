@@ -36,13 +36,15 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # Database access (PostgreSQL in database namespace)
+    # Database access (PostgreSQL and Redis/Dragonfly in database namespace)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": database
       toPorts:
         - ports:
             - port: "5432"
+              protocol: TCP
+            - port: "6379"
               protocol: TCP
     # Tika service (same namespace)
     - toEndpoints:
