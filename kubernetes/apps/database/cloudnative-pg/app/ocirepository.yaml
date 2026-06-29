@@ -12,4 +12,4 @@ spec:
   url: oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg
   ref:
     # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/charts/cloudnative-pg
-    tag: "0.28.3"
+    tag: "0.29.0"
