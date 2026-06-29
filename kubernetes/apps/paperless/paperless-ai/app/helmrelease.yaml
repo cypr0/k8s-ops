@@ -25,7 +25,7 @@ spec:
               tag: 3.0.9
             env:
               PAPERLESS_AI_INITIAL_SETUP: "no"
-              PAPERLESS_API_URL: "http://paperless-paperless-ngx.paperless.svc.cluster.local/api"
+              PAPERLESS_API_URL: "http://paperless.paperless.svc.cluster.local/api"
               AI_PROVIDER: "custom"
               SCAN_INTERVAL: "*/60 * * * *"
               SYSTEM_PROMPT: |
@@ -68,18 +68,8 @@ spec:
           http:
             port: 3000
 
-    route:
-      paperless-ai:
-        hostnames:
-          - paperless-ai.${SECRET_DOMAIN}
-        parentRefs:
-          - name: internal
-            namespace: kube-system
-            sectionName: https
-        rules:
-          - backendRefs:
-              - name: paperless-ai-http
-                port: 3000
+    # HTTPRoute is defined in httproute.yaml (parent gateway envoy-internal in
+    # the network namespace), mirroring the paperless-ngx setup.
 
     persistence:
       data:

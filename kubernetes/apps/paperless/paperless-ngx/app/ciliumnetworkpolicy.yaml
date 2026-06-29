@@ -24,6 +24,15 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
             app.kubernetes.io/name: prometheus
+    # paperless-ai reads the REST API (same namespace)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless-ai
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
   egress:
     # DNS resolution
     - toEndpoints:
