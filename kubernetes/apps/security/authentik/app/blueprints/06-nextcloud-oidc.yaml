@@ -55,5 +55,5 @@ entries:
       group: Productivity
       provider: !KeyOf nextcloud-oidc-provider
       meta_launch_url: https://cloud.${SECRET_DOMAIN}
-      meta_icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/nextcloud.png
+      meta_icon: https://cdn.simpleicons.org/nextcloud
       policy_engine_mode: all
