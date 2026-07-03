@@ -39,7 +39,11 @@ spec:
                   echo "Already configured, skipping setup."
                   exit 0
                 fi
-                openclaw setup --non-interactive --accept-risk --mode local
+                # Exits non-zero because it also probes for an already-running
+                # gateway (there isn't one yet, that's the main container's job).
+                # The config/workspace/session files it writes are what matters.
+                openclaw setup --non-interactive --accept-risk --mode local || true
+                test -f "$HOME/.openclaw/openclaw.json"
             securityContext:
               runAsNonRoot: false
               runAsUser: 0
