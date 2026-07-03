@@ -51,10 +51,13 @@ spec:
                 # Default bind mode is loopback-only, unreachable from the
                 # Service/probes over the pod IP. Force LAN bind, restrict
                 # trusted forwarded-header proxies to the cluster pod CIDR
-                # (Envoy forward-auth), and lock the Control UI to our host.
+                # (Envoy forward-auth), lock the Control UI to our host, and
+                # point gateway.auth.token at the real env var -- `setup`
+                # bakes in its own randomly-generated literal token otherwise,
+                # which never matches OPENCLAW_GATEWAY_TOKEN from the Secret.
                 # (printf, not a heredoc: YAML's block-scalar indentation
                 # would leave the closing delimiter indented and unmatched.)
-                printf '%s' '{"gateway":{"bind":"lan","trustedProxies":["10.42.0.0/16"],"controlUi":{"allowedOrigins":["https://claw.${SECRET_DOMAIN}"]}}}' \
+                printf '%s' '{"gateway":{"bind":"lan","trustedProxies":["10.42.0.0/16"],"controlUi":{"allowedOrigins":["https://claw.${SECRET_DOMAIN}"]},"auth":{"token":{"source":"env","provider":"default","id":"OPENCLAW_GATEWAY_TOKEN"}}}}' \
                   | openclaw config patch --stdin
                 # One-time OpenAI provider auth + default model. (OPENAI_API_KEY
                 # is a real OpenAI key -- sk-proj-... -- not an OpenRouter key,
