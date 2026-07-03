@@ -69,26 +69,32 @@ spec:
               - secretRef:
                   name: openclaw-secret
             probes:
+              # Gateway does synchronous provider/model warmup after "ready"
+              # that can briefly block the event loop (e.g. LLM provider auth
+              # checks). Use the dedicated /health endpoint with a generous
+              # timeout/threshold so that warmup isn't mistaken for a hang.
               liveness:
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
-                    path: /
+                    path: /health
                     port: *port
                   initialDelaySeconds: 30
                   periodSeconds: 10
-                  failureThreshold: 3
+                  timeoutSeconds: 5
+                  failureThreshold: 6
               readiness:
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
-                    path: /
+                    path: /health
                     port: *port
                   initialDelaySeconds: 10
                   periodSeconds: 5
-                  failureThreshold: 3
+                  timeoutSeconds: 5
+                  failureThreshold: 6
             resources:
               requests:
                 cpu: 100m
