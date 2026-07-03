@@ -15,6 +15,12 @@ spec:
     # Do not block the request if the auth service is momentarily unreachable
     # errors are surfaced instead of silently allowing traffic.
     failOpen: false
+    # Client headers forwarded to the outpost so it can build the redirect.
+    headersToExtAuth:
+      - cookie
+      - x-forwarded-for
+      - x-forwarded-host
+      - x-forwarded-proto
     http:
       # authentik-server lives in the security namespace (cross-namespace
       # backendRef permitted by the ReferenceGrant in the authentik app).
@@ -25,12 +31,6 @@ spec:
           namespace: security
           port: 80
       path: /outpost.goauthentik.io/auth/envoy
-      # Client headers forwarded to the outpost so it can build the redirect.
-      headersToExtAuth:
-        - cookie
-        - x-forwarded-for
-        - x-forwarded-host
-        - x-forwarded-proto
       # Identity headers the outpost returns on allow, injected into the
       # upstream request to OpenClaw.
       headersToBackend:

@@ -110,3 +110,10 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # loki-sc-rules sidecar: watches ConfigMaps/Secrets via the k8s API for rule reloads
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
