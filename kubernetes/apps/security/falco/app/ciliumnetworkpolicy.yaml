@@ -28,6 +28,13 @@ spec:
         - ports:
             - port: "2801"
               protocol: TCP
+    # falcoctl-artifact-install init container: fetches rules from falcosecurity.github.io
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
 ---
 # Falcosidekick: routes Falco alerts to Loki, OpenSearch, and external webhooks
 apiVersion: cilium.io/v2
