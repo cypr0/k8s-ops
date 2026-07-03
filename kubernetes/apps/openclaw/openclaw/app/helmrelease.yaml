@@ -30,6 +30,10 @@ spec:
               repository: ghcr.io/openclaw/openclaw
               # renovate: datasource=docker depName=ghcr.io/openclaw/openclaw
               tag: 2026.6.11
+            env:
+              # Running as uid 0 resolves $HOME to /root, not the image's
+              # default /home/node, which is where the data PVC is mounted.
+              HOME: &home /home/node
             command:
               - sh
               - -c
@@ -56,6 +60,9 @@ spec:
               tag: 2026.6.11
             env:
               TZ: Europe/Berlin
+              # Running as uid 0 resolves $HOME to /root, not the image's
+              # default /home/node, which is where the data PVC is mounted.
+              HOME: *home
               # Control UI / gateway API listen port (chart-default container port)
               PORT: &port 18789
             envFrom:
