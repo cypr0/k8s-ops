@@ -127,6 +127,23 @@ nodes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
         mtu: 1500
+  - hostname: "k8s-wrk-3"
+    ipAddress: "192.168.10.23"
+    installDisk: "/dev/sda"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
+    controlPlane: false
+    networkInterfaces:
+      - deviceSelector:
+          hardwareAddr: "bc:24:11:04:35:a5"
+        dhcp: false
+        addresses:
+          - "192.168.10.23/24"
+        routes:
+          - gateway: "192.168.10.1"
+            network: 0.0.0.0/0
+        mtu: 1500
 
 # Global patches
 patches:
