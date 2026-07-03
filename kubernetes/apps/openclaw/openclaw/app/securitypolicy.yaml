@@ -1,0 +1,42 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/gateway.envoyproxy.io/securitypolicy_v1alpha1.json
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: openclaw-forward-auth
+  namespace: openclaw
+spec:
+  # Gate the OpenClaw HTTPRoute with Authentik's embedded-outpost forward-auth.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: openclaw
+  extAuth:
+    # Do not block the request if the auth service is momentarily unreachable
+    # errors are surfaced instead of silently allowing traffic.
+    failOpen: false
+    http:
+      # authentik-server lives in the security namespace (cross-namespace
+      # backendRef permitted by the ReferenceGrant in the authentik app).
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: authentik-server
+          namespace: security
+          port: 80
+      path: /outpost.goauthentik.io/auth/envoy
+      # Client headers forwarded to the outpost so it can build the redirect.
+      headersToExtAuth:
+        - cookie
+        - x-forwarded-for
+        - x-forwarded-host
+        - x-forwarded-proto
+      # Identity headers the outpost returns on allow, injected into the
+      # upstream request to OpenClaw.
+      headersToBackend:
+        - set-cookie
+        - x-authentik-username
+        - x-authentik-email
+        - x-authentik-name
+        - x-authentik-uid
+        - x-authentik-groups

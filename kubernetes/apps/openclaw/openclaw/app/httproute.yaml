@@ -1,0 +1,49 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: openclaw
+  namespace: openclaw
+  labels:
+    app.kubernetes.io/name: openclaw
+    app.kubernetes.io/instance: openclaw
+spec:
+  hostnames:
+    - claw.${SECRET_DOMAIN}
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    # Authentik embedded-outpost callback + auth endpoints. Must be reachable
+    # without being gated by the SecurityPolicy (ext_authz) itself, otherwise
+    # the auth handshake would loop. Routed to authentik-server in the security
+    # namespace (see ReferenceGrant in the authentik app).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /outpost.goauthentik.io
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: authentik-server
+          namespace: security
+          port: 80
+          weight: 1
+    # OpenClaw Control UI / gateway API (gated by forward-auth SecurityPolicy)
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: "5m"
+        backendRequest: "5m"
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: openclaw-app
+          namespace: openclaw
+          port: 18789
+          weight: 1

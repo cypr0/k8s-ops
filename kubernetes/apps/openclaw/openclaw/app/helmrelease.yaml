@@ -1,0 +1,90 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: openclaw
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controllers:
+      openclaw:
+        replicas: 1
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+          secret.reloader.stakater.com/reload: openclaw-secret
+        containers:
+          app:
+            image:
+              repository: ghcr.io/openclaw/openclaw
+              # renovate: datasource=docker depName=ghcr.io/openclaw/openclaw
+              tag: 2026.6.11
+            env:
+              TZ: Europe/Berlin
+              # Control UI / gateway API listen port (chart-default container port)
+              PORT: &port 18789
+            envFrom:
+              - secretRef:
+                  name: openclaw-secret
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: *port
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                  failureThreshold: 3
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: *port
+                  initialDelaySeconds: 10
+                  periodSeconds: 5
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+            # Runs as root so the NFS-backed data dirs are writable
+            # (mirrors open-webui; csi-driver-nfs does not enforce fsGroup).
+            securityContext:
+              runAsNonRoot: false
+              runAsUser: 0
+              runAsGroup: 0
+
+    service:
+      app:
+        controller: openclaw
+        ports:
+          http:
+            port: *port
+
+    persistence:
+      data:
+        existingClaim: openclaw-data-pvc
+        advancedMounts:
+          openclaw:
+            app:
+              - path: /home/node/.openclaw
+                subPath: openclaw
+              - path: /home/node/.config/openclaw
+                subPath: config
