@@ -110,10 +110,9 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
-    # loki-sc-rules sidecar: watches ConfigMaps/Secrets via the k8s API for rule reloads
+    # loki-sc-rules sidecar: watches ConfigMaps/Secrets via the k8s API for rule
+    # reloads. No toPorts here: Cilium's kube-proxy replacement DNATs the
+    # ClusterIP (443) to the real apiserver port (6443) before policy
+    # enforcement, so a port-scoped rule on 443 never matches.
     - toEntities:
         - kube-apiserver
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
