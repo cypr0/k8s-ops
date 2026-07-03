@@ -17,7 +17,7 @@ spec:
       restartPolicy: OnFailure
       securityContext:
         fsGroup: 82
-        fsGroupChangePolicy: Always
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:

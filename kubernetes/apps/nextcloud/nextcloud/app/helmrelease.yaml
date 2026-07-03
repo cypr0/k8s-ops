@@ -288,7 +288,7 @@ spec:
       type: Recreate
     podSecurityContext:
       fsGroup: 82
-      fsGroupChangePolicy: Always
+      fsGroupChangePolicy: OnRootMismatch
     persistence:
       enabled: true
       existingClaim: nextcloud-pvc

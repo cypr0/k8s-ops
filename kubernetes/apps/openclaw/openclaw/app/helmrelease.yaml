@@ -24,6 +24,26 @@ spec:
         annotations:
           reloader.stakater.com/auto: "true"
           secret.reloader.stakater.com/reload: openclaw-secret
+        initContainers:
+          setup:
+            image:
+              repository: ghcr.io/openclaw/openclaw
+              # renovate: datasource=docker depName=ghcr.io/openclaw/openclaw
+              tag: 2026.6.11
+            command:
+              - sh
+              - -c
+              - |
+                set -eu
+                if [ -f "$HOME/.openclaw/openclaw.json" ]; then
+                  echo "Already configured, skipping setup."
+                  exit 0
+                fi
+                openclaw setup --non-interactive --accept-risk --mode local
+            securityContext:
+              runAsNonRoot: false
+              runAsUser: 0
+              runAsGroup: 0
         containers:
           app:
             image:
@@ -84,6 +104,11 @@ spec:
         advancedMounts:
           openclaw:
             app:
+              - path: /home/node/.openclaw
+                subPath: openclaw
+              - path: /home/node/.config/openclaw
+                subPath: config
+            setup:
               - path: /home/node/.openclaw
                 subPath: openclaw
               - path: /home/node/.config/openclaw
