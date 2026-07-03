@@ -43,7 +43,7 @@ spec:
       backendRefs:
         - group: ""
           kind: Service
-          name: openclaw-app
+          name: openclaw
           namespace: openclaw
           port: 18789
           weight: 1
