@@ -56,12 +56,13 @@ spec:
                 # would leave the closing delimiter indented and unmatched.)
                 printf '%s' '{"gateway":{"bind":"lan","trustedProxies":["10.42.0.0/16"],"controlUi":{"allowedOrigins":["https://claw.${SECRET_DOMAIN}"]}}}' \
                   | openclaw config patch --stdin
-                # One-time OpenRouter provider auth (reuses the existing
-                # OPENAI_API_KEY secret field) + free-model auto-pick.
-                if [ -n "$${OPENAI_API_KEY:-}" ] && ! openclaw models auth list 2>/dev/null | grep -q openrouter; then
-                  echo "$${OPENAI_API_KEY}" | openclaw models auth paste-api-key --provider openrouter
-                  openclaw models scan --provider openrouter --set-default --yes --no-input \
-                    || echo "WARN: OpenRouter model scan failed; set agents.defaults.model manually"
+                # One-time OpenAI provider auth + default model. (OPENAI_API_KEY
+                # is a real OpenAI key -- sk-proj-... -- not an OpenRouter key,
+                # so it's wired to the native openai provider, not OpenRouter.)
+                if [ -n "$${OPENAI_API_KEY:-}" ] && ! openclaw models auth list 2>/dev/null | grep -q "openai:manual"; then
+                  echo "$${OPENAI_API_KEY}" | openclaw models auth paste-api-key --provider openai
+                  openclaw models set openai/gpt-5.4 \
+                    || echo "WARN: setting default model failed; set agents.defaults.model manually"
                 fi
             envFrom:
               - secretRef:
