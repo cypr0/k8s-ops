@@ -260,3 +260,11 @@ spec:
               protocol: TCP
             - port: "3002"
               protocol: TCP
+    # Backend: openclaw namespace (gateway/Control UI :18789, served via envoy-internal)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": openclaw
+      toPorts:
+        - ports:
+            - port: "18789"
+              protocol: TCP
