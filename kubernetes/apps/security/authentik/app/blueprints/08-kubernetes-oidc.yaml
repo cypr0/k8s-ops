@@ -33,8 +33,12 @@ entries:
       client_type: public
       client_id: kubernetes
       redirect_uris:
-        - matching_mode: strict
-          url: http://localhost:8000/callback
+        # kubelogin's authcode flow uses the bare --listen-address as the
+        # redirect URI (no /callback path), and may bind to either the
+        # literal hostname or 127.0.0.1 depending on OS/version — regex
+        # covers both, with or without a trailing slash.
+        - matching_mode: regex
+          url: ^http://(localhost|127\.0\.0\.1):8000/?$
       access_code_validity: minutes=1
       access_token_validity: minutes=10
       refresh_token_validity: days=30
