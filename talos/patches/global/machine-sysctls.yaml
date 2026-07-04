@@ -6,6 +6,16 @@ machine:
     net.core.wmem_max: "7500000"                 # Cloudflared | QUIC
     net.ipv4.conf.all.send_redirects: "0"        # Prevent ICMP redirect poisoning of routers (e.g. OPNsense) for Cilium L2 VIPs
     net.ipv4.conf.default.send_redirects: "0"    # Prevent ICMP redirect poisoning of routers (e.g. OPNsense) for Cilium L2 VIPs
+    net.ipv4.conf.all.accept_source_route: "0"   # CIS Talos 5.2.1: reject source-routed packets
+    net.ipv4.conf.default.accept_source_route: "0" # CIS Talos 5.2.1: reject source-routed packets
+    net.ipv4.conf.all.accept_redirects: "0"      # CIS Talos 5.2.2: reject ICMP redirects
+    net.ipv4.conf.default.accept_redirects: "0"  # CIS Talos 5.2.2: reject ICMP redirects
+    net.ipv6.conf.all.accept_redirects: "0"      # CIS Talos 5.2.2: reject ICMP redirects
+    net.ipv6.conf.default.accept_redirects: "0"  # CIS Talos 5.2.2: reject ICMP redirects
+    net.ipv4.conf.all.secure_redirects: "0"      # CIS Talos 5.2.3: reject secure ICMP redirects too
+    net.ipv4.conf.default.secure_redirects: "0"  # CIS Talos 5.2.3: reject secure ICMP redirects too
+    net.ipv4.conf.all.log_martians: "1"          # CIS Talos 5.2.4: log packets with impossible source addresses
+    net.ipv4.conf.default.log_martians: "1"      # CIS Talos 5.2.4: log packets with impossible source addresses
     net.ipv4.neigh.default.gc_thresh1: "4096"    # Prevent ARP cache overflows
     net.ipv4.neigh.default.gc_thresh2: "8192"    # Prevent ARP cache overflows
     net.ipv4.neigh.default.gc_thresh3: "16384"   # Prevent ARP cache overflows
