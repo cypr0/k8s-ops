@@ -20,8 +20,9 @@ cluster:
           exemptions:
             usernames: []
             runtimeClasses: []
+            # kube-system is added by Talos automatically — listing it here
+            # too causes a duplicate entry in the rendered config.
             namespaces:
-              - kube-system
               - falco
               - kubescape
               - monitoring
