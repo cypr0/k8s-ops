@@ -1,0 +1,71 @@
+---
+# Native Kyverno Pod Security Standards checks (CIS 5.2.2–5.2.12).
+# Audit-only for now: reports violations via PolicyReport/ClusterPolicyReport
+# without blocking anything. Once the reports are clean (or exceptions are
+# understood), validationFailureAction can move to Enforce per namespace via
+# a PolicyException allow-list instead of the other way around.
+#
+# Namespace exemptions mirror the ones in talos/patches/controller/cluster.yaml
+# (kube-system, falco, kubescape, monitoring, logging) — verified via live
+# pod scan to be exactly the namespaces that legitimately run
+# privileged/hostNetwork/hostPID/hostPath workloads (Cilium, csi-driver-nfs,
+# Falco, Kubescape node-agent, node-exporter, OpenSearch, fluent-bit, spegel).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: pod-security-baseline
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: baseline
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - falco
+                - kubescape
+                - monitoring
+                - logging
+      validate:
+        podSecurity:
+          level: baseline
+          version: latest
+---
+# Restricted is the CIS Level 2 target (also covers root containers,
+# allowPrivilegeEscalation, NET_RAW/added capabilities — CIS 5.2.6–5.2.8).
+# Kept separate from baseline so reports clearly distinguish "must fix"
+# (baseline) from "aspirational" (restricted) violations.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: pod-security-restricted
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: restricted
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - falco
+                - kubescape
+                - monitoring
+                - logging
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest

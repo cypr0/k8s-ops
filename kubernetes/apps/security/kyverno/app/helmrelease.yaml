@@ -1,0 +1,70 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kyverno
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: kyverno
+      version: "3.8.1"
+      sourceRef:
+        kind: HelmRepository
+        name: kyverno
+        namespace: kyverno
+  maxHistory: 2
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      strategy: rollback
+  values:
+    # IMPORTANT: fail open cluster-wide. If a webhook is ever unreachable
+    # (CNP bug, pod restart, rollout), the API server must not block
+    # resource creation. Policies are Audit-only for now anyway (see
+    # kubernetes/apps/security/kyverno/policies) — this is defense-in-depth.
+    features:
+      forceFailurePolicyIgnore:
+        enabled: true
+
+    # Homelab: keep footprint small, one replica per controller except the
+    # admission webhook (2, for a bit of resilience during pod restarts).
+    admissionController:
+      replicas: 2
+      serviceMonitor:
+        enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 384Mi
+    backgroundController:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 30m
+          memory: 96Mi
+        limits:
+          memory: 256Mi
+    cleanupController:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 20m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+    reportsController:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 30m
+          memory: 96Mi
+        limits:
+          memory: 256Mi
