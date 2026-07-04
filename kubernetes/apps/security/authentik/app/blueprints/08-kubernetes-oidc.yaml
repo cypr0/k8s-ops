@@ -1,0 +1,69 @@
+version: 1
+metadata:
+  name: Kubernetes OIDC
+  labels:
+    app: kubernetes
+
+entries:
+  # ── Custom scope mapping: groups claim for RBAC mapping ────────────────
+  - model: authentik_providers_oauth2.scopemapping
+    id: kubernetes-scope-mapping
+    identifiers:
+      name: kubernetes-scope
+    attrs:
+      scope_name: kubernetes
+      description: Kubernetes group membership for RBAC
+      expression: |
+        groups = [group.name for group in request.user.ak_groups.all()]
+        return {
+            "groups": groups,
+        }
+
+  # ── OAuth2 / OIDC Provider ────────────────────────────────────────────
+  # Public client (no secret) — kubectl/kubelogin is a native CLI app and
+  # can't keep a secret confidential, so this uses PKCE instead.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: kubernetes-oidc-provider
+    identifiers:
+      name: kubernetes-oidc
+    attrs:
+      authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      client_type: public
+      client_id: kubernetes
+      redirect_uris:
+        - matching_mode: strict
+          url: http://localhost:8000/callback
+      access_code_validity: minutes=1
+      access_token_validity: minutes=10
+      refresh_token_validity: days=30
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, offline_access]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, kubernetes]]
+
+  # ── Application ───────────────────────────────────────────────────────
+  - model: authentik_core.application
+    id: kubernetes-app
+    identifiers:
+      slug: kubernetes
+    attrs:
+      name: Kubernetes
+      group: Infrastructure
+      provider: !KeyOf kubernetes-oidc-provider
+      meta_launch_url: https://k8s.${SECRET_DOMAIN}:6443
+      policy_engine_mode: all
+
+  # ── RBAC group ──────────────────────────────────────────────────────────
+  # Membership isn't set here — add your account via the Authentik UI
+  # (Directory > Groups > k8s-admins > Users) after this reconciles.
+  - model: authentik_core.group
+    id: k8s-admins-group
+    identifiers:
+      name: k8s-admins

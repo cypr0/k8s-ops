@@ -16,3 +16,4 @@ resources:
   - ./falco/ks.yaml
   - ./kubescape/ks.yaml
   - ./kyverno/ks.yaml
+  - ./oidc-rbac/ks.yaml

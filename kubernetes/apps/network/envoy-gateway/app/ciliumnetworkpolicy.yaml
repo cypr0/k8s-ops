@@ -165,6 +165,15 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
+    # kube-apiserver: OIDC discovery/JWKS fetch for the "kubernetes" application
+    # (id.cisotop.de). apiserver static pods are hostNetwork, so Cilium sees
+    # this as the reserved kube-apiserver identity rather than a normal pod.
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
