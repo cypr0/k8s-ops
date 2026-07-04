@@ -30,6 +30,16 @@ cluster:
     extraArgs:
       # https://kubernetes.io/docs/tasks/extend-kubernetes/configure-aggregation-layer/
       enable-aggregator-routing: true
+      # CIS 3.1.1: OIDC via Authentik, additive to the existing client-cert
+      # admin auth (Talos' generated admin kubeconfig keeps working as a
+      # break-glass fallback — this does not replace or disable it).
+      # See kubernetes/apps/security/authentik/app/blueprints/08-kubernetes-oidc.yaml
+      oidc-issuer-url: https://id.cisotop.de/application/o/kubernetes/
+      oidc-client-id: kubernetes
+      oidc-username-claim: preferred_username
+      oidc-username-prefix: "oidc:"
+      oidc-groups-claim: groups
+      oidc-groups-prefix: "oidc:"
   controllerManager:
     extraArgs:
       bind-address: 0.0.0.0
