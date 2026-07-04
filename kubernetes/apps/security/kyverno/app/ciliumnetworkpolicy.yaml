@@ -1,7 +1,8 @@
 ---
 # Kyverno admission webhook: kube-apiserver calls this on every matching
-# resource. apiserver static pods run hostNetwork=true, so from Cilium's
-# view that traffic arrives from the node's host identity, not a pod.
+# resource. Uses Cilium's reserved kube-apiserver entity rather than
+# host/remote-node — it correctly covers Talos' KubePrism-proxied API
+# access (127.0.0.1:7445) too, not just direct hostNetwork traffic.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -13,8 +14,7 @@ spec:
       app.kubernetes.io/component: admission-controller
   ingress:
     - fromEntities:
-        - host
-        - remote-node
+        - kube-apiserver
       toPorts:
         - ports:
             - port: "9443"
@@ -39,14 +39,8 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # Kubernetes API (apiserver static pods are hostNetwork on :6443)
     - toEntities:
-        - host
-        - remote-node
-      toPorts:
-        - ports:
-            - port: "6443"
-              protocol: TCP
+        - kube-apiserver
 ---
 # Background, cleanup and reports controllers: no inbound webhook traffic,
 # just periodic reconciliation against the Kubernetes API.
@@ -75,8 +69,7 @@ spec:
               protocol: TCP
     # cleanup-controller also runs its own validating webhook
     - fromEntities:
-        - host
-        - remote-node
+        - kube-apiserver
       toPorts:
         - ports:
             - port: "9443"
@@ -93,9 +86,4 @@ spec:
             - port: "53"
               protocol: TCP
     - toEntities:
-        - host
-        - remote-node
-      toPorts:
-        - ports:
-            - port: "6443"
-              protocol: TCP
+        - kube-apiserver
