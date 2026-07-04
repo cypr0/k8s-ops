@@ -19,6 +19,16 @@ spec:
               protocol: TCP
             - port: "5514"
               protocol: UDP
+    # Talos kernel/service logs via LoadBalancer. Traffic originates from the
+    # node's own host network stack (kernel logging starts before CNI is up),
+    # so it's classified as remote-node/host, not world.
+    - fromEntities:
+        - remote-node
+        - host
+      toPorts:
+        - ports:
+            - port: "5170"
+              protocol: TCP
     # Prometheus metrics scraping (port 2020)
     - fromEndpoints:
         - matchLabels:

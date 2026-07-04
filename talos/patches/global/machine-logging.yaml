@@ -1,0 +1,16 @@
+machine:
+  # CIS Talos 6.2.1: service logs to remote service. Live-reconcilable.
+  logging:
+    destinations:
+      - endpoint: tcp://192.168.10.110:5170
+        format: json_lines
+---
+# CIS Talos 6.1.1: kernel logs to remote service.
+# Using KmsgLogConfig instead of install.extraKernelArgs — this image boots
+# via UKI (grubUseUKICmdline: true), whose cmdline is baked into the signed
+# UKI and can't be patched at runtime. KmsgLogConfig is Talos' live-
+# reconcilable alternative for exactly this case.
+apiVersion: v1alpha1
+kind: KmsgLogConfig
+name: remote-log
+url: tcp://192.168.10.110:5170/

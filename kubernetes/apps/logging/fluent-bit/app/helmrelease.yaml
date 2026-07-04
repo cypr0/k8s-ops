@@ -102,6 +102,15 @@ spec:
             Mode          tcp
             Tag           syslog.tcp
 
+        # ── Talos kernel + service logs (CIS Talos 6.1.1/6.2.1) ─────────
+        # Talos ships these as raw JSON-lines over plain TCP, not syslog framing
+        [INPUT]
+            Name          tcp
+            Listen        0.0.0.0
+            Port          5170
+            Format        json
+            Tag           talos.log
+
       filters: |
         # Retag Suricata Eve-JSON records before any other processing
         [FILTER]
@@ -149,6 +158,12 @@ spec:
             Name          modify
             Match         suricata.*
             Add           job suricata
+
+        # Add job label for Loki (Talos kernel/service logs)
+        [FILTER]
+            Name          modify
+            Match         talos.log
+            Add           job talos
 
       outputs: |
         # ── OpenSearch (SIEM) ────────────────────────────────────────────
@@ -210,6 +225,35 @@ spec:
             Line_Format      json
             Retry_Limit      5
 
+        # ── OpenSearch (Talos kernel/service logs) ───────────────────────
+        [OUTPUT]
+            Name             opensearch
+            Match            talos.log
+            Host             opensearch.logging.svc.cluster.local
+            Port             9200
+            HTTP_User        admin
+            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
+            Type             _doc
+            Logstash_Format  On
+            Logstash_Prefix  talos
+            Time_Key         @timestamp
+            tls              On
+            tls.verify       Off
+            net.keepalive    off
+            Retry_Limit      5
+            Suppress_Type_Name On
+
+        # ── Loki (Talos kernel/service logs) ─────────────────────────────
+        [OUTPUT]
+            Name             loki
+            Match            talos.log
+            Host             loki.monitoring.svc.cluster.local
+            Port             3100
+            Labels           job=talos
+            Label_Keys       $hostname
+            Line_Format      json
+            Retry_Limit      5
+
     # Expose syslog port on pods. The chart also adds these entries to the
     # Service, which requires a valid `port` (1-65535); without it the Service
     # port defaults to 0 and the Helm upgrade fails ("port: Invalid value: 0").
@@ -224,3 +268,8 @@ spec:
         containerPort: 5514
         protocol: TCP
         targetPort: 5514
+      - name: talos-log-tcp
+        port: 5170
+        containerPort: 5170
+        protocol: TCP
+        targetPort: 5170

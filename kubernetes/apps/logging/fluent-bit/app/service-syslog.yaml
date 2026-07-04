@@ -1,7 +1,8 @@
 ---
-# LoadBalancer for external syslog collection (Proxmox + OPNsense)
+# LoadBalancer for external log collection
 # Proxmox:  System > Syslog → UDP/TCP 514 → 192.168.10.110
 # OPNsense: System > Log Files > Settings → Remote Logging → 192.168.10.110:514
+# Talos:    machine.logging.destinations / install.extraKernelArgs → 192.168.10.110:5170
 # Selector now points to Fluent Bit in logging namespace
 apiVersion: v1
 kind: Service
@@ -24,3 +25,7 @@ spec:
       port: 514
       protocol: TCP
       targetPort: 5514
+    - name: talos-log-tcp
+      port: 5170
+      protocol: TCP
+      targetPort: 5170
