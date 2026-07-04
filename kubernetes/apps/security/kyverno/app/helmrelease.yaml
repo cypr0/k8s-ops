@@ -32,10 +32,14 @@ spec:
       forceFailurePolicyIgnore:
         enabled: true
 
-    # Homelab: keep footprint small, one replica per controller except the
-    # admission webhook (2, for a bit of resilience during pod restarts).
+    # Control-plane nodes here run kube-apiserver + etcd + controller-manager
+    # + scheduler on 4GB of RAM each, with basically no headroom (confirmed
+    # live: the Talos OOM controller was killing cgroups on a CP node during
+    # rollout). Keep Kyverno off control-plane nodes entirely, same pattern
+    # as Falco (kubernetes/apps/security/falco/app/helmrelease-falco.yaml).
+    # One replica per controller for now — scale up once there's headroom.
     admissionController:
-      replicas: 2
+      replicas: 1
       serviceMonitor:
         enabled: true
       resources:
@@ -44,6 +48,12 @@ spec:
           memory: 128Mi
         limits:
           memory: 384Mi
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
     backgroundController:
       replicas: 1
       resources:
@@ -52,6 +62,12 @@ spec:
           memory: 96Mi
         limits:
           memory: 256Mi
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
     cleanupController:
       replicas: 1
       resources:
@@ -60,6 +76,12 @@ spec:
           memory: 64Mi
         limits:
           memory: 128Mi
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
     reportsController:
       replicas: 1
       resources:
@@ -68,3 +90,9 @@ spec:
           memory: 96Mi
         limits:
           memory: 256Mi
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
