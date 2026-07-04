@@ -62,6 +62,7 @@ entries:
       group: Infrastructure
       provider: !KeyOf kubernetes-oidc-provider
       meta_launch_url: https://k8s.${SECRET_DOMAIN}:6443
+      meta_icon: https://cdn.simpleicons.org/kubernetes
       policy_engine_mode: all
 
   # ── RBAC group ──────────────────────────────────────────────────────────
