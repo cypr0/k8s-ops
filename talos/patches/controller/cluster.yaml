@@ -2,7 +2,30 @@ cluster:
   allowSchedulingOnControlPlanes: true
   apiServer:
     admissionControl:
-      $$patch: delete
+      # PodSecurity: enforce stays "privileged" (no blocking) — Kyverno owns
+      # actual pod-security enforcement. audit/warn run at "restricted" for
+      # free, non-blocking visibility (audit log + kubectl warnings) until
+      # Kyverno policies are proven out. See kubernetes/apps/security/kyverno.
+      - name: PodSecurity
+        configuration:
+          apiVersion: pod-security.admission.config.k8s.io/v1alpha1
+          kind: PodSecurityConfiguration
+          defaults:
+            enforce: privileged
+            enforce-version: latest
+            audit: restricted
+            audit-version: latest
+            warn: restricted
+            warn-version: latest
+          exemptions:
+            usernames: []
+            runtimeClasses: []
+            namespaces:
+              - kube-system
+              - falco
+              - kubescape
+              - monitoring
+              - logging
     extraArgs:
       # https://kubernetes.io/docs/tasks/extend-kubernetes/configure-aggregation-layer/
       enable-aggregator-routing: true
