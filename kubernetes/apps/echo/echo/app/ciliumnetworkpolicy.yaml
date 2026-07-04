@@ -4,7 +4,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: echo
-  namespace: default
+  namespace: echo
 spec:
   endpointSelector:
     matchLabels:
