@@ -1,0 +1,38 @@
+---
+# CIS 5.6.2 / 4.2.14: enforce RuntimeDefault seccomp profile at the workload
+# level. Only fills in the field if it's missing (+()) — pods that already
+# set their own seccompProfile (e.g. for a specific compatibility need) are
+# left alone. Only applies to new/updated pods, not retroactively to
+# already-running ones.
+#
+# Same namespace exemptions as the pod-security policies: Falco needs
+# unrestricted syscall access for its eBPF probe, Cilium/csi-driver-nfs need
+# host-level access, Kubescape's node-agent inspects other containers.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-seccomp
+spec:
+  background: false
+  rules:
+    - name: add-seccomp
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - falco
+                - kubescape
+                - monitoring
+                - logging
+      mutate:
+        patchStrategicMerge:
+          spec:
+            +(securityContext):
+              +(seccompProfile):
+                type: RuntimeDefault
