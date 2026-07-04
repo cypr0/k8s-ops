@@ -41,7 +41,7 @@ spec:
         readOnlyRootFilesystem: false
       extraInitContainers:
         - name: validate-subpaths
-          image: busybox:1.37.0
+          image: busybox:1.38.0
           securityContext:
             runAsUser: 0
             runAsNonRoot: false
@@ -76,7 +76,7 @@ spec:
               mountPath: /var/www/html/data
               subPath: data
         - name: fix-data-permissions
-          image: busybox:1.37.0
+          image: busybox:1.38.0
           securityContext:
             runAsUser: 0
             runAsNonRoot: false
