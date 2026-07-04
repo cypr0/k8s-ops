@@ -29,7 +29,7 @@ spec:
       registry: docker.io
       repository: library/nextcloud
       flavor: fpm-alpine
-      tag: 33.0.5-fpm-alpine
+      tag: 33.0.6-fpm-alpine
     phpClientHttpsFix:
       enabled: true
     nextcloud:
