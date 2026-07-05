@@ -56,7 +56,7 @@ spec:
       capabilities:
         drop:
           - "ALL"
-        # readOnlyRootFilesystem omitted: Grafana writes plugins/temp to disk
+          # readOnlyRootFilesystem omitted: Grafana writes plugins/temp to disk
 
     # ── Resources ─────────────────────────────────────────────────────────
     resources:
@@ -380,6 +380,104 @@ spec:
                   "datasource": {"type": "loki", "uid": "loki"},
                   "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=~\"$namespace\"} |~ \"(?i)(error|warn|fail|exception)\"", "queryType": "range"}],
                   "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true, "dedupStrategy": "none"}
+                }
+              ]
+            }
+        # Custom: Nextcloud (nextcloud-exporter metrics)
+        nextcloud:
+          datasource: Prometheus
+          json: |
+            {
+              "annotations": {"list": []},
+              "editable": true,
+              "graphTooltip": 1,
+              "time": {"from": "now-24h", "to": "now"},
+              "title": "Nextcloud",
+              "uid": "nextcloud",
+              "tags": ["apps", "nextcloud"],
+              "schemaVersion": 39,
+              "version": 1,
+              "refresh": "5m",
+              "templating": {"list": []},
+              "panels": [
+                {
+                  "id": 1, "type": "stat", "title": "Status",
+                  "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_up"}],
+                  "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"}
+                },
+                {
+                  "id": 2, "type": "stat", "title": "Users",
+                  "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_users_total"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "blue"}, "decimals": 0}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "area"}
+                },
+                {
+                  "id": 3, "type": "stat", "title": "Files",
+                  "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_files_total"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "purple"}, "decimals": 0}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "area"}
+                },
+                {
+                  "id": 4, "type": "stat", "title": "Free Space",
+                  "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_free_space_bytes"}],
+                  "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 10000000000}, {"color": "green", "value": 50000000000}]}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area"}
+                },
+                {
+                  "id": 5, "type": "timeseries", "title": "Active Users",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [
+                    {"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_active_users_hourly_total", "legendFormat": "last hour"},
+                    {"refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_active_users_daily_total", "legendFormat": "last 24h"},
+                    {"refId": "C", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_active_users_total", "legendFormat": "last 5 min"}
+                  ],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10}, "unit": "short", "decimals": 0}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 6, "type": "timeseries", "title": "Shares",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [
+                    {"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_shares_total", "legendFormat": "total"},
+                    {"refId": "B", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_shares_federated_total", "legendFormat": "federated"}
+                  ],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10}, "unit": "short", "decimals": 0}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 7, "type": "timeseries", "title": "Free Space Trend",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_free_space_bytes", "legendFormat": "free space"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 15}, "unit": "bytes"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+                },
+                {
+                  "id": 8, "type": "timeseries", "title": "Database Size",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_database_size_bytes", "legendFormat": "db size"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 15}, "unit": "bytes"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+                },
+                {
+                  "id": 9, "type": "table", "title": "System Info",
+                  "gridPos": {"h": 6, "w": 24, "x": 0, "y": 20},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_system_info", "instant": true, "format": "table"}],
+                  "options": {"showHeader": true},
+                  "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true, "instance": true, "job": true, "endpoint": true, "namespace": true, "pod": true, "service": true, "container": true}}}]
                 }
               ]
             }
