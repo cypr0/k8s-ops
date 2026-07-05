@@ -1,0 +1,96 @@
+# CIS Talos Benchmark 5.3.1 / 5.3.2: Talos Ingress Firewall (default-deny).
+#
+# This is a SECOND firewall layer below Cilium NetworkPolicy, enforced by Talos
+# itself (nftables) on the host. It only governs traffic to the host + host-
+# network pods (apid, trustd, kubelet, kube-apiserver, etcd, cilium, node-
+# exporter, and the L2-announced LoadBalancer VIPs) — pod-to-pod/service traffic
+# is unaffected (that's Cilium's job).
+#
+# Design: default-block ingress, then allow ALL ports from the three networks
+# that legitimate traffic actually originates from. This is deliberately NOT the
+# benchmark's per-port allow-list — that approach is brittle on this cluster
+# (LoadBalancer VIPs, native-routing pod→host metrics, cross-node health) and a
+# single missing port = an outage. Allow-from-trusted-CIDR achieves the control's
+# intent ("only trusted networks may reach the APIs") with no gap risk.
+#
+# Why these three CIDRs cover everything legitimate:
+#   192.168.10.0/24  LAN: all nodes (etcd/kubelet/apiserver peer traffic),
+#                    Proxmox + OPNsense (syslog to VIP .110), LAN clients
+#                    (internal web via VIP .101, DNS via .102), AND cross-node
+#                    pod traffic — BPF masquerade rewrites its source to the
+#                    origin node's LAN IP (e.g. Prometheus scraping node-exporter
+#                    on another node, cloudflared → envoy-external VIP).
+#   10.42.0.0/16     Pod CIDR: same-node pod→host traffic that is NOT masqueraded
+#                    (e.g. a controller reaching kube-apiserver on its own node).
+#   10.10.0.0/24     VPN: talosctl (apid :50000) + kubectl (apiserver :6443)
+#                    management access. THIS IS THE LIFELINE — admin traffic
+#                    arrives from here (verified: source 10.10.0.2). Dropping it
+#                    would lock everyone out.
+#
+# Everything else (direct Internet port-forwards to a node IP, other/segmented
+# subnets) is blocked. Cilium is native-routing (no VXLAN), so no encap port rule
+# is needed. Per-port tightening within the trusted CIDRs is a possible future
+# refinement, not done here to avoid lockout risk.
+apiVersion: v1alpha1
+kind: NetworkDefaultActionConfig
+ingress: block
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: allow-lan-tcp
+portSelector:
+  ports:
+    - 1-65535
+  protocol: tcp
+ingress:
+  - subnet: 192.168.10.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: allow-lan-udp
+portSelector:
+  ports:
+    - 1-65535
+  protocol: udp
+ingress:
+  - subnet: 192.168.10.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: allow-pods-tcp
+portSelector:
+  ports:
+    - 1-65535
+  protocol: tcp
+ingress:
+  - subnet: 10.42.0.0/16
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: allow-pods-udp
+portSelector:
+  ports:
+    - 1-65535
+  protocol: udp
+ingress:
+  - subnet: 10.42.0.0/16
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: allow-vpn-tcp
+portSelector:
+  ports:
+    - 1-65535
+  protocol: tcp
+ingress:
+  - subnet: 10.10.0.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: allow-vpn-udp
+portSelector:
+  ports:
+    - 1-65535
+  protocol: udp
+ingress:
+  - subnet: 10.10.0.0/24
