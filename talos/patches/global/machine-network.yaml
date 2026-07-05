@@ -5,6 +5,11 @@ machine:
       - 1.1.1.1
       - 1.0.0.1
     # CIS Talos 5.4.1: encrypt all inter-node traffic (WireGuard mesh).
-    # Cluster discovery (needed to find peers) is already enabled by default.
+    # DISABLED 2026-07-04: broke Cilium L2 announcement. The new `kubespan`
+    # interface confused Cilium's auto device-detection for L2-announced
+    # LoadBalancer IPs (envoy-internal/external became unreachable — most
+    # cilium_l2_responder_v4 BPF map entries went inactive since the
+    # responder tried to answer on both ens18 and kubespan). Re-enable only
+    # after pinning Cilium's `devices` to ens18 explicitly.
     kubespan:
-      enabled: true
+      enabled: false
