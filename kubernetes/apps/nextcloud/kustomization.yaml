@@ -9,6 +9,7 @@ components:
 resources:
   - ./namespace.yaml
   - ./nextcloud/ks.yaml
+  - ./nextcloud-exporter/ks.yaml
   - ./collabora/ks.yaml
   - ./clamav/ks.yaml
   - ./whiteboard/ks.yaml

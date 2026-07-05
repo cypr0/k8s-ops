@@ -1,0 +1,16 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nextcloud-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nextcloud-exporter
+  endpoints:
+    # serverinfo API can take a couple seconds — scrape slowly with a long
+    # timeout so a slow response doesn't mark the target down.
+    - port: http
+      path: /metrics
+      interval: 60s
+      scrapeTimeout: 30s

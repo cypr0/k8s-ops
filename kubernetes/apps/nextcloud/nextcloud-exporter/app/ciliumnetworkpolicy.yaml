@@ -1,0 +1,42 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: nextcloud-exporter
+  namespace: nextcloud
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: nextcloud-exporter
+  ingress:
+    # Prometheus scrapes the exporter on :9205
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9205"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Nextcloud serverinfo API. Service 8080 -> nginx container :80; CNP egress
+    # is evaluated post-DNAT against the container port.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+            app.kubernetes.io/name: nextcloud
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
