@@ -22,6 +22,8 @@ resources:
   - ./job-security-dashboards.yaml
   - ./configmap-talos-dashboard.yaml
   - ./job-talos-dashboard.yaml
+  - ./configmap-apps-dashboard.yaml
+  - ./job-apps-dashboard.yaml
   - ./configmap-refresh-fields.yaml
   - ./cronjob-refresh-fields.yaml
   - ./ciliumnetworkpolicy.yaml
