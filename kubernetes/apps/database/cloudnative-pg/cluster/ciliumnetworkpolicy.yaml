@@ -39,6 +39,17 @@ spec:
         - ports:
             - port: "5432"
               protocol: TCP
+    # Prometheus scraping of the CNPG metrics exporter (:9187). Without this the
+    # postgres PodMonitor targets are up=0 and no cnpg_* metrics reach Prometheus
+    # (the cnpg Grafana dashboard stays empty).
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9187"
+              protocol: TCP
   egress:
     # Allow replication + barman S3 backup + DNS
     - toEntities:
