@@ -79,7 +79,10 @@ data:
         "freespace_bytes": system.get("freespace"),
         "mem_total_kb": system.get("mem_total"),
         "mem_free_kb": system.get("mem_free"),
-        "cpuload_1min": (system.get("cpuload") or [None])[0],
+        # Coalesce to 0.0 rather than null: OpenSearch's dynamic mapping never
+        # creates a field for a null first value, which permanently breaks any
+        # dashboard referencing it until a real-typed value is written once.
+        "cpuload_1min": ((system.get("cpuload") or [0.0])[0]) or 0.0,
         "debug_mode": system.get("debug") == "yes",
         "filelocking_enabled": system.get("filelocking.enabled") == "yes",
     }

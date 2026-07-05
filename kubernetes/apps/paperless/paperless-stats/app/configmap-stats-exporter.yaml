@@ -67,7 +67,13 @@ data:
     stats_doc = {
         "@timestamp": NOW,
         "documents_total": stats.get("documents_total"),
-        "documents_inbox": stats.get("documents_inbox"),
+        # documents_inbox is null when Paperless has no inbox tag configured
+        # (or is otherwise empty). OpenSearch's dynamic mapping never creates
+        # a field for a null-first-value, which then permanently breaks any
+        # dashboard referencing it ("could not locate that index-pattern-
+        # field") until the FIRST doc for that field has a real type — so
+        # coalesce to 0 rather than passing null through.
+        "documents_inbox": stats.get("documents_inbox") or 0,
         "tag_count": stats.get("tag_count"),
         "correspondent_count": stats.get("correspondent_count"),
         "document_type_count": stats.get("document_type_count"),
