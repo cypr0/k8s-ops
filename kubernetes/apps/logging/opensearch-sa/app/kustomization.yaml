@@ -24,6 +24,8 @@ resources:
   - ./job-talos-dashboard.yaml
   - ./configmap-apps-dashboard.yaml
   - ./job-apps-dashboard.yaml
+  - ./configmap-appstats-dashboard.yaml
+  - ./job-appstats-dashboard.yaml
   - ./configmap-refresh-fields.yaml
   - ./cronjob-refresh-fields.yaml
   - ./ciliumnetworkpolicy.yaml
