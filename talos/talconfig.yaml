@@ -21,6 +21,17 @@ cniConfig:
 nodes:
   - hostname: "k8s-cp-0"
     ipAddress: "192.168.10.10"
+    # Per-node service-log tag (CIS 6.2.1) — Talos doesn't ship a hostname in
+    # the log payload, so tag each node's service logs for per-node dashboards.
+    patches:
+      - |-
+        machine:
+          logging:
+            destinations:
+              - endpoint: tcp://192.168.10.110:5170
+                format: json_lines
+                extraTags:
+                  node: k8s-cp-0
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -40,6 +51,15 @@ nodes:
           ip: "192.168.10.100"
   - hostname: "k8s-cp-1"
     ipAddress: "192.168.10.11"
+    patches:
+      - |-
+        machine:
+          logging:
+            destinations:
+              - endpoint: tcp://192.168.10.110:5170
+                format: json_lines
+                extraTags:
+                  node: k8s-cp-1
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -59,6 +79,15 @@ nodes:
           ip: "192.168.10.100"
   - hostname: "k8s-cp-2"
     ipAddress: "192.168.10.12"
+    patches:
+      - |-
+        machine:
+          logging:
+            destinations:
+              - endpoint: tcp://192.168.10.110:5170
+                format: json_lines
+                extraTags:
+                  node: k8s-cp-2
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -78,6 +107,15 @@ nodes:
           ip: "192.168.10.100"
   - hostname: "k8s-wrk-0"
     ipAddress: "192.168.10.20"
+    patches:
+      - |-
+        machine:
+          logging:
+            destinations:
+              - endpoint: tcp://192.168.10.110:5170
+                format: json_lines
+                extraTags:
+                  node: k8s-wrk-0
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -95,6 +133,15 @@ nodes:
         mtu: 1500
   - hostname: "k8s-wrk-1"
     ipAddress: "192.168.10.21"
+    patches:
+      - |-
+        machine:
+          logging:
+            destinations:
+              - endpoint: tcp://192.168.10.110:5170
+                format: json_lines
+                extraTags:
+                  node: k8s-wrk-1
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -112,6 +159,15 @@ nodes:
         mtu: 1500
   - hostname: "k8s-wrk-2"
     ipAddress: "192.168.10.22"
+    patches:
+      - |-
+        machine:
+          logging:
+            destinations:
+              - endpoint: tcp://192.168.10.110:5170
+                format: json_lines
+                extraTags:
+                  node: k8s-wrk-2
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false
@@ -129,6 +185,15 @@ nodes:
         mtu: 1500
   - hostname: "k8s-wrk-3"
     ipAddress: "192.168.10.23"
+    patches:
+      - |-
+        machine:
+          logging:
+            destinations:
+              - endpoint: tcp://192.168.10.110:5170
+                format: json_lines
+                extraTags:
+                  node: k8s-wrk-3
     installDisk: "/dev/sda"
     machineSpec:
       secureboot: false

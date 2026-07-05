@@ -1,15 +1,14 @@
-machine:
-  # CIS Talos 6.2.1: service logs to remote service. Live-reconcilable.
-  logging:
-    destinations:
-      - endpoint: tcp://192.168.10.110:5170
-        format: json_lines
----
 # CIS Talos 6.1.1: kernel logs to remote service.
 # Using KmsgLogConfig instead of install.extraKernelArgs — this image boots
 # via UKI (grubUseUKICmdline: true), whose cmdline is baked into the signed
 # UKI and can't be patched at runtime. KmsgLogConfig is Talos' live-
 # reconcilable alternative for exactly this case.
+#
+# NOTE: kernel (kmsg) logs cannot carry a per-node tag (KmsgLogConfig has no
+# extraTags). Per-node identification for SERVICE logs is done via
+# machine.logging.destinations[].extraTags.node in each node's per-node patch
+# in talconfig.yaml (CIS 6.2.1) — kept per-node because extraTags is a static
+# value that must differ per host.
 apiVersion: v1alpha1
 kind: KmsgLogConfig
 name: remote-log

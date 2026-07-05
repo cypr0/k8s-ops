@@ -85,6 +85,16 @@ spec:
             Time_Format %Y-%m-%dT%H:%M:%S%z
             Time_Keep   Off
 
+        # Talos auditd: extract the Linux audit record type from msg, e.g.
+        # "type=NETFILTER_CFG msg=audit(...)..." -> audit_type=NETFILTER_CFG.
+        # Only auditd lines start with "type="; every other Talos log line
+        # fails this regex and (with Reserve_Data+Preserve_Key) passes through
+        # completely unchanged, so nothing is dropped or rewritten.
+        [PARSER]
+            Name        talos_audit_type
+            Format      regex
+            Regex       ^type=(?<audit_type>[A-Z0-9_]+)
+
       inputs: |
         # ── Syslog from Proxmox + OPNsense ──────────────────────────────
         # Fluent-Bit syslog plugin uses built-in decoder, not external parser
@@ -164,6 +174,17 @@ spec:
             Name          modify
             Match         talos.log
             Add           job talos
+
+        # Extract audit_type from Talos auditd records (see talos_audit_type
+        # parser). Reserve_Data+Preserve_Key = non-matching records pass through
+        # untouched, so only auditd lines gain an audit_type field.
+        [FILTER]
+            Name          parser
+            Match         talos.log
+            Key_Name      msg
+            Parser        talos_audit_type
+            Reserve_Data  On
+            Preserve_Key  On
 
       outputs: |
         # ── OpenSearch (SIEM) ────────────────────────────────────────────
