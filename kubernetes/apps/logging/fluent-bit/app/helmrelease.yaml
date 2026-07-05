@@ -83,14 +83,11 @@ spec:
             Time_Format %Y-%m-%dT%H:%M:%S%z
             Time_Keep   Off
 
-        # CRI (containerd) container log line: "<time> <stream> <F|P> <message>"
-        [PARSER]
-            Name        cri
-            Format      regex
-            Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<message>.*)$
-            Time_Key    time
-            Time_Format %Y-%m-%dT%H:%M:%S.%L%z
-            Time_Keep   Off
+        # NOTE: the CRI (containerd) parser is BUILT IN to fluent-bit
+        # (parsers.conf) — defining our own "cri" here collides with it and
+        # makes fluent-bit skip the rest of this file (so later parsers like
+        # talos_audit_type never register → crash). We reference the built-in
+        # "cri" parser in the tail input instead.
 
         # Extract pod/namespace/container from the container log FILENAME
         # (/var/log/containers/<pod>_<ns>_<container>-<id>.log) so we get
