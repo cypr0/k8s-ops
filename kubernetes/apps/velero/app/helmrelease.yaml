@@ -87,9 +87,12 @@ spec:
         limits:
           memory: 1Gi
 
+    # 512Mi OOM-killed the server mid-restore when a namespace-scoped restore
+    # pulled in every cluster-wide CRD (Flux, Trivy, Kubescape, ...) — fixed
+    # properly via excludedResources on the Schedules, but keep headroom.
     resources:
       requests:
         cpu: 50m
         memory: 128Mi
       limits:
-        memory: 512Mi
+        memory: 1Gi

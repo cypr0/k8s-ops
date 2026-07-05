@@ -16,12 +16,57 @@ data:
     """
     import json
     import os
+    import socket
     import ssl
     import sys
     import time
     import urllib.error
     import urllib.parse
     import urllib.request
+
+    # This cluster has no IPv6 routing, but some external hosts (e.g.
+    # api.pushover.net) publish AAAA records — glibc/musl getaddrinfo() often
+    # returns those first, which fails with "Network unreachable" instead of
+    # falling back to IPv4. Force IPv4-only resolution everywhere.
+    _orig_getaddrinfo = socket.getaddrinfo
+    def _ipv4_only_getaddrinfo(*args, **kwargs):
+        return [ai for ai in _orig_getaddrinfo(*args, **kwargs) if ai[0] == socket.AF_INET]
+    socket.getaddrinfo = _ipv4_only_getaddrinfo
+
+    # Cluster-config CRDs are git-defined (Flux redeploys them) and some are
+    # actively dangerous to restore into a scratch namespace: a restored
+    # HelmRelease/Kustomization is picked up cluster-wide by helm-/
+    # kustomize-controller regardless of which namespace it lands in, and
+    # restoring ~30 cluster-wide CRD types at once is also what OOM-killed
+    # the Velero server during testing. Matches the exclusion list on the
+    # Schedules — kept here too as defense-in-depth for older backups.
+    EXCLUDED_RESOURCES = [
+        "jobs.batch", "cronjobs.batch",
+        "helmcharts.source.toolkit.fluxcd.io",
+        "helmreleases.helm.toolkit.fluxcd.io",
+        "helmrepositories.source.toolkit.fluxcd.io",
+        "ocirepositories.source.toolkit.fluxcd.io",
+        "gitrepositories.source.toolkit.fluxcd.io",
+        "kustomizations.kustomize.toolkit.fluxcd.io",
+        "externalsecrets.external-secrets.io",
+        "servicemonitors.monitoring.coreos.com",
+        "podmonitors.monitoring.coreos.com",
+        "prometheusrules.monitoring.coreos.com",
+        "vulnerabilityreports.aquasecurity.github.io",
+        "configauditreports.aquasecurity.github.io",
+        "exposedsecretreports.aquasecurity.github.io",
+        "sbomreports.aquasecurity.github.io",
+        "containerprofiles.spdx.softwarecomposition.kubescape.io",
+        "networkneighborhoods.spdx.softwarecomposition.kubescape.io",
+        "generatednetworkpolicies.spdx.softwarecomposition.kubescape.io",
+        "workloadconfigurationscans.spdx.softwarecomposition.kubescape.io",
+        "workloadconfigurationscansummaries.spdx.softwarecomposition.kubescape.io",
+        "configurationscansummaries.spdx.softwarecomposition.kubescape.io",
+        "policyreports.wgpolicyk8s.io",
+        "clusterpolicyreports.wgpolicyk8s.io",
+        "httproutes.gateway.networking.k8s.io",
+        "ciliumnetworkpolicies.cilium.io",
+    ]
 
     SCHEDULE_NAME  = os.environ.get("SCHEDULE_NAME", "daily")
     NAMESPACES     = [n.strip() for n in os.environ.get("NAMESPACES", "").split(",") if n.strip()]
@@ -128,6 +173,7 @@ data:
             "spec": {
                 "backupName": backup_name,
                 "includedNamespaces": NAMESPACES,
+                "excludedResources": EXCLUDED_RESOURCES,
                 "namespaceMapping": mapping,
                 "restorePVs": True,
             },
@@ -153,7 +199,11 @@ data:
             status = (restore or {}).get("status", {})
             errors = status.get("errors", 0)
             warnings = status.get("warnings", 0)
+            failure_reason = status.get("failureReason", "")
             detail = f"backup={backup_name} phase={phase} errors={errors} warnings={warnings}"
+            if failure_reason:
+                detail += f" failureReason={failure_reason!r}"
+                print(f"  failureReason: {failure_reason}", file=sys.stderr)
 
             if phase != "Completed" or errors:
                 success = False

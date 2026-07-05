@@ -15,4 +15,36 @@ spec:
       - paperless
       - open-webui
       - openclaw
+    # Cluster-config CRDs are git-defined (Flux redeploys them) and some are
+    # actively dangerous to restore: a restored HelmRelease/Kustomization is
+    # picked up cluster-wide by helm-/kustomize-controller regardless of which
+    # namespace it lands in, and a restored HTTPRoute can conflict with the
+    # live one. Keep backups to real app data only.
+    excludedResources:
+      - jobs.batch
+      - cronjobs.batch
+      - helmcharts.source.toolkit.fluxcd.io
+      - helmreleases.helm.toolkit.fluxcd.io
+      - helmrepositories.source.toolkit.fluxcd.io
+      - ocirepositories.source.toolkit.fluxcd.io
+      - gitrepositories.source.toolkit.fluxcd.io
+      - kustomizations.kustomize.toolkit.fluxcd.io
+      - externalsecrets.external-secrets.io
+      - servicemonitors.monitoring.coreos.com
+      - podmonitors.monitoring.coreos.com
+      - prometheusrules.monitoring.coreos.com
+      - vulnerabilityreports.aquasecurity.github.io
+      - configauditreports.aquasecurity.github.io
+      - exposedsecretreports.aquasecurity.github.io
+      - sbomreports.aquasecurity.github.io
+      - containerprofiles.spdx.softwarecomposition.kubescape.io
+      - networkneighborhoods.spdx.softwarecomposition.kubescape.io
+      - generatednetworkpolicies.spdx.softwarecomposition.kubescape.io
+      - workloadconfigurationscans.spdx.softwarecomposition.kubescape.io
+      - workloadconfigurationscansummaries.spdx.softwarecomposition.kubescape.io
+      - configurationscansummaries.spdx.softwarecomposition.kubescape.io
+      - policyreports.wgpolicyk8s.io
+      - clusterpolicyreports.wgpolicyk8s.io
+      - httproutes.gateway.networking.k8s.io
+      - ciliumnetworkpolicies.cilium.io
     ttl: 336h0m0s

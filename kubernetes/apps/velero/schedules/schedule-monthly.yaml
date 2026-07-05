@@ -15,4 +15,32 @@ spec:
       - paperless
       - open-webui
       - openclaw
+    # See schedule-daily.yaml for why these are excluded.
+    excludedResources:
+      - jobs.batch
+      - cronjobs.batch
+      - helmcharts.source.toolkit.fluxcd.io
+      - helmreleases.helm.toolkit.fluxcd.io
+      - helmrepositories.source.toolkit.fluxcd.io
+      - ocirepositories.source.toolkit.fluxcd.io
+      - gitrepositories.source.toolkit.fluxcd.io
+      - kustomizations.kustomize.toolkit.fluxcd.io
+      - externalsecrets.external-secrets.io
+      - servicemonitors.monitoring.coreos.com
+      - podmonitors.monitoring.coreos.com
+      - prometheusrules.monitoring.coreos.com
+      - vulnerabilityreports.aquasecurity.github.io
+      - configauditreports.aquasecurity.github.io
+      - exposedsecretreports.aquasecurity.github.io
+      - sbomreports.aquasecurity.github.io
+      - containerprofiles.spdx.softwarecomposition.kubescape.io
+      - networkneighborhoods.spdx.softwarecomposition.kubescape.io
+      - generatednetworkpolicies.spdx.softwarecomposition.kubescape.io
+      - workloadconfigurationscans.spdx.softwarecomposition.kubescape.io
+      - workloadconfigurationscansummaries.spdx.softwarecomposition.kubescape.io
+      - configurationscansummaries.spdx.softwarecomposition.kubescape.io
+      - policyreports.wgpolicyk8s.io
+      - clusterpolicyreports.wgpolicyk8s.io
+      - httproutes.gateway.networking.k8s.io
+      - ciliumnetworkpolicies.cilium.io
     ttl: 8760h0m0s
