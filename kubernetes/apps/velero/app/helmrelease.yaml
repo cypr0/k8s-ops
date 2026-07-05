@@ -43,7 +43,7 @@ spec:
     # that Intercolo's S3-compatible endpoint rejects outright.
     initContainers:
       - name: velero-plugin-for-aws
-        image: velero/velero-plugin-for-aws:v1.8.2
+        image: velero/velero-plugin-for-aws:v1.14.2
         imagePullPolicy: IfNotPresent
         volumeMounts:
           - mountPath: /target
