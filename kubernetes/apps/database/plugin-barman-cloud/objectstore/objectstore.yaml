@@ -1,0 +1,27 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/barmancloud.cnpg.io/objectstore_v1.json
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: postgres-backup
+spec:
+  configuration:
+    destinationPath: s3://k8s-postgres-backup/
+    endpointURL: "${S3_ENDPOINT}"
+    s3Credentials:
+      accessKeyId:
+        name: intercolo-credentials
+        key: S3_API_KEY
+      secretAccessKey:
+        name: intercolo-credentials
+        key: S3_API_SECRET
+        # region:
+        #   name: intercolo-credentials
+        #   key: S3_REGION
+        # Uncomment above if uploads fail without an explicit region — Intercolo's
+        # S3 item may not expose S3_REGION; not all S3-compatible providers require it.
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  retentionPolicy: 30d

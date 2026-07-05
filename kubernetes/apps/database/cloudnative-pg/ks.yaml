@@ -36,6 +36,9 @@ spec:
       namespace: database
     - name: external-secrets-stores
       namespace: security
+    # The Cluster references the ObjectStore by name (plugins.parameters.barmanObjectName)
+    - name: plugin-barman-cloud-objectstore
+      namespace: database
   interval: 1h
   path: ./kubernetes/apps/database/cloudnative-pg/cluster
   prune: true
