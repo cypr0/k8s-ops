@@ -1,0 +1,18 @@
+---
+# GFS "Grandfather": daily backup, 14-day retention.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: daily
+  namespace: velero
+spec:
+  schedule: "0 2 * * *"
+  useOwnerReferencesInBackup: false
+  template:
+    storageLocation: default
+    includedNamespaces:
+      - nextcloud
+      - paperless
+      - open-webui
+      - openclaw
+    ttl: 336h0m0s

@@ -1,0 +1,70 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: velero-restore-test
+spec:
+  # Run after the 02:00 daily backup has had time to complete.
+  schedule: "0 5 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      activeDeadlineSeconds: 1800
+      template:
+        spec:
+          serviceAccountName: velero-restore-test
+          restartPolicy: Never
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          containers:
+            - name: restore-test
+              image: python:3.14-alpine
+              command:
+                - "python3"
+                - "/scripts/restore_test.py"
+              env:
+                - name: SCHEDULE_NAME
+                  value: "daily"
+                - name: NAMESPACES
+                  value: "nextcloud,paperless,open-webui,openclaw"
+                - name: PUSHOVER_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: velero-restore-test-credentials
+                      key: PUSHOVER_TOKEN
+                - name: PUSHOVER_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: velero-restore-test-credentials
+                      key: PUSHOVER_USER
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65534
+                capabilities:
+                  drop:
+                    - "ALL"
+          volumes:
+            - name: scripts
+              configMap:
+                name: velero-restore-test-script
+                defaultMode: 0755

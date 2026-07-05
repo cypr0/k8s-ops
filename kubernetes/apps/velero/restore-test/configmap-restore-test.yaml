@@ -1,0 +1,188 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: velero-restore-test-script
+data:
+  restore_test.py: |-
+    #!/usr/bin/env python3
+    """
+    Automated Velero restore test.
+
+    Takes the most recent Completed backup from a given Schedule, restores it
+    into scratch "<namespace>-restore-test" namespaces, checks basic pod/PVC
+    health, alerts via Pushover on any failure, and always cleans up
+    afterwards regardless of outcome.
+    """
+    import json
+    import os
+    import ssl
+    import sys
+    import time
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    SCHEDULE_NAME  = os.environ.get("SCHEDULE_NAME", "daily")
+    NAMESPACES     = [n.strip() for n in os.environ.get("NAMESPACES", "").split(",") if n.strip()]
+    PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "")
+    PUSHOVER_USER  = os.environ.get("PUSHOVER_USER", "")
+    POLL_INTERVAL  = 15
+    POLL_TIMEOUT   = 20 * 60
+
+    TOKEN = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
+    CA    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    CTX   = ssl.create_default_context(cafile=CA)
+    API   = "https://kubernetes.default.svc"
+
+    def k8s(method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        headers = {"Authorization": f"Bearer {TOKEN}"}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(f"{API}{path}", data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, context=CTX) as r:
+                return json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+
+    def notify(title, message, priority=0):
+        if not PUSHOVER_TOKEN or not PUSHOVER_USER:
+            print(f"  (no Pushover creds — skipping alert: {title}: {message})", file=sys.stderr)
+            return
+        body = urllib.parse.urlencode({
+            "token": PUSHOVER_TOKEN,
+            "user": PUSHOVER_USER,
+            "title": title,
+            "message": message,
+            "priority": priority,
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.pushover.net/1/messages.json",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req) as r:
+                r.read()
+        except Exception as e:
+            print(f"  ERROR sending Pushover alert: {e}", file=sys.stderr)
+
+    def latest_completed_backup(schedule_name):
+        resp = k8s("GET", "/apis/velero.io/v1/namespaces/velero/backups") or {}
+        candidates = [
+            b for b in resp.get("items", [])
+            if b.get("metadata", {}).get("labels", {}).get("velero.io/schedule-name") == schedule_name
+            and b.get("status", {}).get("phase") == "Completed"
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda b: b["status"].get("startTimestamp", ""), reverse=True)
+        return candidates[0]
+
+    def cleanup(restore_name, scratch_namespaces):
+        print(f"=== Cleanup: restore={restore_name}, namespaces={scratch_namespaces} ===")
+        if restore_name:
+            k8s("DELETE", f"/apis/velero.io/v1/namespaces/velero/restores/{restore_name}")
+        for ns in scratch_namespaces:
+            try:
+                k8s("DELETE", f"/api/v1/namespaces/{ns}")
+            except Exception as e:
+                print(f"  WARN: failed to delete namespace {ns}: {e}", file=sys.stderr)
+
+    def main():
+        if not NAMESPACES:
+            print("NAMESPACES is empty — nothing to test", file=sys.stderr)
+            sys.exit(1)
+
+        mapping = {ns: f"{ns}-restore-test" for ns in NAMESPACES}
+        scratch_namespaces = list(mapping.values())
+
+        # Defensive: remove leftovers from a previous run that didn't clean up.
+        print("=== Pre-cleanup of any leftover scratch namespaces ===")
+        for ns in scratch_namespaces:
+            existing = k8s("GET", f"/api/v1/namespaces/{ns}")
+            if existing is not None:
+                print(f"  Deleting leftover namespace {ns}")
+                k8s("DELETE", f"/api/v1/namespaces/{ns}")
+
+        backup = latest_completed_backup(SCHEDULE_NAME)
+        if backup is None:
+            msg = f"No Completed backup found for schedule '{SCHEDULE_NAME}' — restore test skipped."
+            print(msg, file=sys.stderr)
+            notify("Velero restore test FAILED", msg, priority=1)
+            sys.exit(1)
+
+        backup_name = backup["metadata"]["name"]
+        print(f"=== Testing restore of backup '{backup_name}' (schedule={SCHEDULE_NAME}) ===")
+
+        restore_name = f"restore-test-{backup_name}"[:253]
+        restore_body = {
+            "apiVersion": "velero.io/v1",
+            "kind": "Restore",
+            "metadata": {"name": restore_name, "namespace": "velero"},
+            "spec": {
+                "backupName": backup_name,
+                "includedNamespaces": NAMESPACES,
+                "namespaceMapping": mapping,
+                "restorePVs": True,
+            },
+        }
+
+        success = False
+        detail = ""
+        try:
+            k8s("POST", "/apis/velero.io/v1/namespaces/velero/restores", restore_body)
+
+            print("=== Waiting for restore to finish ===")
+            deadline = time.time() + POLL_TIMEOUT
+            phase = "New"
+            restore = None
+            while time.time() < deadline:
+                restore = k8s("GET", f"/apis/velero.io/v1/namespaces/velero/restores/{restore_name}")
+                phase = (restore or {}).get("status", {}).get("phase", "New")
+                print(f"  phase={phase}")
+                if phase in ("Completed", "PartiallyFailed", "Failed"):
+                    break
+                time.sleep(POLL_INTERVAL)
+
+            status = (restore or {}).get("status", {})
+            errors = status.get("errors", 0)
+            warnings = status.get("warnings", 0)
+            detail = f"backup={backup_name} phase={phase} errors={errors} warnings={warnings}"
+
+            if phase != "Completed" or errors:
+                success = False
+            else:
+                # Basic health check: every scratch namespace restored at
+                # least one pod.
+                success = True
+                for ns in scratch_namespaces:
+                    pods = k8s("GET", f"/api/v1/namespaces/{ns}/pods") or {}
+                    count = len(pods.get("items", []))
+                    print(f"  {ns}: {count} pod(s) restored")
+                    if count == 0:
+                        success = False
+                        detail += f", {ns} has no restored pods"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            detail = f"exception: {e}"
+            success = False
+        finally:
+            cleanup(restore_name, scratch_namespaces)
+
+        if success:
+            print(f"=== Restore test PASSED ({detail}) ===")
+        else:
+            print(f"=== Restore test FAILED ({detail}) ===", file=sys.stderr)
+            notify("Velero restore test FAILED", detail, priority=1)
+            sys.exit(1)
+
+    if __name__ == "__main__":
+        main()

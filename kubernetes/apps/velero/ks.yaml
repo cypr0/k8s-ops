@@ -1,0 +1,78 @@
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app velero
+  namespace: &namespace velero
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  dependsOn:
+    - name: external-secrets-stores
+      namespace: security
+  interval: 1h
+  path: ./kubernetes/apps/velero/app
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: *namespace
+  timeout: 10m
+  wait: true
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: velero-schedules
+  namespace: &namespace2 velero
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: velero-schedules
+  dependsOn:
+    - name: velero
+      namespace: velero
+  interval: 1h
+  path: ./kubernetes/apps/velero/schedules
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: *namespace2
+  timeout: 5m
+  # Schedule CRD health not recognized by Flux
+  wait: false
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: velero-restore-test
+  namespace: &namespace3 velero
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: velero-restore-test
+  dependsOn:
+    - name: velero-schedules
+      namespace: velero
+    - name: external-secrets-stores
+      namespace: security
+  interval: 1h
+  path: ./kubernetes/apps/velero/restore-test
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: *namespace3
+  timeout: 5m
+  wait: true

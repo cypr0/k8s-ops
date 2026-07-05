@@ -1,0 +1,82 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: velero-restore-test
+  namespace: velero
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: velero-restore-test
+  namespace: velero
+rules:
+  - apiGroups:
+      - "velero.io"
+    resources:
+      - "backups"
+    verbs:
+      - "get"
+      - "list"
+  - apiGroups:
+      - "velero.io"
+    resources:
+      - "restores"
+    verbs:
+      - "get"
+      - "list"
+      - "create"
+      - "delete"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: velero-restore-test
+  namespace: velero
+subjects:
+  - kind: ServiceAccount
+    name: velero-restore-test
+    namespace: velero
+roleRef:
+  kind: Role
+  name: velero-restore-test
+  apiGroup: rbac.authorization.k8s.io
+---
+# Cluster-scoped: restore lands in a scratch "<namespace>-restore-test" whose
+# name depends on the namespaceMapping chosen at run time, so RBAC can't be
+# pre-scoped to a fixed namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: velero-restore-test
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "namespaces"
+    verbs:
+      - "get"
+      - "list"
+      - "create"
+      - "delete"
+  - apiGroups:
+      - ""
+    resources:
+      - "pods"
+      - "persistentvolumeclaims"
+    verbs:
+      - "get"
+      - "list"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: velero-restore-test
+subjects:
+  - kind: ServiceAccount
+    name: velero-restore-test
+    namespace: velero
+roleRef:
+  kind: ClusterRole
+  name: velero-restore-test
+  apiGroup: rbac.authorization.k8s.io

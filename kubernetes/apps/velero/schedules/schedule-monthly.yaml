@@ -1,0 +1,18 @@
+---
+# GFS "Son": monthly backup (1st of month), 365-day retention.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: monthly
+  namespace: velero
+spec:
+  schedule: "0 2 1 * *"
+  useOwnerReferencesInBackup: false
+  template:
+    storageLocation: default
+    includedNamespaces:
+      - nextcloud
+      - paperless
+      - open-webui
+      - openclaw
+    ttl: 8760h0m0s

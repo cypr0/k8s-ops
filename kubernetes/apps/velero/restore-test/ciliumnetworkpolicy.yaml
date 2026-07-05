@@ -1,0 +1,40 @@
+---
+# velero-restore-test CronJob pods, identified by the auto-set
+# batch.kubernetes.io/job-name label.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: velero-restore-test-jobs
+  namespace: velero
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: batch.kubernetes.io/job-name
+        operator: Exists
+  ingress: []
+  egress:
+    # DNS — L7 dns rule required so Cilium learns the IPs behind the toFQDNs
+    # entry below (api.pushover.net); otherwise toFQDNs resolves to nothing.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Kubernetes API (backups/restores CRUD, namespace/pod/pvc reads)
+    - toEntities:
+        - kube-apiserver
+    # Pushover alerting
+    - toFQDNs:
+        - matchName: "api.pushover.net"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

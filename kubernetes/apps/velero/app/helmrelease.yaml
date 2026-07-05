@@ -1,0 +1,92 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: velero
+spec:
+  interval: 1h
+  chart:
+    spec:
+      # renovate: datasource=helm depName=velero registryUrl=https://vmware-tanzu.github.io/helm-charts
+      chart: velero
+      version: "12.1.0"
+      sourceRef:
+        kind: HelmRepository
+        name: vmware-tanzu
+        namespace: velero
+  maxHistory: 2
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      strategy: rollback
+  # Injects the S3 endpoint/region from the velero-credentials Secret at
+  # helm-controller reconcile time — avoids needing Flux postBuild
+  # substitution (and a separate bootstrap stage) for these two values.
+  valuesFrom:
+    - kind: Secret
+      name: velero-credentials
+      valuesKey: S3_ENDPOINT
+      targetPath: configuration.backupStorageLocation[0].config.s3Url
+    - kind: Secret
+      name: velero-credentials
+      valuesKey: S3_REGION
+      targetPath: configuration.backupStorageLocation[0].config.region
+  values:
+    # renovate: datasource=github-releases depName=vmware-tanzu/velero-plugin-for-aws
+    initContainers:
+      - name: velero-plugin-for-aws
+        image: velero/velero-plugin-for-aws:v1.14.2
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - mountPath: /target
+            name: plugins
+
+    credentials:
+      useSecret: true
+      existingSecret: velero-credentials
+
+    # Only a real S3 destination — snapshots need CSI snapshot support, which
+    # the NFS-backed storage class here doesn't have. All volume data goes
+    # through the node-agent's kopia-based filesystem backup instead.
+    backupsEnabled: true
+    snapshotsEnabled: false
+    deployNodeAgent: true
+
+    configuration:
+      backupStorageLocation:
+        - name: default
+          provider: aws
+          bucket: k8s-volume-backup
+          default: true
+          credential:
+            name: velero-credentials
+            key: cloud
+          # region/s3Url injected via valuesFrom above.
+          config:
+            s3ForcePathStyle: true
+      volumeSnapshotLocation: []
+      # Back up every pod volume by default — no per-pod annotation needed —
+      # since our target namespaces are plain NFS-backed user data.
+      defaultVolumesToFsBackup: true
+
+    nodeAgent:
+      podSecurityContext:
+        runAsUser: 0
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 1Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi

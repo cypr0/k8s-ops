@@ -1,0 +1,18 @@
+---
+# GFS "Father": weekly backup (Sunday), 90-day retention.
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: weekly
+  namespace: velero
+spec:
+  schedule: "0 2 * * 0"
+  useOwnerReferencesInBackup: false
+  template:
+    storageLocation: default
+    includedNamespaces:
+      - nextcloud
+      - paperless
+      - open-webui
+      - openclaw
+    ttl: 2160h0m0s
