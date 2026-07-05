@@ -65,31 +65,33 @@ spec:
         - cluster
       toPorts:
         - ports:
-            - port: "2020"   # fluent-bit
+            - port: "2020" # fluent-bit
               protocol: TCP
-            - port: "3000"   # grafana
+            - port: "3000" # grafana
               protocol: TCP
-            - port: "3100"   # loki
+            - port: "3100" # loki
               protocol: TCP
-            - port: "8001"   # envoy proxy stats
+            - port: "8001" # envoy proxy stats
               protocol: TCP
-            - port: "8080"   # kube-state-metrics, gatus, various
+            - port: "8080" # kube-state-metrics, gatus, various
               protocol: TCP
-            - port: "9090"   # prometheus self-scrape
+            - port: "9090" # prometheus self-scrape
               protocol: TCP
-            - port: "9093"   # alertmanager
+            - port: "9093" # alertmanager
               protocol: TCP
-            - port: "9100"   # node-exporter
+            - port: "9100" # node-exporter
               protocol: TCP
-            - port: "10250"  # kubelet
+            - port: "10250" # kubelet
               protocol: TCP
-            - port: "10255"  # kubelet read-only
+            - port: "10255" # kubelet read-only
               protocol: TCP
-            - port: "12345"  # alloy
+            - port: "12345" # alloy
               protocol: TCP
-            - port: "9187"   # cnpg postgres-exporter
+            - port: "9187" # cnpg postgres-exporter
               protocol: TCP
-            - port: "8000"   # cnpg patroni REST API
+            - port: "8000" # cnpg patroni REST API
+              protocol: TCP
+            - port: "9205" # nextcloud-exporter
               protocol: TCP
 ---
 # Alertmanager: receives alerts from Prometheus, queried by Grafana
