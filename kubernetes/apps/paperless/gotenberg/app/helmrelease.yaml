@@ -25,6 +25,13 @@ spec:
               - "--chromium-disable-javascript=true"
               - "--chromium-allow-list=file:///tmp/.*"
               - "--api-port=3000"
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
             probes:
               liveness:
                 enabled: true
@@ -33,7 +40,7 @@ spec:
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
-              capabilities: { drop: ["ALL"] }
+              capabilities: {drop: ["ALL"]}
               runAsUser: 3000
               runAsGroup: 3000
               runAsNonRoot: true
