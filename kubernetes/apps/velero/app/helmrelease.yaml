@@ -69,6 +69,10 @@ spec:
           # region/s3Url injected via valuesFrom above.
           config:
             s3ForcePathStyle: true
+            # Intercolo (like Ceph/Backblaze) rejects the AWS SDK v2 default
+            # trailing checksum header with "XAmzContentSHA256Mismatch" /
+            # 400 InvalidRequest — disable it.
+            checksumAlgorithm: ""
       volumeSnapshotLocation: []
       # Back up every pod volume by default — no per-pod annotation needed —
       # since our target namespaces are plain NFS-backed user data.
