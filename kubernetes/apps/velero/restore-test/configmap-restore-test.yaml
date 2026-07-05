@@ -9,13 +9,18 @@ data:
     """
     Automated Velero restore test.
 
-    Takes the most recent Completed backup from a given Schedule, restores it
-    into scratch "<namespace>-restore-test" namespaces, checks basic pod/PVC
-    health, alerts via Pushover on any failure, and always cleans up
-    afterwards regardless of outcome.
+    Picks ONE random namespace from NAMESPACES per run (not all of them —
+    restoring several large volumes at once made them contend for the same
+    node-agent's single-restore-per-node slot and stall), takes the most
+    recent Completed backup from a given Schedule, restores just that
+    namespace into a scratch "<namespace>-restore-test" namespace, checks
+    basic pod health, alerts via Pushover on any failure, and always cleans
+    up afterwards regardless of outcome. Run periodically, this samples every
+    app in rotation without the cost/risk of a full simultaneous restore.
     """
     import json
     import os
+    import random
     import socket
     import ssl
     import sys
@@ -144,16 +149,15 @@ data:
             print("NAMESPACES is empty — nothing to test", file=sys.stderr)
             sys.exit(1)
 
-        mapping = {ns: f"{ns}-restore-test" for ns in NAMESPACES}
-        scratch_namespaces = list(mapping.values())
+        target_ns = random.choice(NAMESPACES)
+        scratch_ns = f"{target_ns}-restore-test"
+        print(f"=== Selected '{target_ns}' for this run (pool: {NAMESPACES}) ===")
 
-        # Defensive: remove leftovers from a previous run that didn't clean up.
-        print("=== Pre-cleanup of any leftover scratch namespaces ===")
-        for ns in scratch_namespaces:
-            existing = k8s("GET", f"/api/v1/namespaces/{ns}")
-            if existing is not None:
-                print(f"  Deleting leftover namespace {ns}")
-                k8s("DELETE", f"/api/v1/namespaces/{ns}")
+        # Defensive: remove a leftover from a previous run that didn't clean up.
+        print("=== Pre-cleanup of any leftover scratch namespace ===")
+        if k8s("GET", f"/api/v1/namespaces/{scratch_ns}") is not None:
+            print(f"  Deleting leftover namespace {scratch_ns}")
+            k8s("DELETE", f"/api/v1/namespaces/{scratch_ns}")
 
         backup = latest_completed_backup(SCHEDULE_NAME)
         if backup is None:
@@ -163,18 +167,18 @@ data:
             sys.exit(1)
 
         backup_name = backup["metadata"]["name"]
-        print(f"=== Testing restore of backup '{backup_name}' (schedule={SCHEDULE_NAME}) ===")
+        print(f"=== Testing restore of '{target_ns}' from backup '{backup_name}' (schedule={SCHEDULE_NAME}) ===")
 
-        restore_name = f"restore-test-{backup_name}"[:253]
+        restore_name = f"restore-test-{target_ns}-{backup_name}"[:253]
         restore_body = {
             "apiVersion": "velero.io/v1",
             "kind": "Restore",
             "metadata": {"name": restore_name, "namespace": "velero"},
             "spec": {
                 "backupName": backup_name,
-                "includedNamespaces": NAMESPACES,
+                "includedNamespaces": [target_ns],
                 "excludedResources": EXCLUDED_RESOURCES,
-                "namespaceMapping": mapping,
+                "namespaceMapping": {target_ns: scratch_ns},
                 "restorePVs": True,
             },
         }
@@ -200,7 +204,7 @@ data:
             errors = status.get("errors", 0)
             warnings = status.get("warnings", 0)
             failure_reason = status.get("failureReason", "")
-            detail = f"backup={backup_name} phase={phase} errors={errors} warnings={warnings}"
+            detail = f"namespace={target_ns} backup={backup_name} phase={phase} errors={errors} warnings={warnings}"
             if failure_reason:
                 detail += f" failureReason={failure_reason!r}"
                 print(f"  failureReason: {failure_reason}", file=sys.stderr)
@@ -208,16 +212,14 @@ data:
             if phase != "Completed" or errors:
                 success = False
             else:
-                # Basic health check: every scratch namespace restored at
+                # Basic health check: the scratch namespace restored at
                 # least one pod.
-                success = True
-                for ns in scratch_namespaces:
-                    pods = k8s("GET", f"/api/v1/namespaces/{ns}/pods") or {}
-                    count = len(pods.get("items", []))
-                    print(f"  {ns}: {count} pod(s) restored")
-                    if count == 0:
-                        success = False
-                        detail += f", {ns} has no restored pods"
+                pods = k8s("GET", f"/api/v1/namespaces/{scratch_ns}/pods") or {}
+                count = len(pods.get("items", []))
+                print(f"  {scratch_ns}: {count} pod(s) restored")
+                success = count > 0
+                if not success:
+                    detail += f", {scratch_ns} has no restored pods"
 
         except Exception as e:
             import traceback
@@ -225,7 +227,7 @@ data:
             detail = f"exception: {e}"
             success = False
         finally:
-            cleanup(restore_name, scratch_namespaces)
+            cleanup(restore_name, [scratch_ns])
 
         if success:
             print(f"=== Restore test PASSED ({detail}) ===")

@@ -35,6 +35,13 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: paperless-consume-pvc
+  labels:
+    # Statically bound to a fixed PV via claimRef — Velero can restore the
+    # PVC object into a different namespace, but it can never bind there
+    # (the PV's claimRef still points at the original namespace/name), so
+    # any restore involving this PVC hangs forever waiting to bind. It's
+    # also just a transient scan-inbox with no data worth backing up.
+    velero.io/exclude-from-backup: "true"
 spec:
   accessModes:
     - ReadWriteMany

@@ -36,6 +36,7 @@ spec:
               image: python:3.14-alpine
               command:
                 - "python3"
+                - "-u"
                 - "/scripts/restore_test.py"
               env:
                 - name: SCHEDULE_NAME
