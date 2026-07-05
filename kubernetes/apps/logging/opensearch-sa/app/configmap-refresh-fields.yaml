@@ -1,0 +1,66 @@
+---
+# Refreshes the field list of every OpenSearch Dashboards index-pattern from the
+# live index mapping. The dashboard-setup scripts create their index-patterns
+# with an empty field list ("fields": "[]") and never populate it, so every
+# field-specific visualization fails with "Could not locate that index-pattern-
+# field (id: @timestamp / output_fields.k8s.pod.name.keyword / ...)". This job
+# is the missing refresh step, done generically for ALL patterns (current and
+# future) instead of per-script — it also keeps fields current across daily
+# index rollover and when new fields appear. Idempotent; skips patterns whose
+# index doesn't exist yet (leaves any existing good field list untouched).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: refresh-fields-script
+data:
+  refresh_fields.py: |
+    import json, os, time, base64, urllib.request, urllib.error, urllib.parse
+
+    OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    OSD_USER = os.environ.get("OSD_USER", "admin")
+    OSD_PASS = os.environ.get("OSD_PASS", "")
+    _b64     = base64.b64encode((OSD_USER + ":" + OSD_PASS).encode()).decode()
+    HEADERS  = {"Content-Type": "application/json", "osd-xsrf": "true", "Authorization": "Basic " + _b64}
+
+    def osd(method, path, body=None):
+        data = json.dumps(body).encode() if body else None
+        req  = urllib.request.Request(OSD + path, data=data, headers=HEADERS, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read()), r.status
+        except urllib.error.HTTPError as e:
+            try:    return json.loads(e.read()), e.code
+            except: return {}, e.code
+
+    print("Waiting for Dashboards...")
+    for _ in range(30):
+        r, s = osd("GET", "/api/status")
+        if s == 200 and r.get("status", {}).get("overall", {}).get("state") == "green":
+            print("Ready."); break
+        time.sleep(10)
+
+    r, s = osd("GET", "/api/saved_objects/_find?type=index-pattern&per_page=1000")
+    pats = r.get("saved_objects", [])
+    print("Found " + str(len(pats)) + " index-patterns")
+    rc = 0
+    for p in pats:
+        pid   = p["id"]
+        title = p["attributes"]["title"]
+        ts    = p["attributes"].get("timeFieldName")
+        q = ("/api/index_patterns/_fields_for_wildcard?pattern=" + urllib.parse.quote(title) +
+             "&meta_fields=_source&meta_fields=_id&meta_fields=_index&meta_fields=_score")
+        fr, fs = osd("GET", q)
+        if fs != 200:
+            print("  " + title + ": SKIP (fields_for_wildcard=" + str(fs) + ")"); continue
+        fields = fr.get("fields", [])
+        if not fields:
+            print("  " + title + ": SKIP (0 fields / index missing)"); continue
+        attrs = {"title": title, "fields": json.dumps(fields)}
+        if ts:
+            attrs["timeFieldName"] = ts
+        ur, us = osd("POST", "/api/saved_objects/index-pattern/" + pid + "?overwrite=true",
+                     {"attributes": attrs})
+        print("  " + title + " (" + pid + "): " + str(len(fields)) + " fields -> " + str(us))
+        if us == 200:
+            rc += 1
+    print("DONE (" + str(rc) + "/" + str(len(pats)) + " refreshed)")

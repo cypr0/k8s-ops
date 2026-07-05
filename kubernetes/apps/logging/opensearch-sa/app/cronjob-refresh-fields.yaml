@@ -1,0 +1,62 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: refresh-index-pattern-fields
+spec:
+  # Run every hour at :15 (offset from the crd-to-opensearch exporter at :05).
+  # Keeps every index-pattern's field list in sync with the live mapping so
+  # dashboards don't break on redeploy, daily index rollover, or new fields.
+  schedule: "15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          containers:
+            - name: refresh
+              image: python:3.14-alpine
+              command: ["python3", "/scripts/refresh_fields.py"]
+              env:
+                - name: OSD_HOST
+                  value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
+                - name: OSD_USER
+                  value: "admin"
+                - name: OSD_PASS
+                  valueFrom:
+                    secretKeyRef:
+                      name: opensearch-sa-credentials
+                      key: OPENSEARCH_PASSWORD
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false
+                runAsNonRoot: true
+                runAsUser: 65534
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: scripts
+              configMap:
+                name: refresh-fields-script
+                defaultMode: 0755
