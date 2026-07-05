@@ -54,8 +54,9 @@ spec:
     containerSecurityContext:
       allowPrivilegeEscalation: false
       capabilities:
-        drop: ["ALL"]
-      # readOnlyRootFilesystem omitted: Grafana writes plugins/temp to disk
+        drop:
+          - "ALL"
+        # readOnlyRootFilesystem omitted: Grafana writes plugins/temp to disk
 
     # ── Resources ─────────────────────────────────────────────────────────
     resources:
@@ -287,6 +288,98 @@ spec:
                   "datasource": {"type": "loki", "uid": "loki"},
                   "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "{job=\"talos\"} | json | talos_level=~\"warn|error\"", "queryType": "range"}],
                   "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true}
+                }
+              ]
+            }
+        # Custom: cross-app overview (health, restarts, cpu/mem, logs) from kube-state + Loki
+        apps-overview:
+          datasource: Prometheus
+          json: |
+            {
+              "annotations": {"list": []},
+              "editable": true,
+              "graphTooltip": 1,
+              "time": {"from": "now-6h", "to": "now"},
+              "title": "Apps — Overview",
+              "uid": "apps-overview",
+              "tags": ["apps"],
+              "schemaVersion": 39,
+              "version": 1,
+              "refresh": "1m",
+              "templating": {"list": [
+                {"name": "namespace", "label": "App", "type": "custom", "query": "nextcloud,paperless,open-webui,openclaw", "multi": true, "includeAll": true, "allValue": "nextcloud|paperless|open-webui|openclaw", "current": {"text": "All", "value": "$__all"}, "options": []}
+              ]},
+              "panels": [
+                {
+                  "id": 1, "type": "stat", "title": "Pods Running",
+                  "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(kube_pod_status_phase{namespace=~\"$namespace\", phase=\"Running\"})"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "green"}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none"}
+                },
+                {
+                  "id": 2, "type": "stat", "title": "Pods Not Running",
+                  "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(kube_pod_status_phase{namespace=~\"$namespace\", phase!=\"Running\"}) or vector(0)"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "none"}
+                },
+                {
+                  "id": 3, "type": "stat", "title": "Container Restarts (1h)",
+                  "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}[1h])) or vector(0)"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 5}]}, "decimals": 0}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area"}
+                },
+                {
+                  "id": 4, "type": "stat", "title": "Error Logs (5m)",
+                  "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum(count_over_time({namespace=~\"$namespace\"} |~ \"(?i)error\" [5m]))", "queryType": "instant"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area"}
+                },
+                {
+                  "id": 5, "type": "timeseries", "title": "CPU Usage by App",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\"}[$__rate_interval]))", "legendFormat": "{{namespace}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 15}, "unit": "short"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 6, "type": "timeseries", "title": "Memory (working set) by App",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (namespace) (container_memory_working_set_bytes{namespace=~\"$namespace\", container!=\"\"})", "legendFormat": "{{namespace}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 15}, "unit": "bytes"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 7, "type": "timeseries", "title": "Container Restarts by Pod",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+                  "datasource": {"type": "prometheus", "uid": "prometheus"},
+                  "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\"}[$__rate_interval]))", "legendFormat": "{{namespace}}/{{pod}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 70}, "unit": "short", "decimals": 0}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 8, "type": "timeseries", "title": "Log Rate by App",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum by (namespace) (count_over_time({namespace=~\"$namespace\"} [$__interval]))", "queryType": "range", "legendFormat": "{{namespace}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 15}, "unit": "logs"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 9, "type": "logs", "title": "Recent Errors & Warnings (all apps)",
+                  "gridPos": {"h": 10, "w": 24, "x": 0, "y": 20},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "{namespace=~\"$namespace\"} |~ \"(?i)(error|warn|fail|exception)\"", "queryType": "range"}],
+                  "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true, "dedupStrategy": "none"}
                 }
               ]
             }
