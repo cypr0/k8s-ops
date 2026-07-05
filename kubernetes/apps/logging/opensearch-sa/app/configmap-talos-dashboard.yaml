@@ -1,0 +1,168 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: talos-dashboard-script
+data:
+  create_talos_dashboard.py: |
+    import json, os, time, base64, urllib.request, urllib.error
+
+    OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    OSD_USER = os.environ.get("OSD_USER", "admin")
+    OSD_PASS = os.environ.get("OSD_PASS", "")
+    _b64     = base64.b64encode((OSD_USER + ":" + OSD_PASS).encode()).decode()
+    HEADERS  = {"Content-Type": "application/json", "osd-xsrf": "true", "Authorization": "Basic " + _b64}
+
+    def osd(method, path, body=None):
+        data = json.dumps(body).encode() if body else None
+        req  = urllib.request.Request(OSD + path, data=data, headers=HEADERS, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read()), r.status
+        except urllib.error.HTTPError as e:
+            try:    return json.loads(e.read()), e.code
+            except: return {}, e.code
+
+    print("Waiting for Dashboards...")
+    for _ in range(30):
+        r, s = osd("GET", "/api/status")
+        if s == 200 and r.get("status", {}).get("overall", {}).get("state") == "green":
+            print("Ready."); break
+        time.sleep(10)
+
+    METRIC_P = {
+        "addTooltip": True, "addLegend": False, "type": "gauge",
+        "gauge": {
+            "verticalSplit": False, "extendRange": True, "percentageMode": False,
+            "gaugeType": "Metric", "gaugeColorMode": "None",
+            "colorsRange": [{"from": 0, "to": 10000000}], "invertColors": False,
+            "labels": {"show": True, "color": "black"},
+            "scale": {"show": False, "labels": False, "color": "#333"},
+            "type": "simple",
+            "style": {"bgFill": "#000", "bgColor": False, "labelColor": False, "subText": "", "fontSize": 60}
+        }
+    }
+    def pie_p(): return {"type":"pie","addTooltip":True,"addLegend":True,"legendPosition":"right","isDonut":True,"labels":{"show":True,"values":True,"last_level":True,"truncate":100}}
+    def hbar_p(): return {"type":"histogram","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],"seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False,"truncateLegend":True,"maxLegendLines":1}
+    def line_p(): return {"type":"line","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"bottom","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"filter":True,"truncate":100},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"left","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],"seriesParams":[{"show":True,"type":"line","mode":"normal","data":{"label":"Events","id":"1"},"drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True,"interpolate":"linear","valueAxis":"ValueAxis-1"}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False}
+    def c(): return [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}]
+    def t(f, sz=15): return {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":f,"size":sz,"order":"desc","orderBy":"1","otherBucket":False,"missingBucket":False}}
+    def g(f, sz=6): return {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":f,"size":sz,"order":"desc","orderBy":"1"}}
+    def dh(): return {"id":"2","enabled":True,"type":"date_histogram","schema":"segment","params":{"field":"@timestamp","useNormalizedEsInterval":True,"interval":"auto","drop_partials":False,"min_doc_count":1,"extended_bounds":{}}}
+
+    def mkv(vid, title, vis_type, params, aggs, idx, flt=None):
+        return {
+            "type": "visualization", "id": vid,
+            "attributes": {
+                "title": title,
+                "visState": json.dumps({"title": title, "type": vis_type, "params": params, "aggs": aggs}),
+                "uiStateJSON": "{}", "description": "",
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
+                    "index": idx,
+                    "query": {"bool": {"filter": flt or [], "must": [], "must_not": [], "should": []}},
+                    "filter": []
+                })}
+            },
+            "references": [{"id": idx, "name": "indexPatternId", "type": "index-pattern"}]
+        }
+
+    def mkdash(did, title, desc, panels, refs):
+        p_json = []
+        for i, p in enumerate(panels):
+            p_json.append({"version":"3.6.0","gridData":{"x":p["x"],"y":p["y"],"w":p["w"],"h":p["h"],"i":str(i+1)},"panelIndex":str(i+1),"embeddableConfig":{},"panelRefName":"panel_"+str(i+1)})
+        return osd("POST", "/api/saved_objects/dashboard/" + did + "?overwrite=true", {
+            "attributes": {
+                "title": title, "description": desc,
+                "panelsJSON": json.dumps(p_json),
+                "optionsJSON": json.dumps({"useMargins":True,"syncColors":False,"hidePanelTitles":False}),
+                "version": 1, "timeRestore": False,
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query":{"match_all":{}},"filter":[]})}
+            },
+            "references": refs
+        })
+
+    # ════════════════════════════════════════════════════════════════════════
+    # INDEX PATTERN (fields populated by the refresh-index-pattern-fields cronjob)
+    # ════════════════════════════════════════════════════════════════════════
+    r, s = osd("POST", "/api/saved_objects/index-pattern/talos-idx?overwrite=true",
+               {"attributes": {"title": "talos-*", "timeFieldName": "@timestamp", "fields": "[]"}})
+    print("Index pattern talos-*: " + str(s))
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DASHBOARD — Talos: Availability & Security
+    # Fields: talos-level (info/warn/error/debug), talos-service (machined,
+    #   kubelet, etcd, cri, auditd, apid, kernel, ...), node (per-node tag),
+    #   audit_type (SYSCALL/NETFILTER_CFG/BPF/AVC/...), facility, priority
+    # ════════════════════════════════════════════════════════════════════════
+    TI = "talos-idx"
+    f_err   = [{"term":  {"talos-level.keyword": "error"}}]
+    f_warn  = [{"terms": {"talos-level.keyword": ["warn", "error"]}}]
+    f_audit = [{"term":  {"talos-service.keyword": "auditd"}}]
+    f_apid  = [{"term":  {"talos-service.keyword": "apid"}}]
+    f_avc   = [{"term":  {"audit_type.keyword": "AVC"}}]
+    f_fw    = [{"term":  {"audit_type.keyword": "NETFILTER_CFG"}}]
+    f_kern  = [{"term":  {"facility.keyword": "kern"}}]
+
+    vizs = [
+        # ── Availability ────────────────────────────────────────────────
+        mkv("t-v1-total",  "\U0001F4CA Total Log Events", "metric", METRIC_P, c(), TI),
+        mkv("t-v2-errors", "\U0001F534 Errors",           "metric", METRIC_P, c(), TI, f_err),
+        mkv("t-v3-warn",   "\U0001F7E0 Warnings+",        "metric", METRIC_P, c(), TI, f_warn),
+        mkv("t-v4-audit",  "\U0001F510 Audit Events",     "metric", METRIC_P, c(), TI, f_audit),
+
+        mkv("t-v5-timeline", "Log Volume Over Time by Level", "line", line_p(),
+            c() + [dh(), g("talos-level.keyword", 4)], TI),
+
+        mkv("t-v6-service",  "Events by Service", "horizontal_bar", hbar_p(),
+            c() + [t("talos-service.keyword", 20)], TI),
+        mkv("t-v9-errsvc",   "Errors & Warnings by Service", "horizontal_bar", hbar_p(),
+            c() + [t("talos-service.keyword", 20)], TI, f_warn),
+
+        mkv("t-v7-node",     "Events by Node", "horizontal_bar", hbar_p(),
+            c() + [t("node.keyword", 10)], TI),
+        mkv("t-v8-level",    "Log Level Distribution", "pie", pie_p(),
+            c() + [t("talos-level.keyword", 5)], TI),
+
+        # ── Security ────────────────────────────────────────────────────
+        mkv("t-s1-audit-time", "Audit Events Over Time by Type", "line", line_p(),
+            c() + [dh(), g("audit_type.keyword", 10)], TI, f_audit),
+
+        mkv("t-s2-audit-type", "Audit Events by Type", "horizontal_bar", hbar_p(),
+            c() + [t("audit_type.keyword", 15)], TI, f_audit),
+        mkv("t-s6-kernprio",   "Kernel Messages by Priority", "pie", pie_p(),
+            c() + [t("priority.keyword", 8)], TI, f_kern),
+
+        mkv("t-s3-avc",  "\U0001F6E1 SELinux Denials (AVC)",       "metric", METRIC_P, c(), TI, f_avc),
+        mkv("t-s4-fw",   "\U0001F9F1 Firewall Changes (nftables)", "metric", METRIC_P, c(), TI, f_fw),
+        mkv("t-s5-apid", "\U0001F511 Talos API Access (apid)",     "metric", METRIC_P, c(), TI, f_apid),
+    ]
+
+    print("Creating Talos visualizations...")
+    for viz in vizs:
+        r, s = osd("POST", "/api/saved_objects/visualization/" + viz["id"] + "?overwrite=true",
+                   {"attributes": viz["attributes"], "references": viz["references"]})
+        print("  " + viz["attributes"]["title"] + ": " + ("OK" if s < 300 else "ERR " + str(s)))
+
+    panels = [
+        {"id":"t-v1-total",     "x":0,  "y":0,  "w":12, "h":9},
+        {"id":"t-v2-errors",    "x":12, "y":0,  "w":12, "h":9},
+        {"id":"t-v3-warn",      "x":24, "y":0,  "w":12, "h":9},
+        {"id":"t-v4-audit",     "x":36, "y":0,  "w":12, "h":9},
+        {"id":"t-v5-timeline",  "x":0,  "y":9,  "w":48, "h":12},
+        {"id":"t-v6-service",   "x":0,  "y":21, "w":24, "h":14},
+        {"id":"t-v9-errsvc",    "x":24, "y":21, "w":24, "h":14},
+        {"id":"t-v7-node",      "x":0,  "y":35, "w":24, "h":12},
+        {"id":"t-v8-level",     "x":24, "y":35, "w":24, "h":12},
+        {"id":"t-s1-audit-time","x":0,  "y":47, "w":48, "h":12},
+        {"id":"t-s2-audit-type","x":0,  "y":59, "w":24, "h":14},
+        {"id":"t-s6-kernprio",  "x":24, "y":59, "w":24, "h":14},
+        {"id":"t-s3-avc",       "x":0,  "y":73, "w":16, "h":9},
+        {"id":"t-s4-fw",        "x":16, "y":73, "w":16, "h":9},
+        {"id":"t-s5-apid",      "x":32, "y":73, "w":16, "h":9},
+    ]
+    refs = [{"name":"panel_"+str(i+1),"type":"visualization","id":p["id"]} for i,p in enumerate(panels)]
+    r, s = mkdash("talos-availability-security", "Talos — Availability & Security",
+                  "Talos OS logs: availability (errors/warnings by service and node, log volume) and security (Linux audit events by type, SELinux denials, firewall changes, Talos API access).",
+                  panels, refs)
+    print("Dashboard Talos: " + str(s))
+    print("  <OSD>/app/dashboards#/view/talos-availability-security")

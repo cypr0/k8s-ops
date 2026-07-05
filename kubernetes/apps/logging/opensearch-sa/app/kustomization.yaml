@@ -20,6 +20,8 @@ resources:
   - ./job-opnsense.yaml
   - ./configmap-security-dashboards.yaml
   - ./job-security-dashboards.yaml
+  - ./configmap-talos-dashboard.yaml
+  - ./job-talos-dashboard.yaml
   - ./configmap-refresh-fields.yaml
   - ./cronjob-refresh-fields.yaml
   - ./ciliumnetworkpolicy.yaml
