@@ -15,6 +15,12 @@ spec:
       ttlSecondsAfterFinished: 3600
       activeDeadlineSeconds: 1800
       template:
+        metadata:
+          # Distinct from Velero's own internally-spawned Jobs (repo
+          # maintenance, etc.) — batch.kubernetes.io/job-name alone isn't
+          # unique enough to scope a CiliumNetworkPolicy to just this CronJob.
+          labels:
+            app: velero-restore-test
         spec:
           serviceAccountName: velero-restore-test
           restartPolicy: Never
