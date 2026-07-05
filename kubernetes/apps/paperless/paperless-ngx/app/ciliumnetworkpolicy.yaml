@@ -33,6 +33,15 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # paperless-stats-exporter reads statistics/status/tasks (same namespace)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless-stats-exporter
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
   egress:
     # DNS resolution
     - toEndpoints:

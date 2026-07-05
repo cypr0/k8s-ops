@@ -1,0 +1,117 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: paperless-stats-exporter-script
+data:
+  export_stats.py: |-
+    #!/usr/bin/env python3
+    """
+    Export Paperless-ngx statistics/status/tasks to OpenSearch:
+      paperless-stats-YYYY.MM.DD   — document counts, storage, subsystem health
+      paperless-tasks-YYYY.MM.DD   — recent task queue entries (OCR/consume/etc.)
+    """
+    import json, os, sys, base64, ssl, urllib.request
+    from datetime import datetime, timezone
+
+    OS_HOST = os.environ.get("OPENSEARCH_HOST", "https://opensearch.logging.svc.cluster.local:9200")
+    OS_AUTH = base64.b64encode(
+        f"{os.environ.get('OPENSEARCH_USER', 'admin')}:{os.environ.get('OPENSEARCH_PASSWORD', '')}".encode()
+    ).decode()
+    TODAY = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    NOW = datetime.now(timezone.utc).isoformat()
+
+    OS_CTX = ssl.create_default_context()
+    OS_CTX.check_hostname = False
+    OS_CTX.verify_mode = ssl.CERT_NONE
+
+    def os_bulk(index, docs, id_field=None):
+        if not docs:
+            return 0
+        body = ""
+        for doc in docs:
+            meta = {"_index": index}
+            if id_field and id_field in doc:
+                meta["_id"] = str(doc[id_field])
+            body += json.dumps({"index": meta}) + "\n" + json.dumps(doc) + "\n"
+        req = urllib.request.Request(
+            f"{OS_HOST}/_bulk",
+            data=body.encode(),
+            headers={"Content-Type": "application/x-ndjson", "Authorization": f"Basic {OS_AUTH}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, context=OS_CTX) as r:
+            resp = json.loads(r.read())
+            errors = [i for i in resp.get("items", []) if "error" in i.get("index", {})]
+            if errors:
+                print(f"  {len(errors)} bulk errors, e.g.: {errors[0]}", file=sys.stderr)
+            return len(docs) - len(errors)
+
+    pl_host = os.environ["PAPERLESS_HOST"]
+    pl_auth = base64.b64encode(
+        f"{os.environ['PAPERLESS_USER']}:{os.environ['PAPERLESS_PASS']}".encode()
+    ).decode()
+    headers = {"Authorization": f"Basic {pl_auth}"}
+
+    def http_get(path):
+        req = urllib.request.Request(f"{pl_host}{path}", headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read())
+
+    stats = http_get("/api/statistics/")
+    status = http_get("/api/status/")
+    tasks_status = status.get("tasks", {})
+    storage_status = status.get("storage", {})
+    db_status = status.get("database", {})
+
+    stats_doc = {
+        "@timestamp": NOW,
+        "documents_total": stats.get("documents_total"),
+        "documents_inbox": stats.get("documents_inbox"),
+        "tag_count": stats.get("tag_count"),
+        "correspondent_count": stats.get("correspondent_count"),
+        "document_type_count": stats.get("document_type_count"),
+        "storage_path_count": stats.get("storage_path_count"),
+        "storage_total_bytes": storage_status.get("total"),
+        "storage_available_bytes": storage_status.get("available"),
+        "database_status": db_status.get("status"),
+        "redis_status": tasks_status.get("redis_status"),
+        "celery_status": tasks_status.get("celery_status"),
+        "index_status": tasks_status.get("index_status"),
+        "classifier_status": tasks_status.get("classifier_status"),
+        "sanity_check_status": tasks_status.get("sanity_check_status"),
+        "all_ok": all(
+            v == "OK"
+            for v in [
+                db_status.get("status"),
+                tasks_status.get("redis_status"),
+                tasks_status.get("celery_status"),
+                tasks_status.get("index_status"),
+                tasks_status.get("classifier_status"),
+                tasks_status.get("sanity_check_status"),
+            ]
+        ),
+    }
+    n = os_bulk(f"paperless-stats-{TODAY}", [stats_doc])
+    print(f"statistics/status: indexed {n} doc(s) to paperless-stats-{TODAY}")
+
+    tasks = http_get("/api/tasks/?page_size=50")
+    task_docs = []
+    for t in tasks if isinstance(tasks, list) else tasks.get("results", []):
+        task_docs.append(
+            {
+                "task_id": t.get("task_id"),
+                "task_name": t.get("task_name"),
+                "task_type": t.get("type"),
+                "status": t.get("status"),
+                "date_created": t.get("date_created"),
+                "date_done": t.get("date_done"),
+                "result": (t.get("result") or "")[:500],
+                "related_document": t.get("related_document"),
+            }
+        )
+    # id_field=task_id makes re-runs idempotent (updates status instead of
+    # duplicating) — important since a task can be PENDING on one run and
+    # SUCCESS/FAILURE on the next.
+    n = os_bulk(f"paperless-tasks-{TODAY}", task_docs, id_field="task_id")
+    print(f"tasks: indexed {n}/{len(task_docs)} doc(s) to paperless-tasks-{TODAY}")

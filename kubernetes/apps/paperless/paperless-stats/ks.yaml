@@ -1,0 +1,25 @@
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app paperless-stats
+  namespace: flux-system
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  # No dependsOn on the paperless Kustomization: this is a self-contained,
+  # best-effort stats scraper (15 min schedule) that shouldn't be coupled to
+  # (or block on) the main app's release lifecycle.
+  interval: 1h
+  path: ./kubernetes/apps/paperless/paperless-stats/app
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: paperless
+  timeout: 10m
+  wait: true
