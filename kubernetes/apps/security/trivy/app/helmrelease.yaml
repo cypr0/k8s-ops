@@ -30,8 +30,12 @@ spec:
       scanJobTimeout: 5m
       concurrentScanJobsLimit: 3
       builtInTrivyServer: true
-      # Scan all namespaces except system ones
-      excludeNamespaces: "kube-system,flux-system"
+      # Scan all namespaces except system ones and Velero's ephemeral
+      # restore-test namespaces — those appear/disappear within minutes and
+      # once OOM-killed trivy-operator by spawning a scan job per pod all at
+      # once (glob pattern, not exact names, so it matches regardless of
+      # which app namespaces the restore-test targets).
+      excludeNamespaces: "kube-system,flux-system,*-restore-test"
       metricsFindingsEnabled: true
       metricsVulnIdEnabled: true
       # Talos: immutable filesystem — node-collector can't access /etc/systemd
@@ -55,7 +59,8 @@ spec:
       containerSecurityContext:
         allowPrivilegeEscalation: false
         capabilities:
-          drop: ["ALL"]
+          drop:
+            - "ALL"
         readOnlyRootFilesystem: true
 
     podSecurityContext:
@@ -67,15 +72,19 @@ spec:
     containerSecurityContext:
       allowPrivilegeEscalation: false
       capabilities:
-        drop: ["ALL"]
+        drop:
+          - "ALL"
       readOnlyRootFilesystem: true
 
+    # 512Mi OOM-killed the operator when ~15 pods appeared at once (Velero
+    # restore-test namespaces) and it queued a scan job per pod. Now excluded
+    # above too, but keep headroom for any other legitimate burst.
     resources:
       requests:
         cpu: 20m
         memory: 128Mi
       limits:
-        memory: 512Mi
+        memory: 1Gi
 
     serviceMonitor:
       enabled: true
