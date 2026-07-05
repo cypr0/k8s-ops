@@ -37,10 +37,13 @@ spec:
       valuesKey: S3_REGION
       targetPath: configuration.backupStorageLocation[0].config.region
   values:
-    # renovate: datasource=github-releases depName=vmware-tanzu/velero-plugin-for-aws
+    # Pinned to v1.8.2 (last release on AWS SDK v1) — v1.9+ moved to SDK v2,
+    # which sends chunked/trailer-signed PutObject requests
+    # ("x-amz-trailer-signature" BadHeader, even with checksumAlgorithm: "")
+    # that Intercolo's S3-compatible endpoint rejects outright.
     initContainers:
       - name: velero-plugin-for-aws
-        image: velero/velero-plugin-for-aws:v1.14.2
+        image: velero/velero-plugin-for-aws:v1.8.2
         imagePullPolicy: IfNotPresent
         volumeMounts:
           - mountPath: /target
@@ -69,10 +72,6 @@ spec:
           # region/s3Url injected via valuesFrom above.
           config:
             s3ForcePathStyle: true
-            # Intercolo (like Ceph/Backblaze) rejects the AWS SDK v2 default
-            # trailing checksum header with "XAmzContentSHA256Mismatch" /
-            # 400 InvalidRequest — disable it.
-            checksumAlgorithm: ""
       volumeSnapshotLocation: []
       # Back up every pod volume by default — no per-pod annotation needed —
       # since our target namespaces are plain NFS-backed user data.
