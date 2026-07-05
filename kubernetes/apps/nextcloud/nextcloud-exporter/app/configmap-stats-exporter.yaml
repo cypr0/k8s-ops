@@ -1,0 +1,87 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextcloud-stats-exporter-script
+data:
+  export_stats.py: |-
+    #!/usr/bin/env python3
+    """
+    Export Nextcloud serverinfo stats to OpenSearch (nextcloud-stats-YYYY.MM.DD).
+    Complements the Prometheus nextcloud-exporter with data OpenSearch dashboards
+    can query directly (active-user cohorts, shares, storage/system health).
+    """
+    import json, os, sys, base64, ssl, urllib.request
+    from datetime import datetime, timezone
+
+    OS_HOST = os.environ.get("OPENSEARCH_HOST", "https://opensearch.logging.svc.cluster.local:9200")
+    OS_AUTH = base64.b64encode(
+        f"{os.environ.get('OPENSEARCH_USER', 'admin')}:{os.environ.get('OPENSEARCH_PASSWORD', '')}".encode()
+    ).decode()
+    TODAY = datetime.now(timezone.utc).strftime("%Y.%m.%d")
+    NOW = datetime.now(timezone.utc).isoformat()
+
+    OS_CTX = ssl.create_default_context()
+    OS_CTX.check_hostname = False
+    OS_CTX.verify_mode = ssl.CERT_NONE
+
+    def os_bulk(index, docs):
+        if not docs:
+            return 0
+        body = ""
+        for doc in docs:
+            body += json.dumps({"index": {"_index": index}}) + "\n" + json.dumps(doc) + "\n"
+        req = urllib.request.Request(
+            f"{OS_HOST}/_bulk",
+            data=body.encode(),
+            headers={"Content-Type": "application/x-ndjson", "Authorization": f"Basic {OS_AUTH}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, context=OS_CTX) as r:
+            resp = json.loads(r.read())
+            errors = [i for i in resp.get("items", []) if "error" in i.get("index", {})]
+            if errors:
+                print(f"  {len(errors)} bulk errors, e.g.: {errors[0]}", file=sys.stderr)
+            return len(docs) - len(errors)
+
+    nc_host = os.environ["NEXTCLOUD_HOST"]
+    nc_auth = base64.b64encode(
+        f"{os.environ['NEXTCLOUD_USER']}:{os.environ['NEXTCLOUD_PASS']}".encode()
+    ).decode()
+    req = urllib.request.Request(
+        f"{nc_host}/ocs/v2.php/apps/serverinfo/api/v1/info?format=json",
+        headers={"OCS-APIRequest": "true", "Authorization": f"Basic {nc_auth}"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        d = json.loads(r.read())["ocs"]["data"]
+
+    nc = d.get("nextcloud", {})
+    storage = nc.get("storage", {})
+    shares = nc.get("shares", {})
+    system = nc.get("system", {})
+    active = d.get("activeUsers", {})
+
+    doc = {
+        "@timestamp": NOW,
+        "users_total": storage.get("num_users"),
+        "users_disabled": storage.get("num_disabled_users"),
+        "files_total": storage.get("num_files"),
+        "storages_total": storage.get("num_storages"),
+        "shares_total": shares.get("num_shares"),
+        "shares_link": shares.get("num_shares_link"),
+        "shares_federated_sent": shares.get("num_fed_shares_sent"),
+        "shares_federated_received": shares.get("num_fed_shares_received"),
+        "active_users_5min": active.get("last5minutes"),
+        "active_users_1hour": active.get("last1hour"),
+        "active_users_24hours": active.get("last24hours"),
+        "active_users_7days": active.get("last7days"),
+        "active_users_1month": active.get("last1month"),
+        "freespace_bytes": system.get("freespace"),
+        "mem_total_kb": system.get("mem_total"),
+        "mem_free_kb": system.get("mem_free"),
+        "cpuload_1min": (system.get("cpuload") or [None])[0],
+        "debug_mode": system.get("debug") == "yes",
+        "filelocking_enabled": system.get("filelocking.enabled") == "yes",
+    }
+    n = os_bulk(f"nextcloud-stats-{TODAY}", [doc])
+    print(f"indexed {n} doc(s) to nextcloud-stats-{TODAY}")

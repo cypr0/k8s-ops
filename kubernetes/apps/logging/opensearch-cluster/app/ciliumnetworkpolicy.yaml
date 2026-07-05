@@ -42,6 +42,21 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
+    # REST API from nextcloud/paperless (appstats-exporter CronJobs)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
     # Kubelet readiness/liveness probes (host network → host entity)
     - fromEntities:
         - host
