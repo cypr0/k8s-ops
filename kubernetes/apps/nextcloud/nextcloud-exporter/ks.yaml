@@ -9,9 +9,9 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
-  dependsOn:
-    - name: nextcloud
-      namespace: flux-system
+  # No dependsOn on the nextcloud Kustomization: it's self-contained (app-template
+  # chart + the existing nextcloud-credentials secret) and coupling it to the
+  # nextcloud HelmRelease health would block it whenever that release is degraded.
   interval: 1h
   path: ./kubernetes/apps/nextcloud/nextcloud-exporter/app
   prune: true
