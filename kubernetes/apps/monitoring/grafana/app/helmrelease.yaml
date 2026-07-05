@@ -199,6 +199,97 @@ spec:
           revision: 1
           datasource: Prometheus
 
+        # Custom: Talos OS logs (availability + security) from Loki (job=talos)
+        talos-logs:
+          datasource: Loki
+          json: |
+            {
+              "annotations": {"list": []},
+              "editable": true,
+              "graphTooltip": 1,
+              "time": {"from": "now-6h", "to": "now"},
+              "timezone": "",
+              "title": "Talos — Availability & Security",
+              "uid": "talos-logs",
+              "tags": ["talos", "logs", "security"],
+              "schemaVersion": 39,
+              "version": 1,
+              "refresh": "1m",
+              "templating": {"list": []},
+              "panels": [
+                {
+                  "id": 1, "type": "stat", "title": "Errors (5m)",
+                  "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum(count_over_time({job=\"talos\"} | json | talos_level=\"error\" [5m]))", "queryType": "instant"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area", "textMode": "auto"}
+                },
+                {
+                  "id": 2, "type": "stat", "title": "Warnings+ (5m)",
+                  "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum(count_over_time({job=\"talos\"} | json | talos_level=~\"warn|error\" [5m]))", "queryType": "instant"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area", "textMode": "auto"}
+                },
+                {
+                  "id": 3, "type": "stat", "title": "Audit Events (5m)",
+                  "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum(count_over_time({job=\"talos\"} | json | talos_service=\"auditd\" [5m]))", "queryType": "instant"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "blue"}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area", "textMode": "auto"}
+                },
+                {
+                  "id": 4, "type": "stat", "title": "SELinux Denials AVC (5m)",
+                  "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum(count_over_time({job=\"talos\"} | json | audit_type=\"AVC\" [5m]))", "queryType": "instant"}],
+                  "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+                  "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "background", "graphMode": "area", "textMode": "auto"}
+                },
+                {
+                  "id": 5, "type": "timeseries", "title": "Log Volume by Level",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum by (talos_level) (rate({job=\"talos\"} | json [$__interval]))", "queryType": "range", "legendFormat": "{{talos_level}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 20, "stacking": {"mode": "normal"}}, "unit": "logs/s"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 6, "type": "timeseries", "title": "Errors & Warnings by Service",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum by (talos_service) (rate({job=\"talos\"} | json | talos_level=~\"warn|error\" [$__interval]))", "queryType": "range", "legendFormat": "{{talos_service}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60, "stacking": {"mode": "normal"}}, "unit": "logs/s"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 7, "type": "timeseries", "title": "Audit Events by Type",
+                  "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum by (audit_type) (rate({job=\"talos\"} | json | talos_service=\"auditd\" [$__interval]))", "queryType": "range", "legendFormat": "{{audit_type}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 20, "stacking": {"mode": "normal"}}, "unit": "logs/s"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 8, "type": "timeseries", "title": "Events by Node",
+                  "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "sum by (node) (rate({job=\"talos\"} | json [$__interval]))", "queryType": "range", "legendFormat": "{{node}}"}],
+                  "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10}, "unit": "logs/s"}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}
+                },
+                {
+                  "id": 9, "type": "logs", "title": "Recent Errors & Warnings",
+                  "gridPos": {"h": 10, "w": 24, "x": 0, "y": 20},
+                  "datasource": {"type": "loki", "uid": "loki"},
+                  "targets": [{"refId": "A", "datasource": {"type": "loki", "uid": "loki"}, "expr": "{job=\"talos\"} | json | talos_level=~\"warn|error\"", "queryType": "range"}],
+                  "options": {"showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true}
+                }
+              ]
+            }
     # ── Monitoring ────────────────────────────────────────────────────────
     serviceMonitor:
       enabled: true
