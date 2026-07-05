@@ -24,15 +24,13 @@ spec:
       retries: 3
       strategy: rollback
   values:
-    # Workers only
-    affinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: node-role.kubernetes.io/control-plane
-                  operator: DoesNotExist
-    tolerations: []
+    # Run on ALL nodes (incl. control-plane): app pods like Nextcloud are
+    # scheduled on CP nodes too (allowSchedulingOnControlPlanes), so the
+    # container-log tail must cover them. Toleration lets it schedule on any
+    # CP taint if present.
+    affinity: {}
+    tolerations:
+      - operator: Exists
 
     resources:
       requests:
@@ -42,7 +40,7 @@ spec:
         memory: 256Mi
 
     podSecurityContext:
-      runAsNonRoot: false  # needs root for syslog socket
+      runAsNonRoot: false # needs root for syslog socket
 
     # Inject OpenSearch password
     envFrom:
@@ -85,6 +83,23 @@ spec:
             Time_Format %Y-%m-%dT%H:%M:%S%z
             Time_Keep   Off
 
+        # CRI (containerd) container log line: "<time> <stream> <F|P> <message>"
+        [PARSER]
+            Name        cri
+            Format      regex
+            Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<message>.*)$
+            Time_Key    time
+            Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+            Time_Keep   Off
+
+        # Extract pod/namespace/container from the container log FILENAME
+        # (/var/log/containers/<pod>_<ns>_<container>-<id>.log) so we get
+        # per-app metadata WITHOUT needing the Kubernetes API filter (no RBAC).
+        [PARSER]
+            Name        k8s_file_meta
+            Format      regex
+            Regex       ^/var/log/containers/(?<pod>[^_]+)_(?<namespace>[^_]+)_(?<container>.+)-(?<containerid>[a-f0-9]{64})\.log$
+
         # Talos auditd: extract the Linux audit record type from msg, e.g.
         # "type=NETFILTER_CFG msg=audit(...)..." -> audit_type=NETFILTER_CFG.
         # Only auditd lines start with "type="; every other Talos log line
@@ -120,6 +135,21 @@ spec:
             Port          5170
             Format        json
             Tag           talos.log
+
+        # ── App container logs -> OpenSearch (per-app dashboards) ────────
+        # Scoped by filename glob to the monitored app namespaces only, so we
+        # don't ingest every container in the cluster. CRI format (containerd).
+        [INPUT]
+            Name              tail
+            Tag               kube.app
+            Path              /var/log/containers/*_nextcloud_*.log,/var/log/containers/*_paperless_*.log,/var/log/containers/*_open-webui_*.log,/var/log/containers/*_openclaw_*.log
+            Parser            cri
+            Path_Key          filename
+            DB                /var/log/flb_kube_apps.db
+            Mem_Buf_Limit     20MB
+            Skip_Long_Lines   On
+            Refresh_Interval  10
+            Read_from_Head    On
 
       filters: |
         # Retag Suricata Eve-JSON records before any other processing
@@ -185,6 +215,20 @@ spec:
             Parser        talos_audit_type
             Reserve_Data  On
             Preserve_Key  On
+
+        # App container logs: derive pod/namespace/container from the filename
+        [FILTER]
+            Name          parser
+            Match         kube.app
+            Key_Name      filename
+            Parser        k8s_file_meta
+            Reserve_Data  On
+            Preserve_Key  Off
+
+        [FILTER]
+            Name          modify
+            Match         kube.app
+            Add           job k8s-apps
 
       outputs: |
         # ── OpenSearch (SIEM) ────────────────────────────────────────────
@@ -274,6 +318,27 @@ spec:
             Label_Keys       $hostname
             Line_Format      json
             Retry_Limit      5
+
+        # ── OpenSearch (app container logs -> apps-<date> index) ─────────
+        # App logs already go to Loki via Alloy; this adds them to OpenSearch
+        # for the per-app OpenSearch dashboards. namespace/pod/container fields
+        # come from the filename parser above.
+        [OUTPUT]
+            Name             opensearch
+            Match            kube.app
+            Host             opensearch.logging.svc.cluster.local
+            Port             9200
+            HTTP_User        admin
+            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
+            Type             _doc
+            Logstash_Format  On
+            Logstash_Prefix  apps
+            Time_Key         @timestamp
+            tls              On
+            tls.verify       Off
+            net.keepalive    off
+            Retry_Limit      5
+            Suppress_Type_Name On
 
     # Expose syslog port on pods. The chart also adds these entries to the
     # Service, which requires a valid `port` (1-65535); without it the Service
