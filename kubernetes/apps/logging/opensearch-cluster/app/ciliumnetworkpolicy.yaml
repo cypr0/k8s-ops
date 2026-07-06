@@ -57,6 +57,15 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
+    # REST API from velero-restore-test CronJob (reports pass/fail results)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": velero
+            app: velero-restore-test
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
     # Kubelet readiness/liveness probes (host network → host entity)
     - fromEntities:
         - host
