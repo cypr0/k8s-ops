@@ -4,7 +4,7 @@ kind: ConfigMap
 metadata:
   name: security-dashboards-script
 data:
-  create_security_dashboards.py: |
+  create_security_dashboards.py: |-
     import json, os, time, base64, urllib.request, urllib.error
 
     OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
@@ -22,6 +22,22 @@ data:
         except urllib.error.HTTPError as e:
             try:    return json.loads(e.read()), e.code
             except: return {}, e.code
+
+    def populate_fields(idx_id, title, ts="@timestamp"):
+        import urllib.parse as _up
+        q = ("/api/index_patterns/_fields_for_wildcard?pattern=" + _up.quote(title) +
+             "&meta_fields=_source&meta_fields=_id&meta_fields=_index&meta_fields=_score")
+        fr, fs = osd("GET", q)
+        fields = fr.get("fields", []) if fs == 200 else []
+        if not fields:
+            print("  " + title + ": fields not available yet, hourly refresh job will pick it up")
+            return
+        attrs = {"title": title, "fields": json.dumps(fields)}
+        if ts:
+            attrs["timeFieldName"] = ts
+        ur, us = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
+                     {"attributes": attrs})
+        print("  " + title + ": " + str(len(fields)) + " fields populated (" + str(us) + ")")
 
     print("Waiting for Dashboards...")
     for _ in range(30):
@@ -94,6 +110,7 @@ data:
         r, s = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
                    {"attributes": {"title": pattern, "timeFieldName": ts, "fields": "[]"}})
         print("Index pattern " + pattern + ": " + str(s))
+        populate_fields(idx_id, pattern, ts)
 
     # ════════════════════════════════════════════════════════════════════════
     # DASHBOARD 1 — Falco Runtime Security

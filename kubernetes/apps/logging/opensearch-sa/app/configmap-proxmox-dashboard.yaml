@@ -4,7 +4,7 @@ kind: ConfigMap
 metadata:
   name: proxmox-dashboard-script
 data:
-  create_proxmox_dashboard.py: |
+  create_proxmox_dashboard.py: |-
     #!/usr/bin/env python3
     """
     Create Proxmox Security Dashboard in OpenSearch Dashboards.
@@ -31,6 +31,22 @@ data:
             try: return json.loads(body), e.code
             except: return {"raw": body.decode()[:200]}, e.code
 
+    def populate_fields(idx_id, title, ts="@timestamp"):
+        import urllib.parse as _up
+        q = ("/api/index_patterns/_fields_for_wildcard?pattern=" + _up.quote(title) +
+             "&meta_fields=_source&meta_fields=_id&meta_fields=_index&meta_fields=_score")
+        fr, fs = osd("GET", q)
+        fields = fr.get("fields", []) if fs == 200 else []
+        if not fields:
+            print("  " + title + ": fields not available yet, hourly refresh job will pick it up")
+            return
+        attrs = {"title": title, "fields": json.dumps(fields)}
+        if ts:
+            attrs["timeFieldName"] = ts
+        ur, us = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
+                     {"attributes": attrs})
+        print("  " + title + ": " + str(len(fields)) + " fields populated (" + str(us) + ")")
+
     print("Waiting for Dashboards...")
     for _ in range(30):
         try:
@@ -48,6 +64,7 @@ data:
         "attributes": {"title": "proxmox-*", "timeFieldName": "@timestamp", "fields": "[]"}
     })
     print(f"  {s}")
+    populate_fields(IDX, "proxmox-*")
 
     def viz(vid, title, vis_type, params, aggs, src_filter=None):
         flt = []  # No source filter needed - dedicated index

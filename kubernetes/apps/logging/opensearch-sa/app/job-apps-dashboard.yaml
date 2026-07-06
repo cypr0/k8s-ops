@@ -4,7 +4,7 @@ kind: Job
 metadata:
   name: apps-dashboard-setup
   annotations:
-    dashboard-version: "1"
+    dashboard-version: "2"
 spec:
   ttlSecondsAfterFinished: 3600
   backoffLimit: 3

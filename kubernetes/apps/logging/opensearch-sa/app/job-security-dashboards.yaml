@@ -4,7 +4,7 @@ kind: Job
 metadata:
   name: security-dashboards-setup
   annotations:
-    dashboard-version: "5"
+    dashboard-version: "6"
 spec:
   ttlSecondsAfterFinished: 3600
   backoffLimit: 3
@@ -21,7 +21,9 @@ spec:
       containers:
         - name: dashboard
           image: python:3.14-alpine
-          command: ["python3", "/scripts/create_security_dashboards.py"]
+          command:
+            - "python3"
+            - "/scripts/create_security_dashboards.py"
           env:
             - name: OSD_HOST
               value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
@@ -47,7 +49,8 @@ spec:
             runAsNonRoot: true
             runAsUser: 65534
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - "ALL"
       volumes:
         - name: scripts
           configMap:
