@@ -53,6 +53,15 @@ spec:
                     secretKeyRef:
                       name: velero-restore-test-credentials
                       key: PUSHOVER_USER
+                - name: OPENSEARCH_HOST
+                  value: "https://opensearch.logging.svc.cluster.local:9200"
+                - name: OPENSEARCH_USER
+                  value: "admin"
+                - name: OPENSEARCH_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: velero-restore-test-credentials
+                      key: OPENSEARCH_PASSWORD
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts

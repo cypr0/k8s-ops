@@ -26,6 +26,8 @@ resources:
   - ./job-apps-dashboard.yaml
   - ./configmap-appstats-dashboard.yaml
   - ./job-appstats-dashboard.yaml
+  - ./configmap-velero-dashboard.yaml
+  - ./job-velero-dashboard.yaml
   - ./configmap-refresh-fields.yaml
   - ./cronjob-refresh-fields.yaml
   - ./ciliumnetworkpolicy.yaml

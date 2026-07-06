@@ -4,7 +4,7 @@ kind: ConfigMap
 metadata:
   name: crd-exporter-script
 data:
-  export.py: |
+  export.py: |-
     #!/usr/bin/env python3
     """
     Export Trivy VulnerabilityReports and Kubescape findings to OpenSearch.
@@ -63,13 +63,18 @@ data:
             time.sleep(0.3)  # Gentle rate limiting
         return all_items
 
-    def os_bulk(index, docs):
-        """Bulk-index documents to OpenSearch."""
+    def os_bulk(index, docs, id_field=None):
+        """Bulk-index documents to OpenSearch. If id_field is set, use that
+        doc field as the document _id so re-runs update in place instead of
+        accumulating duplicates."""
         if not docs:
             return 0
         body = ""
         for doc in docs:
-            body += json.dumps({"index": {"_index": index}}) + "\n"
+            action = {"_index": index}
+            if id_field:
+                action["_id"] = doc[id_field]
+            body += json.dumps({"index": action}) + "\n"
             body += json.dumps(doc) + "\n"
         req = urllib.request.Request(
             f"{OS_HOST}/_bulk",
@@ -231,5 +236,38 @@ data:
         print(f"  Kubescape export error: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
 
+    # ── Velero Backups ───────────────────────────────────────────────────
+    # Single rolling index (not date-suffixed): each backup is indexed under
+    # its own name as _id, so re-runs update phase/errors in place instead
+    # of piling up duplicates across daily indices. History comes for free
+    # from Velero's own GFS retention (14d/90d/365d).
+    print("=== Velero Backups ===")
+    vb_docs = []
+    try:
+        for item in k8s_get_all("/apis/velero.io/v1/namespaces/velero/backups"):
+            meta   = item.get("metadata", {})
+            status = item.get("status", {})
+            labels = meta.get("labels", {})
+            progress = status.get("progress", {}) or {}
+            vb_docs.append({
+                "@timestamp":         status.get("startTimestamp", ts),
+                "name":               meta.get("name", ""),
+                "schedule":           labels.get("velero.io/schedule-name", "manual"),
+                "phase":              status.get("phase", "Unknown"),
+                "startTimestamp":     status.get("startTimestamp", ""),
+                "completionTimestamp": status.get("completionTimestamp", ""),
+                "expiration":         status.get("expiration", ""),
+                "errors":             status.get("errors", 0),
+                "warnings":           status.get("warnings", 0),
+                "itemsBackedUp":      progress.get("itemsBackedUp", 0),
+                "totalItems":         progress.get("totalItems", 0),
+                "failureReason":      status.get("failureReason", ""),
+                "source":             "velero-backup",
+            })
+        indexed = os_bulk("velero-backups", vb_docs, id_field="name")
+        print(f"  Indexed {indexed}/{len(vb_docs)} Velero backups")
+    except Exception as e:
+        print(f"  Velero backup export error: {e}", file=sys.stderr)
+
     print("=== CRD export complete ===")
-    print(f"  Trivy CVEs: {len(docs) + len(audit_docs)}, Kubescape: {len(ks_docs)}")
+    print(f"  Trivy CVEs: {len(docs) + len(audit_docs)}, Kubescape: {len(ks_docs)}, Velero backups: {len(vb_docs)}")

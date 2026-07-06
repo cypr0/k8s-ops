@@ -73,12 +73,39 @@ data:
         "ciliumnetworkpolicies.cilium.io",
     ]
 
-    SCHEDULE_NAME  = os.environ.get("SCHEDULE_NAME", "daily")
-    NAMESPACES     = [n.strip() for n in os.environ.get("NAMESPACES", "").split(",") if n.strip()]
-    PUSHOVER_TOKEN = os.environ.get("PUSHOVER_TOKEN", "")
-    PUSHOVER_USER  = os.environ.get("PUSHOVER_USER", "")
+    SCHEDULE_NAME     = os.environ.get("SCHEDULE_NAME", "daily")
+    NAMESPACES        = [n.strip() for n in os.environ.get("NAMESPACES", "").split(",") if n.strip()]
+    PUSHOVER_TOKEN    = os.environ.get("PUSHOVER_TOKEN", "")
+    PUSHOVER_USER     = os.environ.get("PUSHOVER_USER", "")
+    OPENSEARCH_HOST   = os.environ.get("OPENSEARCH_HOST", "https://opensearch.logging.svc.cluster.local:9200")
+    OPENSEARCH_USER   = os.environ.get("OPENSEARCH_USER", "admin")
+    OPENSEARCH_PASS   = os.environ.get("OPENSEARCH_PASSWORD", "")
     POLL_INTERVAL  = 15
     POLL_TIMEOUT   = 20 * 60
+
+    import base64
+    _OS_AUTH = base64.b64encode(f"{OPENSEARCH_USER}:{OPENSEARCH_PASS}".encode()).decode()
+    _OS_CTX  = ssl.create_default_context()
+    _OS_CTX.check_hostname = False
+    _OS_CTX.verify_mode    = ssl.CERT_NONE
+
+    def report_result(doc):
+        """Index this run's result so Dashboards can chart pass/fail over time."""
+        if not OPENSEARCH_PASS:
+            print("  (no OpenSearch creds — skipping result export)", file=sys.stderr)
+            return
+        body = json.dumps({"index": {"_index": "velero-restore-tests"}}) + "\n" + json.dumps(doc) + "\n"
+        req = urllib.request.Request(
+            f"{OPENSEARCH_HOST}/_bulk",
+            data=body.encode(),
+            headers={"Content-Type": "application/x-ndjson", "Authorization": f"Basic {_OS_AUTH}"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, context=_OS_CTX) as r:
+                r.read()
+        except Exception as e:
+            print(f"  ERROR indexing restore-test result: {e}", file=sys.stderr)
 
     TOKEN = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
     CA    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -149,6 +176,9 @@ data:
             print("NAMESPACES is empty — nothing to test", file=sys.stderr)
             sys.exit(1)
 
+        run_start = time.time()
+        run_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(run_start))
+
         target_ns = random.choice(NAMESPACES)
         scratch_ns = f"{target_ns}-restore-test"
         print(f"=== Selected '{target_ns}' for this run (pool: {NAMESPACES}) ===")
@@ -164,6 +194,12 @@ data:
             msg = f"No Completed backup found for schedule '{SCHEDULE_NAME}' — restore test skipped."
             print(msg, file=sys.stderr)
             notify("Velero restore test FAILED", msg, priority=1)
+            report_result({
+                "@timestamp": run_ts, "schedule": SCHEDULE_NAME, "namespace": target_ns,
+                "backup": "", "phase": "Skipped", "success": False, "errors": 0, "warnings": 0,
+                "durationSeconds": round(time.time() - run_start, 1), "detail": msg,
+                "failureReason": "no completed backup", "source": "velero-restore-test",
+            })
             sys.exit(1)
 
         backup_name = backup["metadata"]["name"]
@@ -185,6 +221,10 @@ data:
 
         success = False
         detail = ""
+        phase = "New"
+        errors = 0
+        warnings = 0
+        failure_reason = ""
         try:
             k8s("POST", "/apis/velero.io/v1/namespaces/velero/restores", restore_body)
 
@@ -228,6 +268,14 @@ data:
             success = False
         finally:
             cleanup(restore_name, [scratch_ns])
+
+        report_result({
+            "@timestamp": run_ts, "schedule": SCHEDULE_NAME, "namespace": target_ns,
+            "backup": backup_name, "phase": phase, "success": success,
+            "errors": errors, "warnings": warnings,
+            "durationSeconds": round(time.time() - run_start, 1), "detail": detail,
+            "failureReason": failure_reason, "source": "velero-restore-test",
+        })
 
         if success:
             print(f"=== Restore test PASSED ({detail}) ===")

@@ -1,0 +1,225 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: velero-dashboard-script
+data:
+  create_velero_dashboard.py: |-
+    import json, os, time, base64, urllib.request, urllib.error
+
+    OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")
+    OSD_USER = os.environ.get("OSD_USER", "admin")
+    OSD_PASS = os.environ.get("OSD_PASS", "")
+    _b64     = base64.b64encode((OSD_USER + ":" + OSD_PASS).encode()).decode()
+    HEADERS  = {"Content-Type": "application/json", "osd-xsrf": "true", "Authorization": "Basic " + _b64}
+
+    def osd(method, path, body=None):
+        data = json.dumps(body).encode() if body else None
+        req  = urllib.request.Request(OSD + path, data=data, headers=HEADERS, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read()), r.status
+        except urllib.error.HTTPError as e:
+            try:    return json.loads(e.read()), e.code
+            except: return {}, e.code
+
+    def populate_fields(idx_id, title, ts="@timestamp"):
+        import urllib.parse as _up
+        q = ("/api/index_patterns/_fields_for_wildcard?pattern=" + _up.quote(title) +
+             "&meta_fields=_source&meta_fields=_id&meta_fields=_index&meta_fields=_score")
+        fr, fs = osd("GET", q)
+        fields = fr.get("fields", []) if fs == 200 else []
+        if not fields:
+            print("  " + title + ": fields not available yet, hourly refresh job will pick it up")
+            return
+        attrs = {"title": title, "fields": json.dumps(fields)}
+        if ts:
+            attrs["timeFieldName"] = ts
+        ur, us = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
+                     {"attributes": attrs})
+        print("  " + title + ": " + str(len(fields)) + " fields populated (" + str(us) + ")")
+
+    print("Waiting for Dashboards...")
+    for _ in range(30):
+        try:
+            r, s = osd("GET", "/api/status")
+            if s == 200 and r.get("status", {}).get("overall", {}).get("state") == "green":
+                print("Ready."); break
+        except: pass
+        time.sleep(10)
+
+    METRIC_P = {
+        "addTooltip": True, "addLegend": False, "type": "gauge",
+        "gauge": {
+            "verticalSplit": False, "extendRange": True, "percentageMode": False,
+            "gaugeType": "Metric", "gaugeColorMode": "None",
+            "colorsRange": [{"from": 0, "to": 1000}], "invertColors": False,
+            "labels": {"show": True, "color": "black"},
+            "scale": {"show": False, "labels": False, "color": "#333"},
+            "type": "simple",
+            "style": {"bgFill": "#000", "bgColor": False, "labelColor": False, "subText": "", "fontSize": 60}
+        }
+    }
+    def pie_p(): return {"type":"pie","addTooltip":True,"addLegend":True,"legendPosition":"right","isDonut":True,"labels":{"show":True,"values":True,"last_level":True,"truncate":100}}
+    def hbar_p(vtitle="Count"): return {"type":"histogram","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":vtitle}}],"seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False,"truncateLegend":True,"maxLegendLines":1}
+    def line_p(): return {"type":"line","grid":{"categoryLines":False},"categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"bottom","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"filter":True,"truncate":100},"title":{}}],"valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"left","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],"seriesParams":[{"show":True,"type":"line","mode":"normal","data":{"label":"Events","id":"1"},"drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True,"interpolate":"linear","valueAxis":"ValueAxis-1"}],"addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False}
+    def c(): return [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}]
+    def t(f, sz=15): return {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":f,"size":sz,"order":"desc","orderBy":"1","otherBucket":False,"missingBucket":False}}
+    def g(f, sz=6): return {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":f,"size":sz,"order":"desc","orderBy":"1"}}
+    def dh(): return {"id":"2","enabled":True,"type":"date_histogram","schema":"segment","params":{"field":"@timestamp","useNormalizedEsInterval":True,"interval":"auto","drop_partials":False,"min_doc_count":1,"extended_bounds":{}}}
+
+    def mkv(vid, title, vis_type, params, aggs, idx, flt=None):
+        return {"type": "visualization", "id": vid, "attributes": {
+            "title": title,
+            "visState": json.dumps({"title": title, "type": vis_type, "params": params, "aggs": aggs}),
+            "uiStateJSON": "{}", "description": "",
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({
+                "index": idx,
+                "query": {"bool": {"filter": flt or [], "must": [], "must_not": [], "should": []}},
+                "filter": []})}},
+            "references": [{"id": idx, "name": "indexPatternId", "type": "index-pattern"}]}
+
+    def mkdash(did, title, desc, panels, refs):
+        p_json = []
+        for i, p in enumerate(panels):
+            p_json.append({"version":"3.6.0","gridData":{"x":p["x"],"y":p["y"],"w":p["w"],"h":p["h"],"i":str(i+1)},"panelIndex":str(i+1),"embeddableConfig":{},"panelRefName":"panel_"+str(i+1)})
+        return osd("POST", "/api/saved_objects/dashboard/" + did + "?overwrite=true", {
+            "attributes": {"title": title, "description": desc,
+                "panelsJSON": json.dumps(p_json),
+                "optionsJSON": json.dumps({"useMargins":True,"syncColors":False,"hidePanelTitles":False}),
+                "version": 1, "timeRestore": False,
+                "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query":{"match_all":{}},"filter":[]})}},
+            "references": refs})
+
+    # ════════════════════════════════════════════════════════════════════════
+    # INDEX PATTERNS — velero-backups is a rolling index keyed by backup name
+    # (updated in place by crd-to-opensearch), velero-restore-tests is an
+    # append-only log of restore-test runs (one doc per CronJob execution).
+    # ════════════════════════════════════════════════════════════════════════
+    for idx_id, pattern in [
+        ("velero-backups-idx",       "velero-backups"),
+        ("velero-restore-tests-idx", "velero-restore-tests"),
+    ]:
+        r, s = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
+                   {"attributes": {"title": pattern, "timeFieldName": "@timestamp", "fields": "[]"}})
+        print("Index pattern " + pattern + ": " + str(s))
+        populate_fields(idx_id, pattern)
+
+    BI = "velero-backups-idx"
+    RI = "velero-restore-tests-idx"
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DASHBOARD 1 — Velero: Backups
+    # ════════════════════════════════════════════════════════════════════════
+    backup_vizs = [
+        mkv("vb-v1-total",     "\U0001F4E6 Backups Tracked",   "metric", METRIC_P, c(), BI),
+        mkv("vb-v2-completed", "✅ Completed",              "metric", METRIC_P, c(), BI, [{"term": {"phase": "Completed"}}]),
+        mkv("vb-v3-failed",    "\U0001F534 Failed/PartialFail", "metric", METRIC_P, c(), BI, [{"terms": {"phase": ["Failed", "PartiallyFailed", "FailedValidation"]}}]),
+        mkv("vb-v4-warnings",  "⚠️ With Warnings",         "metric", METRIC_P, c(), BI, [{"range": {"warnings": {"gt": 0}}}]),
+
+        mkv("vb-v5-timeline", "Backups Over Time by Phase", "line", line_p(),
+            c() + [dh(), g("phase", 5)], BI),
+
+        mkv("vb-v6-schedule", "Backups by Schedule", "pie", pie_p(),
+            c() + [t("schedule", 10)], BI),
+
+        mkv("vb-v7-phase", "Backups by Phase", "pie", pie_p(),
+            c() + [t("phase", 10)], BI),
+
+        mkv("vb-v8-errors", "Top Backups by Error Count", "horizontal_bar", hbar_p("Errors"),
+            [{"id": "1", "enabled": True, "type": "max", "schema": "metric", "params": {"field": "errors"}},
+             {"id": "2", "enabled": True, "type": "terms", "schema": "segment",
+              "params": {"field": "name", "size": 15, "order": "desc", "orderBy": "1"}}],
+            BI, [{"range": {"errors": {"gt": 0}}}]),
+    ]
+
+    print("\nCreating Backup visualizations...")
+    for v in backup_vizs:
+        r, s = osd("POST", "/api/saved_objects/" + v["type"] + "/" + v["id"] + "?overwrite=true",
+                   {"attributes": v["attributes"], "references": v.get("references", [])})
+        ok = "OK" if s < 300 else ("ERR " + str(s) + ": " + str(r.get("message","?"))[:60])
+        print("  " + v["attributes"]["title"] + ": " + ok)
+
+    backup_panels = [
+        {"id":"vb-v1-total",     "x":0,  "y":0,  "w":12, "h":9},
+        {"id":"vb-v2-completed", "x":12, "y":0,  "w":12, "h":9},
+        {"id":"vb-v3-failed",    "x":24, "y":0,  "w":12, "h":9},
+        {"id":"vb-v4-warnings",  "x":36, "y":0,  "w":12, "h":9},
+        {"id":"vb-v5-timeline",  "x":0,  "y":9,  "w":48, "h":12},
+        {"id":"vb-v6-schedule",  "x":0,  "y":21, "w":16, "h":13},
+        {"id":"vb-v7-phase",     "x":16, "y":21, "w":16, "h":13},
+        {"id":"vb-v8-errors",    "x":32, "y":21, "w":16, "h":13},
+    ]
+    p_json, refs = [], []
+    for i, p in enumerate(backup_panels):
+        pid = "panel_" + str(i+1)
+        p_json.append({"version":"3.6.0","gridData":{"x":p["x"],"y":p["y"],"w":p["w"],"h":p["h"],"i":str(i+1)},"panelIndex":str(i+1),"embeddableConfig":{},"panelRefName":pid})
+        refs.append({"name":pid,"type":"visualization","id":p["id"]})
+
+    r, s = osd("POST", "/api/saved_objects/dashboard/velero-backups?overwrite=true", {
+        "attributes": {
+            "title": "Velero — Backups",
+            "description": "Backup completion status, errors and volume across daily/weekly/monthly schedules.",
+            "panelsJSON": json.dumps(p_json),
+            "optionsJSON": json.dumps({"useMargins":True,"syncColors":False,"hidePanelTitles":False}),
+            "version": 1, "timeRestore": False,
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query":{"match_all":{}},"filter":[]})}
+        },
+        "references": refs
+    })
+    print("  Dashboard Backups: " + str(s))
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DASHBOARD 2 — Velero: Restore Tests
+    # ════════════════════════════════════════════════════════════════════════
+    restore_vizs = [
+        mkv("vr-v1-total",   "\U0001F9EA Restore Tests Run", "metric", METRIC_P, c(), RI),
+        mkv("vr-v2-passed",  "✅ Passed",                 "metric", METRIC_P, c(), RI, [{"term": {"success": True}}]),
+        mkv("vr-v3-failed",  "\U0001F534 Failed",             "metric", METRIC_P, c(), RI, [{"term": {"success": False}}]),
+        mkv("vr-v4-avgdur",  "⏱️ Avg Duration (s)",      "metric", METRIC_P,
+            [{"id": "1", "enabled": True, "type": "avg", "schema": "metric", "params": {"field": "durationSeconds"}}], RI),
+
+        mkv("vr-v5-timeline", "Pass/Fail Timeline", "line", line_p(),
+            c() + [dh(), g("success", 2)], RI),
+
+        mkv("vr-v6-by-ns", "Test Runs by Namespace", "pie", pie_p(),
+            c() + [t("namespace", 10)], RI),
+
+        mkv("vr-v7-failures-ns", "Failures by Namespace", "horizontal_bar", hbar_p("Failures"),
+            c() + [t("namespace", 15)], RI, [{"term": {"success": False}}]),
+    ]
+
+    print("\nCreating Restore Test visualizations...")
+    for v in restore_vizs:
+        r, s = osd("POST", "/api/saved_objects/" + v["type"] + "/" + v["id"] + "?overwrite=true",
+                   {"attributes": v["attributes"], "references": v.get("references", [])})
+        ok = "OK" if s < 300 else ("ERR " + str(s) + ": " + str(r.get("message","?"))[:60])
+        print("  " + v["attributes"]["title"] + ": " + ok)
+
+    restore_panels = [
+        {"id":"vr-v1-total",       "x":0,  "y":0,  "w":12, "h":9},
+        {"id":"vr-v2-passed",      "x":12, "y":0,  "w":12, "h":9},
+        {"id":"vr-v3-failed",      "x":24, "y":0,  "w":12, "h":9},
+        {"id":"vr-v4-avgdur",      "x":36, "y":0,  "w":12, "h":9},
+        {"id":"vr-v5-timeline",    "x":0,  "y":9,  "w":48, "h":12},
+        {"id":"vr-v6-by-ns",       "x":0,  "y":21, "w":24, "h":13},
+        {"id":"vr-v7-failures-ns", "x":24, "y":21, "w":24, "h":13},
+    ]
+    p_json, refs = [], []
+    for i, p in enumerate(restore_panels):
+        pid = "panel_" + str(i+1)
+        p_json.append({"version":"3.6.0","gridData":{"x":p["x"],"y":p["y"],"w":p["w"],"h":p["h"],"i":str(i+1)},"panelIndex":str(i+1),"embeddableConfig":{},"panelRefName":pid})
+        refs.append({"name":pid,"type":"visualization","id":p["id"]})
+
+    r, s = osd("POST", "/api/saved_objects/dashboard/velero-restore-tests?overwrite=true", {
+        "attributes": {
+            "title": "Velero — Restore Tests",
+            "description": "Daily automated restore-test results: pass/fail rate, duration, failures by namespace.",
+            "panelsJSON": json.dumps(p_json),
+            "optionsJSON": json.dumps({"useMargins":True,"syncColors":False,"hidePanelTitles":False}),
+            "version": 1, "timeRestore": False,
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query":{"match_all":{}},"filter":[]})}
+        },
+        "references": refs
+    })
+    print("  Dashboard Restore Tests: " + str(s))
