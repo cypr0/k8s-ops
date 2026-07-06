@@ -1,0 +1,89 @@
+---
+# CIS 5.1.2, 5.1.3, 5.1.4, 5.1.8, 5.1.9, 5.1.10, 5.1.11, 5.1.12, 5.1.13.
+# Audit-only: flags new/changed Role and ClusterRole objects that grant
+# wildcard access, or specific sensitive resource/verb combinations the
+# benchmark calls out individually. Heuristic per-rule check (each condition
+# is evaluated against a single `rules[]` entry, not across the whole
+# Role/ClusterRole), so a legitimate role split across multiple narrow rules
+# won't false-positive just because the role as a whole touches several
+# sensitive areas.
+#
+# 5.1.7 (avoid system:masters) is intentionally not covered here — that
+# group is only ever bound via the Talos break-glass admin client
+# certificate, not a Kubernetes object Kyverno can see. Already live-audited,
+# see project memory project_cis_benchmark_review.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-rbac-least-privilege
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: no-wildcards
+      match:
+        any:
+          - resources:
+              kinds:
+                - Role
+                - ClusterRole
+      validate:
+        message: "CIS 5.1.3: Role/ClusterRole should not use wildcards in resources, verbs or apiGroups."
+        deny:
+          conditions:
+            all:
+              - key: "{{ length(request.object.rules[?contains(resources || `[]`, '*') || contains(verbs || `[]`, '*') || contains(apiGroups || `[]`, '*')]) }}"
+                operator: GreaterThan
+                value: 0
+    - name: no-bind-impersonate-escalate
+      match:
+        any:
+          - resources:
+              kinds:
+                - Role
+                - ClusterRole
+      validate:
+        message: "CIS 5.1.8: Role/ClusterRole should not grant bind, impersonate or escalate verbs."
+        deny:
+          conditions:
+            all:
+              - key: "{{ length(request.object.rules[?contains(verbs || `[]`, 'bind') || contains(verbs || `[]`, 'impersonate') || contains(verbs || `[]`, 'escalate')]) }}"
+                operator: GreaterThan
+                value: 0
+    - name: no-sensitive-resource-access
+      match:
+        any:
+          - resources:
+              kinds:
+                - Role
+                - ClusterRole
+      validate:
+        message: >-
+          CIS 5.1.2/5.1.4/5.1.9/5.1.10/5.1.11/5.1.12/5.1.13: Role/ClusterRole
+          grants access to a sensitive resource/verb combination (secrets
+          read, pod/persistentvolume create, nodes/proxy, CSR approval,
+          webhook config mutation, or serviceaccount token creation).
+        deny:
+          conditions:
+            any:
+              - key: "{{ length(request.object.rules[?contains(resources || `[]`, 'secrets') && (contains(verbs || `[]`, 'get') || contains(verbs || `[]`, 'list') || contains(verbs || `[]`, 'watch'))]) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.rules[?contains(resources || `[]`, 'pods') && contains(verbs || `[]`, 'create')]) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.rules[?contains(resources || `[]`, 'persistentvolumes') && contains(verbs || `[]`, 'create')]) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.rules[?contains(resources || `[]`, 'nodes/proxy')]) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.rules[?contains(resources || `[]`, 'certificatesigningrequests/approval') && contains(verbs || `[]`, 'update')]) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.rules[?(contains(resources || `[]`, 'validatingwebhookconfigurations') || contains(resources || `[]`, 'mutatingwebhookconfigurations')) && (contains(verbs || `[]`, 'create') || contains(verbs || `[]`, 'update') || contains(verbs || `[]`, 'patch') || contains(verbs || `[]`, 'delete'))]) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.rules[?contains(resources || `[]`, 'serviceaccounts/token') && contains(verbs || `[]`, 'create')]) }}"
+                operator: GreaterThan
+                value: 0

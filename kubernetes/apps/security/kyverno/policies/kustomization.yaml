@@ -6,3 +6,5 @@ resources:
   - ./clusterpolicy-pod-security.yaml
   - ./clusterpolicy-seccomp-default.yaml
   - ./clusterpolicy-rbac-cluster-admin.yaml
+  - ./clusterpolicy-rbac-least-privilege.yaml
+  - ./clusterpolicy-default-serviceaccount.yaml
