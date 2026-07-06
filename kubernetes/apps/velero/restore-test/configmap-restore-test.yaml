@@ -81,7 +81,11 @@ data:
     OPENSEARCH_USER   = os.environ.get("OPENSEARCH_USER", "admin")
     OPENSEARCH_PASS   = os.environ.get("OPENSEARCH_PASSWORD", "")
     POLL_INTERVAL  = 15
-    POLL_TIMEOUT   = 20 * 60
+    # Some volumes (e.g. paperless-data, 200Gi over NFS/kopia) take well over
+    # 20 minutes to restore; 60 minutes gives real large-volume restores room
+    # to finish instead of the test being marked FAILED on a timeout that has
+    # nothing to do with an actual restore problem.
+    POLL_TIMEOUT   = 60 * 60
 
     import base64
     _OS_AUTH = base64.b64encode(f"{OPENSEARCH_USER}:{OPENSEARCH_PASS}".encode()).decode()

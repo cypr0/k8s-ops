@@ -13,7 +13,10 @@ spec:
     spec:
       backoffLimit: 0
       ttlSecondsAfterFinished: 3600
-      activeDeadlineSeconds: 1800
+      # Must exceed the script's own POLL_TIMEOUT (60 min) plus headroom for
+      # setup/cleanup, or Kubernetes kills the pod before the script's own
+      # timeout logic can mark the run as failed and report why.
+      activeDeadlineSeconds: 4200
       template:
         metadata:
           # Distinct from Velero's own internally-spawned Jobs (repo

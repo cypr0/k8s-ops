@@ -113,23 +113,23 @@ data:
     # ════════════════════════════════════════════════════════════════════════
     backup_vizs = [
         mkv("vb-v1-total",     "\U0001F4E6 Backups Tracked",   "metric", METRIC_P, c(), BI),
-        mkv("vb-v2-completed", "✅ Completed",              "metric", METRIC_P, c(), BI, [{"term": {"phase": "Completed"}}]),
-        mkv("vb-v3-failed",    "\U0001F534 Failed/PartialFail", "metric", METRIC_P, c(), BI, [{"terms": {"phase": ["Failed", "PartiallyFailed", "FailedValidation"]}}]),
+        mkv("vb-v2-completed", "✅ Completed",              "metric", METRIC_P, c(), BI, [{"term": {"phase.keyword": "Completed"}}]),
+        mkv("vb-v3-failed",    "\U0001F534 Failed/PartialFail", "metric", METRIC_P, c(), BI, [{"terms": {"phase.keyword": ["Failed", "PartiallyFailed", "FailedValidation"]}}]),
         mkv("vb-v4-warnings",  "⚠️ With Warnings",         "metric", METRIC_P, c(), BI, [{"range": {"warnings": {"gt": 0}}}]),
 
         mkv("vb-v5-timeline", "Backups Over Time by Phase", "line", line_p(),
-            c() + [dh(), g("phase", 5)], BI),
+            c() + [dh(), g("phase.keyword", 5)], BI),
 
         mkv("vb-v6-schedule", "Backups by Schedule", "pie", pie_p(),
-            c() + [t("schedule", 10)], BI),
+            c() + [t("schedule.keyword", 10)], BI),
 
         mkv("vb-v7-phase", "Backups by Phase", "pie", pie_p(),
-            c() + [t("phase", 10)], BI),
+            c() + [t("phase.keyword", 10)], BI),
 
         mkv("vb-v8-errors", "Top Backups by Error Count", "horizontal_bar", hbar_p("Errors"),
             [{"id": "1", "enabled": True, "type": "max", "schema": "metric", "params": {"field": "errors"}},
              {"id": "2", "enabled": True, "type": "terms", "schema": "segment",
-              "params": {"field": "name", "size": 15, "order": "desc", "orderBy": "1"}}],
+              "params": {"field": "name.keyword", "size": 15, "order": "desc", "orderBy": "1"}}],
             BI, [{"range": {"errors": {"gt": 0}}}]),
     ]
 
@@ -183,10 +183,10 @@ data:
             c() + [dh(), g("success", 2)], RI),
 
         mkv("vr-v6-by-ns", "Test Runs by Namespace", "pie", pie_p(),
-            c() + [t("namespace", 10)], RI),
+            c() + [t("namespace.keyword", 10)], RI),
 
         mkv("vr-v7-failures-ns", "Failures by Namespace", "horizontal_bar", hbar_p("Failures"),
-            c() + [t("namespace", 15)], RI, [{"term": {"success": False}}]),
+            c() + [t("namespace.keyword", 15)], RI, [{"term": {"success": False}}]),
     ]
 
     print("\nCreating Restore Test visualizations...")
