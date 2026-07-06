@@ -1,0 +1,34 @@
+---
+# CIS 5.6.2 — Apply Security Context to your Pods and Containers.
+# Largely already covered in effect by pod-security-baseline/restricted
+# (clusterpolicy-pod-security.yaml), which check specific securityContext
+# fields (privileged, capabilities, allowPrivilegeEscalation, etc.). This
+# policy is the direct, literal 5.6.2 check — flags any container with no
+# securityContext block at all (pod- or container-level), so it maps
+# 1:1 to the benchmark item for reporting purposes even though the PSS
+# policies already catch the practical risk.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-security-context
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: container-security-context-present
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "CIS 5.6.2: container has no securityContext defined (neither pod-level nor container-level)."
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.securityContext || `{}` | length(@) }}"
+                operator: Equals
+                value: 0
+              - key: "{{ length(request.object.spec.containers[?!securityContext]) }}"
+                operator: GreaterThan
+                value: 0

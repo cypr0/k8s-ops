@@ -1,0 +1,33 @@
+---
+# CIS 5.6.3/5.6.4 — The default namespace should not be used. Already
+# proactively fixed once (the "echo" app moved out of targetNamespace:
+# default on 2026-07-04, see project memory project_cis_benchmark_review)
+# — this policy exists so a future regression gets caught by an audit
+# report instead of relying on manual review again.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-default-namespace
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: no-workloads-in-default
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - Job
+                - CronJob
+                - Service
+                - ConfigMap
+                - Secret
+              namespaces:
+                - default
+      validate:
+        message: "CIS 5.6.3: the default namespace should not be used for application resources."
+        deny: {}

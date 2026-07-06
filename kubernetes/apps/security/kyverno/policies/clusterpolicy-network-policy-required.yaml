@@ -1,0 +1,41 @@
+---
+# CIS 5.3.2 — Ensure that all Namespaces have Network Policies defined.
+# Audit-only: on Pod creation, queries whether the Pod's namespace has any
+# CiliumNetworkPolicy (this cluster's CNI policy CRD, not the plain
+# NetworkPolicy kind) and flags it if not. Repo convention is one
+# CiliumNetworkPolicy per app-group namespace already (~40 in the repo as of
+# 2026-07), so this should mostly confirm coverage rather than find gaps —
+# kept as a real policy (not just a one-off audit) so future new namespaces
+# get caught automatically.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-network-policy
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: namespace-has-cilium-network-policy
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+      context:
+        - name: cnpcount
+          apiCall:
+            urlPath: "/apis/cilium.io/v2/namespaces/{{ request.namespace }}/ciliumnetworkpolicies"
+            jmesPath: "items[] | length(@)"
+      validate:
+        message: "CIS 5.3.2: namespace {{ request.namespace }} has no CiliumNetworkPolicy defined."
+        deny:
+          conditions:
+            all:
+              - key: "{{ cnpcount }}"
+                operator: Equals
+                value: 0

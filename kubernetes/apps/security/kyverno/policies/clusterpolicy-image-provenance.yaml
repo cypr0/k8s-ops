@@ -1,0 +1,44 @@
+---
+# CIS 5.5.1 — Configure Image Provenance using ImagePolicyWebhook admission
+# controller (or equivalent). Talos doesn't expose ImagePolicyWebhook
+# config, so this uses Kyverno as the substitute admission gate: audits any
+# container image pulled from a registry outside a known allow-list, as a
+# first step before real signature verification.
+#
+# Full image signing (Kyverno verifyImages + cosign) is a bigger follow-on
+# item requiring a signing/attestation pipeline — not in scope here, see
+# project memory project_cis_benchmark_review item 11-15.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: allowed-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      validate:
+        message: "CIS 5.5.1: container image is pulled from a registry outside the allow-list (implicit Docker Hub, ghcr.io, quay.io, registry.k8s.io, gcr.io, lscr.io)."
+        # Heuristic: an image with no "/" (e.g. "nginx:1.25") or a single
+        # "/" whose first segment has no "." or ":" (e.g. "bitnami/postgresql")
+        # is an implicit Docker Hub reference — allowed by default. Anything
+        # else must start with one of the explicit allow-listed registries.
+        foreach:
+          - list: "request.object.spec.containers[]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ contains(element.image, '/') }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ contains(split(element.image, '/')[0], '.') || contains(split(element.image, '/')[0], ':') }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ starts_with(element.image, 'ghcr.io/') || starts_with(element.image, 'quay.io/') || starts_with(element.image, 'registry.k8s.io/') || starts_with(element.image, 'gcr.io/') || starts_with(element.image, 'lscr.io/') || starts_with(element.image, 'docker.io/') }}"
+                    operator: Equals
+                    value: false
