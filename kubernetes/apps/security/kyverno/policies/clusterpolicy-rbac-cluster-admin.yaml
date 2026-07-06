@@ -1,0 +1,40 @@
+---
+# CIS 5.1.1 — Ensure that the cluster-admin role is only used where required.
+# Audit-only: flags any new ClusterRoleBinding to cluster-admin whose subject
+# isn't already known-good, without blocking anything yet.
+#
+# Allow-list verified via live RBAC audit (2026-07-04, see project memory
+# project_cis_benchmark_review): the Talos break-glass admin cert
+# (system:masters, not a real Subject Kyverno can match) plus the three Flux
+# controller ServiceAccounts, which legitimately need cluster-admin to
+# reconcile arbitrary cluster-scoped resources across all app-groups.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-cluster-admin-binding
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: cluster-admin-subject-allowlist
+      match:
+        any:
+          - resources:
+              kinds:
+                - ClusterRoleBinding
+      preconditions:
+        all:
+          - key: "{{ request.object.roleRef.name }}"
+            operator: Equals
+            value: cluster-admin
+      validate:
+        message: >-
+          ClusterRoleBinding to cluster-admin is restricted to the Flux
+          controller ServiceAccounts (CIS 5.1.1). If this is intentional,
+          confirm with the cluster owner before merging.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.subjects[?!(kind=='ServiceAccount' && contains(['kustomize-controller','helm-controller','flux-operator'], name))] || `[]` | length(@) }}"
+                operator: GreaterThan
+                value: 0

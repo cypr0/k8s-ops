@@ -5,3 +5,4 @@ kind: Kustomization
 resources:
   - ./clusterpolicy-pod-security.yaml
   - ./clusterpolicy-seccomp-default.yaml
+  - ./clusterpolicy-rbac-cluster-admin.yaml
