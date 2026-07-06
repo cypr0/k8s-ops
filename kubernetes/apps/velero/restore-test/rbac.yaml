@@ -27,6 +27,15 @@ rules:
       - "list"
       - "create"
       - "delete"
+  # Persists the shuffled without-replacement namespace rotation across runs.
+  - apiGroups:
+      - ""
+    resources:
+      - "configmaps"
+    verbs:
+      - "get"
+      - "create"
+      - "update"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

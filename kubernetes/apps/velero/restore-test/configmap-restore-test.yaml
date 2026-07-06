@@ -9,14 +9,23 @@ data:
     """
     Automated Velero restore test.
 
-    Picks ONE random namespace from NAMESPACES per run (not all of them —
-    restoring several large volumes at once made them contend for the same
-    node-agent's single-restore-per-node slot and stall), takes the most
-    recent Completed backup from a given Schedule, restores just that
-    namespace into a scratch "<namespace>-restore-test" namespace, checks
-    basic pod health, alerts via Pushover on any failure, and always cleans
-    up afterwards regardless of outcome. Run periodically, this samples every
-    app in rotation without the cost/risk of a full simultaneous restore.
+    Picks ONE namespace from NAMESPACES per run (not all of them — restoring
+    several large volumes at once made them contend for the same node-agent's
+    single-restore-per-node slot and stall). Selection is a shuffled
+    without-replacement rotation persisted in the velero-restore-test-state
+    ConfigMap: every namespace gets tested once before any repeats (so a full
+    year of daily runs guarantees full coverage instead of leaving it to
+    chance), while the order within each cycle is still randomized.
+
+    Takes the most recent Completed backup from a given Schedule, restores
+    the chosen namespace into a scratch "<namespace>-restore-test" namespace,
+    checks basic pod health, alerts via Pushover on any failure, and always
+    cleans up afterwards regardless of outcome. There is no self-imposed
+    timeout on waiting for the restore — some volumes genuinely take hours —
+    the CronJob's activeDeadlineSeconds is the only backstop, and it exists
+    purely to keep a truly wedged restore from blocking every future daily
+    run (concurrencyPolicy: Forbid), not to mark slow-but-healthy restores
+    as failed.
     """
     import json
     import os
@@ -81,11 +90,7 @@ data:
     OPENSEARCH_USER   = os.environ.get("OPENSEARCH_USER", "admin")
     OPENSEARCH_PASS   = os.environ.get("OPENSEARCH_PASSWORD", "")
     POLL_INTERVAL  = 15
-    # Some volumes (e.g. paperless-data, 200Gi over NFS/kopia) take well over
-    # 20 minutes to restore; 60 minutes gives real large-volume restores room
-    # to finish instead of the test being marked FAILED on a timeout that has
-    # nothing to do with an actual restore problem.
-    POLL_TIMEOUT   = 60 * 60
+    STATE_CONFIGMAP = "velero-restore-test-state"
 
     import base64
     _OS_AUTH = base64.b64encode(f"{OPENSEARCH_USER}:{OPENSEARCH_PASS}".encode()).decode()
@@ -165,6 +170,31 @@ data:
         candidates.sort(key=lambda b: b["status"].get("startTimestamp", ""), reverse=True)
         return candidates[0]
 
+    def pick_namespace():
+        """Shuffled without-replacement rotation: every namespace in NAMESPACES
+        gets tested before any repeats, order randomized per cycle. State
+        persists in a ConfigMap so it survives across CronJob runs."""
+        cm = k8s("GET", f"/api/v1/namespaces/velero/configmaps/{STATE_CONFIGMAP}")
+        remaining = []
+        if cm:
+            remaining = [n for n in cm.get("data", {}).get("remaining", "").split(",") if n.strip()]
+        remaining = [n for n in remaining if n in NAMESPACES]  # drop stale entries
+        if not remaining:
+            remaining = NAMESPACES[:]
+            random.shuffle(remaining)
+            print(f"=== Starting new rotation cycle: {remaining} ===")
+        target = remaining.pop(0)
+        body = {
+            "apiVersion": "v1", "kind": "ConfigMap",
+            "metadata": {"name": STATE_CONFIGMAP, "namespace": "velero"},
+            "data": {"remaining": ",".join(remaining)},
+        }
+        if cm is None:
+            k8s("POST", "/api/v1/namespaces/velero/configmaps", body)
+        else:
+            k8s("PUT", f"/api/v1/namespaces/velero/configmaps/{STATE_CONFIGMAP}", body)
+        return target
+
     def cleanup(restore_name, scratch_namespaces):
         print(f"=== Cleanup: restore={restore_name}, namespaces={scratch_namespaces} ===")
         if restore_name:
@@ -183,7 +213,7 @@ data:
         run_start = time.time()
         run_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(run_start))
 
-        target_ns = random.choice(NAMESPACES)
+        target_ns = pick_namespace()
         scratch_ns = f"{target_ns}-restore-test"
         print(f"=== Selected '{target_ns}' for this run (pool: {NAMESPACES}) ===")
 
@@ -232,11 +262,10 @@ data:
         try:
             k8s("POST", "/apis/velero.io/v1/namespaces/velero/restores", restore_body)
 
-            print("=== Waiting for restore to finish ===")
-            deadline = time.time() + POLL_TIMEOUT
+            print("=== Waiting for restore to finish (no self-imposed timeout) ===")
             phase = "New"
             restore = None
-            while time.time() < deadline:
+            while True:
                 restore = k8s("GET", f"/apis/velero.io/v1/namespaces/velero/restores/{restore_name}")
                 phase = (restore or {}).get("status", {}).get("phase", "New")
                 print(f"  phase={phase}")
