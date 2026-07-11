@@ -54,3 +54,12 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # Alpine package mirror (job.yaml's setup container runs `apk add curl`
+    # before the actual setup.sh script) — latent gap, only surfaced once
+    # this Job needed to actually rerun.
+    - toFQDNs:
+        - matchName: "dl-cdn.alpinelinux.org"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
