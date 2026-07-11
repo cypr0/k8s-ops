@@ -1,0 +1,22 @@
+---
+# Grants Kyverno's controllers read access to CiliumNetworkPolicies so the
+# `require-network-policy` ClusterPolicy's context.apiCall can resolve (it was
+# erroring with "permission denied" on /apis/cilium.io/... at both admission
+# and background/report scan time). Aggregated into all three controller roles
+# via Kyverno's documented aggregate-to-* labels.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno:view-ciliumnetworkpolicies
+  labels:
+    rbac.kyverno.io/aggregate-to-admission-controller: "true"
+    rbac.kyverno.io/aggregate-to-background-controller: "true"
+    rbac.kyverno.io/aggregate-to-reports-controller: "true"
+rules:
+  - apiGroups:
+      - cilium.io
+    resources:
+      - ciliumnetworkpolicies
+    verbs:
+      - get
+      - list
