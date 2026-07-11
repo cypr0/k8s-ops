@@ -160,6 +160,21 @@ data:
     print("=== Kubescape WorkloadConfigurationScans ===")
     ks_index = f"kubescape-{TODAY}"
     ks_docs  = []
+    # Control exceptions — CIS host/control-plane controls that Kubescape's
+    # host-scanner reports as failing but were LIVE-VERIFIED compliant on Talos
+    # (2026-07-11, via talosctl). Talos's host-scanner support is imperfect: it
+    # can't read Talos's actual file ownership, so it false-flags these. Skipped
+    # here so the dashboards + the "Kubescape Critical CIS" alert monitor reflect
+    # real deviations only. See project_cis_talos_benchmark memory for the audit.
+    KUBESCAPE_CONTROL_EXCEPTIONS = {
+        "C-0167": "CIS-4.1.6 kubelet.conf ownership — verified root:root (0/0, -rw-------)",
+        "C-0169": "CIS-4.1.8 client-CA ownership — verified root:root (pki/ca.crt 0/0)",
+        "C-0171": "CIS-4.1.10 kubelet config.yaml ownership — verified root:root (0/0)",
+        "C-0110": "CIS-1.1.19 PKI dir ownership — verified root:root (0/0, drwx------)",
+        "C-0101": "CIS-1.1.10 CNI file ownership — verified root:root (0/0, -rw-------)",
+        "C-0183": "CIS-4.2.11 RotateKubeletServerCertificate — Talos manages the "
+                  "kubelet serving cert itself; rotateCertificates:true is set",
+    }
     try:
         import time as _time
         token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
@@ -192,6 +207,8 @@ data:
                 item = stub  # fall back to stub (no controls)
             controls = item.get("spec", {}).get("controls", {}) or {}
             for cid, ctrl in controls.items():
+                if cid in KUBESCAPE_CONTROL_EXCEPTIONS:
+                    continue  # verified-compliant on Talos — see exception list above
                 st = ctrl.get("status", {})
                 if not isinstance(st, dict) or st.get("status") != "failed":
                     continue
