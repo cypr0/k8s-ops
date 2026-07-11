@@ -1,16 +1,16 @@
 ---
 version: 1
 metadata:
-  name: OpenClaw Forward Auth
+  name: Computer Forward Auth
   labels:
-    app: openclaw
+    app: computer
 
 entries:
   # ── Proxy Provider (forward-auth for a single application) ────────────
   - model: authentik_providers_proxy.proxyprovider
-    id: openclaw-proxy-provider
+    id: computer-proxy-provider
     identifiers:
-      name: openclaw-proxy
+      name: computer-proxy
     attrs:
       authentication_flow: !Find
         - authentik_flows.flow
@@ -25,7 +25,7 @@ entries:
         - - slug
           - default-provider-invalidation-flow
       mode: forward_single
-      external_host: https://claw.${SECRET_DOMAIN}
+      external_host: https://computer.${SECRET_DOMAIN}
       access_token_validity: hours=24
       property_mappings:
         - !Find
@@ -44,17 +44,31 @@ entries:
   -
 
     model: authentik_core.application
-    id: openclaw-app
+    id: computer-app
     identifiers:
-      slug: openclaw
+      slug: computer
     attrs:
-      name: OpenClaw
+      name: Computer
       group: Productivity
-      provider: !KeyOf openclaw-proxy-provider
-      meta_launch_url: https://claw.${SECRET_DOMAIN}
-      meta_icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/openclaw.png
+      provider: !KeyOf computer-proxy-provider
+      meta_launch_url: https://computer.${SECRET_DOMAIN}
       policy_engine_mode: all
-      # NOTE: the embedded-outpost provider assignment lives in
-      # 09-computer-proxy.yaml, which owns the FULL forward-auth provider list
-      # (openclaw + computer). The outpost's `providers` field is full-replace, so
-      # only one blueprint may set it — see the comment there.
+
+  # ── Embedded outpost: owns the FULL forward-auth provider list ────────
+  # The embedded outpost's `providers` is a full-replace field, so exactly one
+  # blueprint may set it — otherwise two blueprints would fight and each
+  # reconcile would drop the other app's provider. This blueprint is that
+  # single owner and lists every forward-auth app: openclaw (defined in
+  # 07-openclaw-proxy.yaml, referenced via !Find) + computer (this file).
+  # When adding another forward-auth app, add its provider to THIS list.
+  - model: authentik_outposts.outpost
+    id: embedded-outpost
+    identifiers:
+      name: authentik Embedded Outpost
+    attrs:
+      providers:
+        - !Find
+          - authentik_providers_proxy.proxyprovider
+          - - name
+            - openclaw-proxy
+        - !KeyOf computer-proxy-provider

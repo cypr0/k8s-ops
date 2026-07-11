@@ -1,0 +1,49 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: computer
+  namespace: open-webui
+  labels:
+    app.kubernetes.io/name: computer
+    app.kubernetes.io/instance: computer
+spec:
+  hostnames:
+    - computer.${SECRET_DOMAIN}
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    # Authentik embedded-outpost callback + auth endpoints. Must bypass the
+    # forward-auth SecurityPolicy itself or the handshake would loop. Routed to
+    # authentik-server in the security namespace (see ReferenceGrant there).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /outpost.goauthentik.io
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: authentik-server
+          namespace: security
+          port: 80
+          weight: 1
+    # Computer UI + gateway API (gated by the forward-auth SecurityPolicy).
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      # Long timeouts: agent turns and streaming model responses run for minutes.
+      timeouts:
+        request: "15m"
+        backendRequest: "15m"
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: computer
+          namespace: open-webui
+          port: 8000
+          weight: 1

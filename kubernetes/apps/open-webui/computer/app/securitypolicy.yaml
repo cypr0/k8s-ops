@@ -1,0 +1,39 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/gateway.envoyproxy.io/securitypolicy_v1alpha1.json
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: computer-forward-auth
+  namespace: open-webui
+spec:
+  # Gate the Computer HTTPRoute with Authentik's embedded-outpost forward-auth,
+  # layered on top of Computer's own password auth (defence in depth for an
+  # SSH-equivalent surface). Note: the Open WebUI backend, if wired to Computer's
+  # gateway API, reaches it via the in-cluster Service (ClusterIP), bypassing
+  # this gate entirely — so no /v1 carve-out is needed here.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: computer
+  extAuth:
+    failOpen: false
+    headersToExtAuth:
+      - cookie
+      - x-forwarded-for
+      - x-forwarded-host
+      - x-forwarded-proto
+    http:
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: authentik-server
+          namespace: security
+          port: 80
+      path: /outpost.goauthentik.io/auth/envoy
+      headersToBackend:
+        - set-cookie
+        - x-authentik-username
+        - x-authentik-email
+        - x-authentik-name
+        - x-authentik-uid
+        - x-authentik-groups

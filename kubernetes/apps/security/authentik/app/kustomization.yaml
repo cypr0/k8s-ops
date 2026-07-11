@@ -17,6 +17,7 @@ resources:
   - ./httproute.yaml
   - ./ciliumnetworkpolicy.yaml
   - ./referencegrant-openclaw.yaml
+  - ./referencegrant-computer.yaml
 
 configMapGenerator:
   - name: authentik-blueprints
@@ -29,5 +30,6 @@ configMapGenerator:
       - blueprints/06-nextcloud-oidc.yaml
       - blueprints/07-openclaw-proxy.yaml
       - blueprints/08-kubernetes-oidc.yaml
+      - blueprints/09-computer-proxy.yaml
     options:
       disableNameSuffixHash: true

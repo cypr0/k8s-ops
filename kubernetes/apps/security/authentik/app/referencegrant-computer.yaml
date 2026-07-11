@@ -1,0 +1,21 @@
+---
+# Allows the Computer HTTPRoute and forward-auth SecurityPolicy (both in the
+# open-webui namespace) to reference the authentik-server Service here in the
+# security namespace for Authentik embedded-outpost forward-auth.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: computer-to-authentik-server
+  namespace: security
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: open-webui
+    - group: gateway.envoyproxy.io
+      kind: SecurityPolicy
+      namespace: open-webui
+  to:
+    - group: ""
+      kind: Service
+      name: authentik-server
