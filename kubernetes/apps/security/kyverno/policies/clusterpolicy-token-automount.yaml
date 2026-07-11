@@ -1,0 +1,51 @@
+---
+# CIS 5.1.6 — Ensure that Service Account Tokens are only mounted where
+# necessary (Kubescape C-0190). Broader than restrict-default-serviceaccount
+# (which is CIS 5.1.5, default-SA usage): this flags ANY Pod that leaves the
+# SA token automounted, regardless of which ServiceAccount it uses. A pod that
+# never calls the Kubernetes API should set automountServiceAccountToken:false.
+#
+# Audit-only and deliberately broad — Kyverno can't know which workloads
+# actually need API access, so this is visibility ("who still mounts a token")
+# rather than an enforceable rule. Checks the pod-level field only; a token
+# disabled at the ServiceAccount level but not the pod will still be flagged
+# (set it explicitly on the pod to clear).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-token-automount
+  annotations:
+    # Evaluate real Pods only — avoids autogen JMESPath errors on the absent
+    # nested automountServiceAccountToken field (same gotcha as
+    # restrict-default-serviceaccount).
+    pod-policies.kyverno.io/autogen-controllers: none
+spec:
+  background: true
+  validationFailureAction: Audit
+  rules:
+    - name: token-automount-disabled
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - falco
+                - kubescape
+                - monitoring
+                - logging
+      validate:
+        message: >-
+          CIS 5.1.6: Pod leaves the ServiceAccount token automounted. If it
+          doesn't call the Kubernetes API, set
+          automountServiceAccountToken: false on the pod spec.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.automountServiceAccountToken || `true` }}"
+                operator: NotEquals
+                value: false

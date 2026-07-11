@@ -9,6 +9,7 @@ resources:
   - ./clusterpolicy-rbac-cluster-admin.yaml
   - ./clusterpolicy-rbac-least-privilege.yaml
   - ./clusterpolicy-default-serviceaccount.yaml
+  - ./clusterpolicy-token-automount.yaml
   - ./clusterpolicy-network-policy-required.yaml
   - ./clusterpolicy-secrets-as-files.yaml
   - ./clusterpolicy-image-provenance.yaml
