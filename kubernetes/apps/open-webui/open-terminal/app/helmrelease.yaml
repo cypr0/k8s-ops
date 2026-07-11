@@ -1,0 +1,108 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: open-terminal
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controllers:
+      open-terminal:
+        replicas: 1
+        # Single writer to the shared /home PVC — never run two pods at once.
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+          secret.reloader.stakater.com/reload: open-terminal-secret
+        containers:
+          app:
+            # Only the `latest`/full image supports OPEN_TERMINAL_MULTI_USER
+            # (slim/alpine/openshift do not). Pinned to a release tag for GitOps.
+            image:
+              repository: ghcr.io/open-webui/open-terminal
+              # renovate: datasource=docker depName=ghcr.io/open-webui/open-terminal
+              tag: v0.11.34
+            env:
+              # Per-user Linux accounts inside this single container. NOTE: this
+              # is Unix-permission isolation, not hard kernel/network isolation
+              # — all users share this pod. Documented as "small trusted groups
+              # only" upstream; acceptable here, real isolation would need the
+              # (Enterprise-licensed) Terminals orchestrator.
+              OPEN_TERMINAL_MULTI_USER: "true"
+              OPEN_TERMINAL_PORT: "8000"
+              OPEN_TERMINAL_HOST: 0.0.0.0
+              TZ: Europe/Berlin
+            envFrom:
+              - secretRef:
+                  name: open-terminal-secret
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: 8000
+                  initialDelaySeconds: 20
+                  periodSeconds: 20
+                  failureThreshold: 3
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  tcpSocket:
+                    port: 8000
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: "2"
+                memory: 2Gi
+            # Multi-user mode manages Linux accounts and uses sudo for runtime
+            # package installs, so this container runs as root by design. It is
+            # NOT externally exposed (no HTTPRoute) — only the Open WebUI backend
+            # reaches it in-cluster (see ciliumnetworkpolicy.yaml).
+            securityContext:
+              runAsNonRoot: false
+              runAsUser: 0
+              runAsGroup: 0
+
+    defaultPodOptions:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+
+    service:
+      app:
+        controller: open-terminal
+        ports:
+          http:
+            port: 8000
+
+    persistence:
+      home:
+        existingClaim: open-terminal-home-pvc
+        globalMounts:
+          - path: /home
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp

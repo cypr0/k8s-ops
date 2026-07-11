@@ -51,6 +51,16 @@ spec:
         - ports:
             - port: "9998"
               protocol: TCP
+    # Open Terminal multi-user shell sandbox (same namespace); the backend
+    # proxies user terminal requests to it on :8000
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-terminal
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
     # Authentik OIDC via id.${SECRET_DOMAIN}: CoreDNS resolves to the
     # envoy-internal ClusterIP, DNAT'd to the envoy container port 10443.
     - toEndpoints:

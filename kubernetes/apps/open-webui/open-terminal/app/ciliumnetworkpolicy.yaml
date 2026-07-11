@@ -1,0 +1,45 @@
+---
+# open-terminal: single-container multi-user shell sandbox for Open WebUI.
+# Not externally exposed — only the Open WebUI backend (same namespace) proxies
+# user requests to it. Full internet egress so users can install packages
+# (apt/pip/npm) and curl arbitrary hosts, per the deployment decision.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: open-terminal
+  namespace: open-webui
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: open-terminal
+  ingress:
+    # Open WebUI backend proxies terminal requests on :8000
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Full internet egress (package installs, curl, git clone, etc.)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
