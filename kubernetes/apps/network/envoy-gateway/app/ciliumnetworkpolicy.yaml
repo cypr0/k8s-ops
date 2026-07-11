@@ -248,13 +248,16 @@ spec:
               protocol: TCP
             - port: "3000"
               protocol: TCP
-    # Backend: open-webui namespace (open-webui :8090, served via envoy-internal)
+    # Backend: open-webui namespace, all served via envoy-internal:
+    # open-webui :8090, Computer (cptr) :8000.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": open-webui
       toPorts:
         - ports:
             - port: "8090"
+              protocol: TCP
+            - port: "8000"
               protocol: TCP
     # Backend: nextcloud namespace. Ports are POST-DNAT container ports:
     # nginx Service 8080->container :80, collabora :9980, whiteboard :3002.
