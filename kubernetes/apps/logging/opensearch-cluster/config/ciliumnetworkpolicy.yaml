@@ -1,10 +1,10 @@
 ---
-# opensearch-sa jobs and CronJobs: setup, export, dashboard, pipeline jobs
+# opensearch-config jobs and CronJobs: setup, export, dashboard, pipeline jobs
 # Job pods are identified by the batch.kubernetes.io/job-name label being present.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: opensearch-sa-jobs
+  name: opensearch-config-jobs
   namespace: logging
 spec:
   endpointSelector:

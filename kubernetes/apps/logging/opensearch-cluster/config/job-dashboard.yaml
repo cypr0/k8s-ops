@@ -2,11 +2,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: apps-dashboard-setup
+  name: trivy-dashboard-setup
   annotations:
     dashboard-version: "2"
 spec:
-  ttlSecondsAfterFinished: 3600
   backoffLimit: 3
   template:
     spec:
@@ -23,7 +22,7 @@ spec:
           image: python:3.14-alpine
           command:
             - "python3"
-            - "/scripts/create_apps_dashboard.py"
+            - "/scripts/create_dashboard.py"
           env:
             - name: OSD_HOST
               value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
@@ -32,7 +31,7 @@ spec:
             - name: OSD_PASS
               valueFrom:
                 secretKeyRef:
-                  name: opensearch-sa-credentials
+                  name: opensearch-config-credentials
                   key: OPENSEARCH_PASSWORD
           volumeMounts:
             - name: scripts
@@ -54,5 +53,5 @@ spec:
       volumes:
         - name: scripts
           configMap:
-            name: apps-dashboard-script
+            name: trivy-dashboard-script
             defaultMode: 0755

@@ -12,4 +12,3 @@ resources:
   - ./opensearch-operator/ks.yaml
   - ./opensearch-cluster/ks.yaml
   - ./fluent-bit/ks.yaml
-  - ./opensearch-sa/ks.yaml

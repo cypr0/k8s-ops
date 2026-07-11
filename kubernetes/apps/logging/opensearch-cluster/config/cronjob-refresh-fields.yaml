@@ -28,7 +28,9 @@ spec:
           containers:
             - name: refresh
               image: python:3.14-alpine
-              command: ["python3", "/scripts/refresh_fields.py"]
+              command:
+                - "python3"
+                - "/scripts/refresh_fields.py"
               env:
                 - name: OSD_HOST
                   value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
@@ -37,7 +39,7 @@ spec:
                 - name: OSD_PASS
                   valueFrom:
                     secretKeyRef:
-                      name: opensearch-sa-credentials
+                      name: opensearch-config-credentials
                       key: OPENSEARCH_PASSWORD
               volumeMounts:
                 - name: scripts
@@ -54,7 +56,8 @@ spec:
                 runAsNonRoot: true
                 runAsUser: 65534
                 capabilities:
-                  drop: ["ALL"]
+                  drop:
+                    - "ALL"
           volumes:
             - name: scripts
               configMap:

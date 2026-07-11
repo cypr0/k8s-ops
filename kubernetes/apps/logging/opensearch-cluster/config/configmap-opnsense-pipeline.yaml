@@ -4,7 +4,7 @@ kind: ConfigMap
 metadata:
   name: opnsense-pipeline-script
 data:
-  setup_opnsense_pipeline.py: |
+  setup_opnsense_pipeline.py: |-
     import json, os, time, base64, ssl, urllib.request, urllib.error
 
     OS   = "https://opensearch.logging.svc.cluster.local:9200"

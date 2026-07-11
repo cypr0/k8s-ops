@@ -7,7 +7,6 @@ metadata:
   annotations:
     pipeline-version: "1"
 spec:
-  ttlSecondsAfterFinished: 3600
   backoffLimit: 3
   template:
     spec:
@@ -22,12 +21,14 @@ spec:
       containers:
         - name: pipeline
           image: python:3.14-alpine
-          command: ["python3", "/scripts/setup_opnsense_pipeline.py"]
+          command:
+            - "python3"
+            - "/scripts/setup_opnsense_pipeline.py"
           env:
             - name: OPENSEARCH_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: opensearch-sa-credentials
+                  name: opensearch-config-credentials
                   key: OPENSEARCH_PASSWORD
           volumeMounts:
             - name: scripts
@@ -42,7 +43,8 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - "ALL"
       volumes:
         - name: scripts
           configMap:
@@ -57,7 +59,6 @@ metadata:
   annotations:
     dashboard-version: "1"
 spec:
-  ttlSecondsAfterFinished: 3600
   backoffLimit: 3
   template:
     spec:
@@ -72,7 +73,9 @@ spec:
       containers:
         - name: dashboard
           image: python:3.14-alpine
-          command: ["python3", "/scripts/create_opnsense_dashboards.py"]
+          command:
+            - "python3"
+            - "/scripts/create_opnsense_dashboards.py"
           env:
             - name: OSD_HOST
               value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
@@ -81,7 +84,7 @@ spec:
             - name: OSD_PASS
               valueFrom:
                 secretKeyRef:
-                  name: opensearch-sa-credentials
+                  name: opensearch-config-credentials
                   key: OPENSEARCH_PASSWORD
           volumeMounts:
             - name: scripts
@@ -98,7 +101,8 @@ spec:
             runAsNonRoot: true
             runAsUser: 65534
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - "ALL"
       volumes:
         - name: scripts
           configMap:

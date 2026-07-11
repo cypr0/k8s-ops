@@ -2,12 +2,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: trivy-dashboard-setup
+  name: opensearch-config-setup
   annotations:
-    dashboard-version: "2"
+    # Re-run by changing this value
+    setup-version: "1"
 spec:
-  ttlSecondsAfterFinished: 3600
-  backoffLimit: 3
+  backoffLimit: 5
   template:
     spec:
       restartPolicy: OnFailure
@@ -19,21 +19,28 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
       containers:
-        - name: dashboard
+        - name: setup
           image: python:3.14-alpine
           command:
-            - "python3"
-            - "/scripts/create_dashboard.py"
+            - "/bin/sh"
+            - "-c"
+            - "apk add -q curl && /bin/sh /scripts/setup.sh"
           env:
-            - name: OSD_HOST
-              value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
-            - name: OSD_USER
-              value: "admin"
-            - name: OSD_PASS
+            - name: OPENSEARCH_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: opensearch-sa-credentials
+                  name: opensearch-config-credentials
                   key: OPENSEARCH_PASSWORD
+            - name: PUSHOVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-config-credentials
+                  key: PUSHOVER_TOKEN
+            - name: PUSHOVER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: opensearch-config-credentials
+                  key: PUSHOVER_USER
           volumeMounts:
             - name: scripts
               mountPath: /scripts
@@ -46,13 +53,11 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
-            runAsNonRoot: true
-            runAsUser: 65534
             capabilities:
               drop:
                 - "ALL"
       volumes:
         - name: scripts
           configMap:
-            name: trivy-dashboard-script
+            name: opensearch-config-setup
             defaultMode: 0755

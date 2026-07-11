@@ -4,7 +4,7 @@ kind: ConfigMap
 metadata:
   name: proxmox-pipeline-script
 data:
-  setup_pipeline.py: |
+  setup_pipeline.py: |-
     import json, os, time, base64, ssl, urllib.request, urllib.error
 
     OS   = "https://opensearch.logging.svc.cluster.local:9200"

@@ -27,7 +27,9 @@ spec:
           containers:
             - name: exporter
               image: python:3.14-alpine
-              command: ["python3", "/scripts/export.py"]
+              command:
+                - "python3"
+                - "/scripts/export.py"
               env:
                 - name: OPENSEARCH_HOST
                   value: "https://opensearch.logging.svc.cluster.local:9200"
@@ -36,7 +38,7 @@ spec:
                 - name: OPENSEARCH_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: opensearch-sa-credentials
+                      name: opensearch-config-credentials
                       key: OPENSEARCH_PASSWORD
               volumeMounts:
                 - name: scripts
@@ -53,7 +55,8 @@ spec:
                 runAsNonRoot: true
                 runAsUser: 65534
                 capabilities:
-                  drop: ["ALL"]
+                  drop:
+                    - "ALL"
           volumes:
             - name: scripts
               configMap:

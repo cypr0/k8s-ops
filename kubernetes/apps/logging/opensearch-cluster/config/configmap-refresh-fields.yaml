@@ -13,7 +13,7 @@ kind: ConfigMap
 metadata:
   name: refresh-fields-script
 data:
-  refresh_fields.py: |
+  refresh_fields.py: |-
     import json, os, time, base64, urllib.request, urllib.error, urllib.parse
 
     OSD      = os.environ.get("OSD_HOST", "http://opensearch-dashboards.logging.svc.cluster.local:5601")

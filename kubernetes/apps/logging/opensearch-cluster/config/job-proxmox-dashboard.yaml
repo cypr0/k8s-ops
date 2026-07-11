@@ -2,11 +2,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: proxmox-pipeline-setup
+  name: proxmox-dashboard-setup
   annotations:
-    pipeline-version: "1"
+    dashboard-version: "2"
 spec:
-  ttlSecondsAfterFinished: 3600
   backoffLimit: 3
   template:
     spec:
@@ -19,14 +18,20 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
       containers:
-        - name: pipeline
+        - name: dashboard
           image: python:3.14-alpine
-          command: ["python3", "/scripts/setup_pipeline.py"]
+          command:
+            - "python3"
+            - "/scripts/create_proxmox_dashboard.py"
           env:
-            - name: OPENSEARCH_PASSWORD
+            - name: OSD_HOST
+              value: "http://opensearch-dashboards.logging.svc.cluster.local:5601"
+            - name: OSD_USER
+              value: "admin"
+            - name: OSD_PASS
               valueFrom:
                 secretKeyRef:
-                  name: opensearch-sa-credentials
+                  name: opensearch-config-credentials
                   key: OPENSEARCH_PASSWORD
           volumeMounts:
             - name: scripts
@@ -40,10 +45,13 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 65534
             capabilities:
-              drop: ["ALL"]
+              drop:
+                - "ALL"
       volumes:
         - name: scripts
           configMap:
-            name: proxmox-pipeline-script
+            name: proxmox-dashboard-script
             defaultMode: 0755

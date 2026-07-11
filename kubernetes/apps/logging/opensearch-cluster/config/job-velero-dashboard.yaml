@@ -6,7 +6,6 @@ metadata:
   annotations:
     dashboard-version: "2"
 spec:
-  ttlSecondsAfterFinished: 3600
   backoffLimit: 3
   template:
     spec:
@@ -32,7 +31,7 @@ spec:
             - name: OSD_PASS
               valueFrom:
                 secretKeyRef:
-                  name: opensearch-sa-credentials
+                  name: opensearch-config-credentials
                   key: OPENSEARCH_PASSWORD
           volumeMounts:
             - name: scripts
