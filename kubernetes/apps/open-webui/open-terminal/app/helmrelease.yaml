@@ -28,11 +28,13 @@ spec:
         containers:
           app:
             # Only the `latest`/full image supports OPEN_TERMINAL_MULTI_USER
-            # (slim/alpine/openshift do not). Pinned to a release tag for GitOps.
+            # (slim/alpine/openshift do not). The full image publishes ONLY
+            # `latest` + `sha-<commit>` tags (no semver), so it's pinned by
+            # digest for reproducibility; renovate bumps the digest.
             image:
               repository: ghcr.io/open-webui/open-terminal
               # renovate: datasource=docker depName=ghcr.io/open-webui/open-terminal
-              tag: v0.11.34
+              tag: latest@sha256:3af1a1aab49d653d357a5176c9862af0111ccf4b8b3a5f2bbdef109f196aeca7
             env:
               # Per-user Linux accounts inside this single container. NOTE: this
               # is Unix-permission isolation, not hard kernel/network isolation
