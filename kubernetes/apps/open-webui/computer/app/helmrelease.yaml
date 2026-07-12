@@ -28,7 +28,7 @@ spec:
             image:
               repository: ghcr.io/open-webui/computer
               # renovate: datasource=docker depName=ghcr.io/open-webui/computer
-              tag: 0.8.8
+              tag: 0.9.5
             env:
               # Image already runs `cptr run --host 0.0.0.0 --headless` and
               # sets CPTR_DATA_DIR=/data; only overrides below.
