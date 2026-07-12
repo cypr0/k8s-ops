@@ -67,10 +67,13 @@ spec:
                 # through). Unlike gateway.auth.token, hooks.token rejects the
                 # {source,provider,id} SecretRef object ("must stay a plain
                 # string value" per the policy validator) -- it wants a plain
-                # string, optionally with OpenClaw's own ${VAR} runtime env
-                # templating. $${...} (not ${...}) so Flux's postBuild
-                # substitution leaves one literal $ for OpenClaw to resolve at
-                # gateway startup, same trick as $${OPENAI_API_KEY} below.
+                # string, optionally with OpenClaw's own dollar-brace runtime
+                # env templating. Doubled dollar sign below so Flux's
+                # postBuild substitution (which scans this whole file's raw
+                # text, comments included -- a bare dollar-brace sequence
+                # anywhere is a variable reference attempt) leaves one
+                # literal dollar sign for OpenClaw to resolve at gateway
+                # startup, same trick as OPENAI_API_KEY below.
                 printf '%s' '{"hooks":{"enabled":true,"token":"$${OPENCLAW_HOOKS_TOKEN}","path":"/hooks","defaultSessionKey":"hook:ingress","allowRequestSessionKey":false,"allowedSessionKeyPrefixes":["hook:"],"mappings":[{"name":"alertmanager","match":{"path":"alertmanager"},"action":"agent","agentId":"main","sessionKey":"hook:alerts","deliver":true,"messageTemplate":"Alertmanager [{{status}}] {{commonLabels.alertname}} (severity={{commonLabels.severity}}, namespace={{commonLabels.namespace}}): {{commonAnnotations.summary}}"}]}}' \
                   | openclaw config patch --stdin
                 # Telegram channel (built-in, no plugin needed). dmPolicy
