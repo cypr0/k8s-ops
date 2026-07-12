@@ -41,8 +41,7 @@ entries:
           - - scope_name
             - profile
   # ── Application ───────────────────────────────────────────────────────
-  -
-
+  - #magic___^_^___line
     model: authentik_core.application
     id: openclaw-app
     identifiers:
@@ -54,7 +53,15 @@ entries:
       meta_launch_url: https://claw.${SECRET_DOMAIN}
       meta_icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/openclaw.png
       policy_engine_mode: all
-      # NOTE: the embedded-outpost provider assignment lives in
-      # 09-computer-proxy.yaml, which owns the FULL forward-auth provider list
-      # (openclaw + computer). The outpost's `providers` field is full-replace, so
-      # only one blueprint may set it — see the comment there.
+
+  # ── Assign the proxy provider to the built-in embedded outpost ────────
+  # The embedded outpost is what Envoy's ext_authz talks to. It must be
+  # given this provider or the /outpost.goauthentik.io/auth/envoy endpoint
+  # returns 404 for claw.${SECRET_DOMAIN}.
+  - model: authentik_outposts.outpost
+    id: embedded-outpost
+    identifiers:
+      name: authentik Embedded Outpost
+    attrs:
+      providers:
+        - !KeyOf openclaw-proxy-provider
