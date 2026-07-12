@@ -224,7 +224,7 @@ spec:
             image:
               repository: ghcr.io/barryw/paperlessmcp
               # renovate: datasource=docker depName=ghcr.io/barryw/paperlessmcp
-              tag: v0.2.0
+              tag: v0.2.2
             env:
               PAPERLESS_BASE_URL: http://paperless.paperless.svc.cluster.local
               MCP_PORT: "5000"
