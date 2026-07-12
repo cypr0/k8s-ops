@@ -105,9 +105,14 @@ spec:
                 # so it's wired to the native openai provider, not OpenRouter.)
                 if [ -n "$${OPENAI_API_KEY:-}" ] && ! openclaw models auth list 2>/dev/null | grep -q "openai:manual"; then
                   echo "$${OPENAI_API_KEY}" | openclaw models auth paste-api-key --provider openai
-                  openclaw models set openai/gpt-5.4 \
-                    || echo "WARN: setting default model failed; set agents.defaults.model manually"
                 fi
+                # Default model: Claude via OpenRouter (no separate Anthropic
+                # key needed). The "~...-latest" alias is OpenRouter's own
+                # auto-resolving pointer -- always the newest Sonnet release
+                # (currently Sonnet 5), no manual bump needed when Anthropic
+                # ships a new one. `models set` is idempotent, safe to rerun.
+                openclaw models set 'openrouter/~anthropic/claude-sonnet-latest' \
+                  || echo "WARN: setting default model failed; set agents.defaults.model manually"
             envFrom:
               - secretRef:
                   name: openclaw-secret
