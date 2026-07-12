@@ -43,7 +43,10 @@ spec:
       backendRefs:
         - group: ""
           kind: Service
-          name: openclaw
+          # bjw-s app-template renames the "app" Service to <release>-app
+          # once more than one `service.*` block exists (the MCP sidecars
+          # each got their own) -- was just "openclaw" before that.
+          name: openclaw-app
           namespace: openclaw
           port: 18789
           weight: 1
