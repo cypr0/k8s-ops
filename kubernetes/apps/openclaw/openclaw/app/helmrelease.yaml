@@ -197,6 +197,12 @@ spec:
                 drop:
                   - "ALL"
               runAsNonRoot: true
+              # Image's default user is a non-numeric "appuser" -- kubelet
+              # can't verify non-root without an explicit numeric UID.
+              # Confirmed working (in-cluster debug pod) as UID 1000.
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
 
           # Paperless-ngx document search/read MCP tool. Reuses the same API
           # token as paperless-ai (openclaw-paperless-secret); read-oriented
@@ -224,6 +230,11 @@ spec:
                 drop:
                   - "ALL"
               runAsNonRoot: true
+              # Image defaults to root (uid 0) -- confirmed working (in-cluster
+              # debug pod) as an explicit non-root UID instead.
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
 
           # Nextcloud file read/analysis MCP tool, scoped to the dedicated
           # openclaw-reader account (post-install-job.yaml) -- whatever that
@@ -252,6 +263,11 @@ spec:
                 drop:
                   - "ALL"
               runAsNonRoot: true
+              # Image defaults to root (uid 0) -- confirmed working (in-cluster
+              # debug pod) as an explicit non-root UID instead.
+              runAsUser: 1000
+              seccompProfile:
+                type: RuntimeDefault
 
     service:
       app:
