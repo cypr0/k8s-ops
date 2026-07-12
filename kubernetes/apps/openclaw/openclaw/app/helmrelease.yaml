@@ -100,6 +100,14 @@ spec:
                 openclaw mcp set k8s '{"url":"http://localhost:3001/mcp","transport":"streamable-http"}'
                 openclaw mcp set paperless '{"url":"http://localhost:5000/mcp","transport":"streamable-http"}'
                 openclaw mcp set nextcloud '{"url":"http://localhost:8000/mcp","transport":"streamable-http"}'
+                # Bundled Codex plugin (web-search/media-understanding
+                # fallback) runs by default despite showing "disabled" in
+                # `plugins list` -- it uses a shared/community-quota Codex
+                # subscription we never configured, which hit its usage
+                # limit in practice ("You've reached your Codex subscription
+                # usage limit"). Disable explicitly; `plugins disable` is
+                # idempotent, safe to rerun.
+                openclaw plugins disable codex
                 # One-time OpenAI provider auth + default model. (OPENAI_API_KEY
                 # is a real OpenAI key -- sk-proj-... -- not an OpenRouter key,
                 # so it's wired to the native openai provider, not OpenRouter.)
