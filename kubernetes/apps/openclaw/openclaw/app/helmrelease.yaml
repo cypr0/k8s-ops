@@ -64,11 +64,14 @@ spec:
                 # Uses a *separate* token from gateway.auth.token above -- add
                 # an OPENCLAW_HOOKS_TOKEN field to the `openclaw` 1Password
                 # item (openclaw-secret already passes the whole item
-                # through). NOTE: the `token`/`messageTemplate` shape here is
-                # our best reading of docs.openclaw.ai/gateway/configuration-reference
-                # -- verify with `openclaw config schema` / `--help` after
-                # the first deploy and adjust if the running version differs.
-                printf '%s' '{"hooks":{"enabled":true,"token":{"source":"env","provider":"default","id":"OPENCLAW_HOOKS_TOKEN"},"path":"/hooks","defaultSessionKey":"hook:ingress","allowRequestSessionKey":false,"allowedSessionKeyPrefixes":["hook:"],"mappings":[{"name":"alertmanager","match":{"path":"alertmanager"},"action":"agent","agentId":"main","sessionKey":"hook:alerts","deliver":true,"messageTemplate":"Alertmanager [{{status}}] {{commonLabels.alertname}} (severity={{commonLabels.severity}}, namespace={{commonLabels.namespace}}): {{commonAnnotations.summary}}"}]}}' \
+                # through). Unlike gateway.auth.token, hooks.token rejects the
+                # {source,provider,id} SecretRef object ("must stay a plain
+                # string value" per the policy validator) -- it wants a plain
+                # string, optionally with OpenClaw's own ${VAR} runtime env
+                # templating. $${...} (not ${...}) so Flux's postBuild
+                # substitution leaves one literal $ for OpenClaw to resolve at
+                # gateway startup, same trick as $${OPENAI_API_KEY} below.
+                printf '%s' '{"hooks":{"enabled":true,"token":"$${OPENCLAW_HOOKS_TOKEN}","path":"/hooks","defaultSessionKey":"hook:ingress","allowRequestSessionKey":false,"allowedSessionKeyPrefixes":["hook:"],"mappings":[{"name":"alertmanager","match":{"path":"alertmanager"},"action":"agent","agentId":"main","sessionKey":"hook:alerts","deliver":true,"messageTemplate":"Alertmanager [{{status}}] {{commonLabels.alertname}} (severity={{commonLabels.severity}}, namespace={{commonLabels.namespace}}): {{commonAnnotations.summary}}"}]}}' \
                   | openclaw config patch --stdin
                 # Telegram channel (built-in, no plugin needed). dmPolicy
                 # "pairing" means a NEW one-time step after each fresh deploy:
