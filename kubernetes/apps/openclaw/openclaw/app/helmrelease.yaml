@@ -254,9 +254,11 @@ spec:
             resources:
               requests:
                 cpu: 50m
-                memory: 64Mi
+                memory: 128Mi
+              # OOMKilled at 256Mi in practice -- this image's baseline
+              # footprint runs higher than the other two sidecars.
               limits:
-                memory: 256Mi
+                memory: 512Mi
             securityContext:
               allowPrivilegeEscalation: false
               capabilities:
