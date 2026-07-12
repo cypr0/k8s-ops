@@ -30,8 +30,11 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: false
             capabilities:
-              drop: ["ALL"]
-          command: ["sh", "-c"]
+              drop:
+                - "ALL"
+          command:
+            - "sh"
+            - "-c"
           args:
             - |
               set -eu
@@ -89,6 +92,25 @@ spec:
               php /var/www/html/occ config:app:set whiteboard collabBackendUrl --value="https://cloud.${SECRET_DOMAIN}/whiteboard/"
               php /var/www/html/occ config:app:set whiteboard jwt_secret_key --value="$${WHITEBOARD_JWT_SECRET_KEY}"
 
+              echo "Setting up openclaw-reader (read-only file access for the OpenClaw AI agent)..."
+              php /var/www/html/occ group:add openclaw-readers 2>/dev/null || true
+              if php /var/www/html/occ user:info openclaw-reader >/dev/null 2>&1; then
+                echo "  openclaw-reader already exists, skipping"
+              else
+                OC_PASS="$${OPENCLAW_READER_PASSWORD}" php /var/www/html/occ user:add \
+                  --password-from-env \
+                  --display-name="OpenClaw (read-only)" \
+                  --group="openclaw-readers" \
+                  --no-interaction \
+                  openclaw-reader
+                echo "  created openclaw-reader in group openclaw-readers"
+              fi
+              # NOTE: openclaw-reader is NOT in any group folder by default --
+              # grant it read-only access to specific folders via Settings ->
+              # Group folders (assign the "openclaw-readers" group, advanced
+              # permissions "read only") for whatever content should be
+              # analyzable by the agent.
+
               echo "Configuring Full-text search (Elasticsearch)..."
               php /var/www/html/occ config:app:set fulltextsearch search_platform --value="OCA\\FullTextSearch_Elasticsearch\\Platform\\ElasticSearchPlatform"
               php /var/www/html/occ config:app:set fulltextsearch_elasticsearch elastic_host --value="http://elasticsearch.nextcloud.svc.cluster.local:9200"
@@ -112,6 +134,11 @@ spec:
                 secretKeyRef:
                   name: nextcloud-whiteboard-credentials
                   key: WHITEBOARD_JWT_SECRET_KEY
+            - name: OPENCLAW_READER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nextcloud-credentials
+                  key: OPENCLAW_READER_PASSWORD
           volumeMounts:
             - name: nextcloud-main
               mountPath: /var/www

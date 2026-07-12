@@ -1,0 +1,34 @@
+---
+# flux-operator-mcp: read-only MCP server exposing Flux/Kubernetes state to
+# OpenClaw over HTTP (streamable-http), gated by the built-in `view` role.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: flux-operator-mcp
+  namespace: flux-system
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: flux-operator-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": openclaw
+            app.kubernetes.io/name: openclaw
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver

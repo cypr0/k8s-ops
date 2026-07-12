@@ -23,7 +23,7 @@ spec:
         strategy: Recreate
         annotations:
           reloader.stakater.com/auto: "true"
-          secret.reloader.stakater.com/reload: openclaw-secret
+          secret.reloader.stakater.com/reload: openclaw-secret,openclaw-paperless-secret,openclaw-nextcloud-secret
         initContainers:
           setup:
             image:
@@ -59,6 +59,41 @@ spec:
                 # would leave the closing delimiter indented and unmatched.)
                 printf '%s' '{"gateway":{"bind":"lan","trustedProxies":["10.42.0.0/16"],"controlUi":{"allowedOrigins":["https://claw.${SECRET_DOMAIN}"]},"auth":{"token":{"source":"env","provider":"default","id":"OPENCLAW_GATEWAY_TOKEN"}}}}' \
                   | openclaw config patch --stdin
+                # Alertmanager -> chat bridge: POST /hooks/alertmanager (see
+                # ciliumnetworkpolicy.yaml for the monitoring-ns ingress rule).
+                # Uses a *separate* token from gateway.auth.token above -- add
+                # an OPENCLAW_HOOKS_TOKEN field to the `openclaw` 1Password
+                # item (openclaw-secret already passes the whole item
+                # through). NOTE: the `token`/`messageTemplate` shape here is
+                # our best reading of docs.openclaw.ai/gateway/configuration-reference
+                # -- verify with `openclaw config schema` / `--help` after
+                # the first deploy and adjust if the running version differs.
+                printf '%s' '{"hooks":{"enabled":true,"token":{"source":"env","provider":"default","id":"OPENCLAW_HOOKS_TOKEN"},"path":"/hooks","defaultSessionKey":"hook:ingress","allowRequestSessionKey":false,"allowedSessionKeyPrefixes":["hook:"],"mappings":[{"name":"alertmanager","match":{"path":"alertmanager"},"action":"agent","agentId":"main","sessionKey":"hook:alerts","deliver":true,"messageTemplate":"Alertmanager [{{status}}] {{commonLabels.alertname}} (severity={{commonLabels.severity}}, namespace={{commonLabels.namespace}}): {{commonAnnotations.summary}}"}]}}' \
+                  | openclaw config patch --stdin
+                # Telegram channel (built-in, no plugin needed). dmPolicy
+                # "pairing" means a NEW one-time step after each fresh deploy:
+                #   kubectl exec -n openclaw deploy/openclaw -c app -- openclaw pairing list telegram
+                #   kubectl exec -n openclaw deploy/openclaw -c app -- openclaw pairing approve telegram <CODE>
+                # Bot token comes from @BotFather -> TELEGRAM_BOT_TOKEN field
+                # on the `openclaw` 1Password item (already passed through
+                # wholesale by externalsecret.yaml); OpenClaw reads it
+                # directly from the env, no token value in this config patch.
+                printf '%s' '{"channels":{"telegram":{"enabled":true,"dmPolicy":"pairing"}}}' \
+                  | openclaw config patch --stdin
+                # OpenRouter as a second/alternative provider alongside the
+                # native OpenAI one below -- lets agents pick cheaper/other
+                # models without dropping the OpenAI default.
+                printf '%s' '{"models":{"providers":{"openrouter":{"baseUrl":"https://openrouter.ai/api/v1","apiKey":{"source":"env","provider":"default","id":"OPENROUTER_API_KEY"}}}}}' \
+                  | openclaw config patch --stdin
+                # Read-only MCP tools: Flux/Kubernetes state via the flux-operator-mcp
+                # Service (cross-namespace, RBAC-gated by the `view` ClusterRole) and
+                # plain Kubernetes objects/logs via the k8s-mcp sidecar in this same
+                # pod (localhost, non-destructive-tools-only). `mcp set` upserts by
+                # name, safe to (re-)run on every restart.
+                openclaw mcp set flux '{"url":"http://flux-operator-mcp.flux-system.svc.cluster.local:9090/mcp","transport":"streamable-http"}'
+                openclaw mcp set k8s '{"url":"http://localhost:3001/mcp","transport":"streamable-http"}'
+                openclaw mcp set paperless '{"url":"http://localhost:5000/mcp","transport":"streamable-http"}'
+                openclaw mcp set nextcloud '{"url":"http://localhost:8000/mcp","transport":"streamable-http"}'
                 # One-time OpenAI provider auth + default model. (OPENAI_API_KEY
                 # is a real OpenAI key -- sk-proj-... -- not an OpenRouter key,
                 # so it's wired to the native openai provider, not OpenRouter.)
@@ -130,12 +165,109 @@ spec:
               runAsUser: 0
               runAsGroup: 0
 
+          # Read-only Kubernetes object/log inspection MCP tool, scoped by the
+          # `view` ClusterRoleBinding on this pod's ServiceAccount (rbac.yaml).
+          # Bound to loopback only -- reached by the "app" container via
+          # localhost, never exposed on the pod IP/Service.
+          k8s-mcp:
+            image:
+              repository: flux159/mcp-server-kubernetes
+              # renovate: datasource=docker depName=flux159/mcp-server-kubernetes
+              tag: v4.0.1
+            env:
+              HOST: 127.0.0.1
+              PORT: "3001"
+              ENABLE_UNSAFE_STREAMABLE_HTTP_TRANSPORT: "1"
+              ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS: "true"
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+              runAsNonRoot: true
+
+          # Paperless-ngx document search/read MCP tool. Reuses the same API
+          # token as paperless-ai (openclaw-paperless-secret); read-oriented
+          # tool set only -- no document deletion is wired up.
+          paperless-mcp:
+            image:
+              repository: ghcr.io/barryw/paperlessmcp
+              # renovate: datasource=docker depName=ghcr.io/barryw/paperlessmcp
+              tag: v0.2.0
+            env:
+              PAPERLESS_BASE_URL: http://paperless.paperless.svc.cluster.local
+              MCP_PORT: "5000"
+            envFrom:
+              - secretRef:
+                  name: openclaw-paperless-secret
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+              runAsNonRoot: true
+
+          # Nextcloud file read/analysis MCP tool, scoped to the dedicated
+          # openclaw-reader account (post-install-job.yaml) -- whatever that
+          # account can see (nothing, until granted a Group folder), never
+          # the admin account.
+          nextcloud-mcp:
+            image:
+              repository: ghcr.io/cbcoutinho/nextcloud-mcp-server
+              # renovate: datasource=docker depName=ghcr.io/cbcoutinho/nextcloud-mcp-server
+              tag: "0.136.0"
+            env:
+              NEXTCLOUD_HOST: http://nextcloud.nextcloud.svc.cluster.local:8080
+              NEXTCLOUD_USERNAME: openclaw-reader
+            envFrom:
+              - secretRef:
+                  name: openclaw-nextcloud-secret
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+              runAsNonRoot: true
+
     service:
       app:
         controller: openclaw
         ports:
           http:
             port: *port
+      k8s-mcp:
+        controller: openclaw
+        ports:
+          http:
+            port: 3001
+      paperless-mcp:
+        controller: openclaw
+        ports:
+          http:
+            port: 5000
+      nextcloud-mcp:
+        controller: openclaw
+        ports:
+          http:
+            port: 8000
 
     persistence:
       data:

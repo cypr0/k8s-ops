@@ -19,6 +19,17 @@ spec:
         - ports:
             - port: "18789"
               protocol: TCP
+    # Alertmanager -> POST /hooks/alertmanager, direct to the Service
+    # ClusterIP (bypasses the Authentik-gated Gateway route; authenticated by
+    # its own hooks token instead, see helmrelease.yaml).
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: alertmanager
+      toPorts:
+        - ports:
+            - port: "18789"
+              protocol: TCP
   egress:
     # DNS resolution
     - toEndpoints:
@@ -39,5 +50,37 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+            - port: "80"
+              protocol: TCP
+    # k8s-mcp sidecar: read-only Kubernetes API access (RBAC-gated, see rbac.yaml)
+    - toEntities:
+        - kube-apiserver
+    # flux-operator-mcp Service (flux-system ns) -- read-only Flux/K8s state
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": flux-system
+            app.kubernetes.io/name: flux-operator-mcp
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+    # paperless-mcp sidecar: Paperless-ngx REST API (paperless ns)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+    # nextcloud-mcp sidecar: WebDAV/OCS API (nextcloud ns). Service port is
+    # 8080 but Cilium enforces post-DNAT on the container port 80 (see
+    # nextcloud's own CiliumNetworkPolicy comment).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+            app.kubernetes.io/name: nextcloud
+      toPorts:
+        - ports:
             - port: "80"
               protocol: TCP

@@ -1,0 +1,23 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: flux-operator-mcp
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: flux-operator-mcp
+  interval: 1h
+  values:
+    transport: http
+    # Disable every mutating MCP tool (reconcile/suspend/resume/...); OpenClaw
+    # should only ever be able to inspect Flux state, never change it.
+    readonly: true
+    rbac:
+      # Chart default grants cluster-admin to its own ServiceAccount. We bind
+      # the built-in read-only `view` ClusterRole ourselves instead (rbac.yaml).
+      create: false
+    networkPolicy:
+      # Ingress is instead handled by our own CiliumNetworkPolicy, consistent
+      # with every other app in this repo.
+      create: false

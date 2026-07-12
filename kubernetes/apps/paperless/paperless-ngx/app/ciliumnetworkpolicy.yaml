@@ -42,6 +42,16 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # openclaw's paperless-mcp sidecar reads the REST API (reuses the same
+    # API token as paperless-ai)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": openclaw
+            app.kubernetes.io/name: openclaw
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
   egress:
     # DNS resolution
     - toEndpoints:

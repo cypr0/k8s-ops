@@ -168,6 +168,15 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # openclaw-hooks receiver: POST /hooks/alertmanager (openclaw ns)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": openclaw
+            app.kubernetes.io/name: openclaw
+      toPorts:
+        - ports:
+            - port: "18789"
+              protocol: TCP
 ---
 # Kube-State-Metrics: watches k8s resources, exposes metrics for Prometheus
 apiVersion: cilium.io/v2

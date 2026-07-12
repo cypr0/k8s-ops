@@ -1,0 +1,16 @@
+---
+# Binds the chart's auto-created ServiceAccount (name defaults to the release
+# name) to the built-in read-only `view` ClusterRole, instead of the chart's
+# own default of granting cluster-admin (rbac.create: false in helmrelease.yaml).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: flux-operator-mcp-view
+subjects:
+  - kind: ServiceAccount
+    name: flux-operator-mcp
+    namespace: flux-system
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
