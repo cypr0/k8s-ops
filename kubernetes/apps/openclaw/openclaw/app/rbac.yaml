@@ -81,3 +81,37 @@ roleRef:
   kind: ClusterRole
   name: openclaw-cilium-policy-view
   apiGroup: rbac.authorization.k8s.io
+---
+# `view` deliberately excludes rbac.authorization.k8s.io entirely (upstream
+# default -- a read-only role that could still enumerate every binding is
+# a privilege-topology leak in its own right). Grant *bindings* only, not
+# Roles/ClusterRoles themselves: "which ServiceAccount is bound to what"
+# answers the cluster-admin-audit question this was asked for, without
+# also handing over the full Rule-level permission catalog.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: openclaw-rbac-bindings-view
+rules:
+  - apiGroups:
+      - "rbac.authorization.k8s.io"
+    resources:
+      - "rolebindings"
+      - "clusterrolebindings"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openclaw-rbac-bindings-view
+subjects:
+  - kind: ServiceAccount
+    name: openclaw
+    namespace: openclaw
+roleRef:
+  kind: ClusterRole
+  name: openclaw-rbac-bindings-view
+  apiGroup: rbac.authorization.k8s.io
