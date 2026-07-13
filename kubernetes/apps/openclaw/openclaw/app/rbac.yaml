@@ -47,3 +47,37 @@ roleRef:
   kind: ClusterRole
   name: openclaw-nodes-view
   apiGroup: rbac.authorization.k8s.io
+---
+# `view` predates Cilium's CRDs and doesn't aggregate them -- the
+# ServiceAccount gets a flat "Forbidden" on ciliumnetworkpolicies in every
+# namespace, cluster-scoped ciliumclusterwidenetworkpolicies included.
+# Read-only: policy *definitions* are configuration, not secrets, and this
+# is exactly what a network-policy audit ("is X exposed more than it
+# should be?") needs to read.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: openclaw-cilium-policy-view
+rules:
+  - apiGroups:
+      - "cilium.io"
+    resources:
+      - "ciliumnetworkpolicies"
+      - "ciliumclusterwidenetworkpolicies"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openclaw-cilium-policy-view
+subjects:
+  - kind: ServiceAccount
+    name: openclaw
+    namespace: openclaw
+roleRef:
+  kind: ClusterRole
+  name: openclaw-cilium-policy-view
+  apiGroup: rbac.authorization.k8s.io
