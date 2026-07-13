@@ -21,6 +21,13 @@ spec:
       openclaw:
         replicas: 1
         strategy: Recreate
+        # app-template defaults automountServiceAccountToken to false
+        # (CIS 5.1.6 posture). The k8s-mcp sidecar needs the SA token to
+        # authenticate to the API server as the `openclaw` ServiceAccount
+        # (view-only, see rbac.yaml) -- without it, k8s-mcp has no
+        # kubeconfig/context at all and every cluster query fails.
+        pod:
+          automountServiceAccountToken: true
         annotations:
           reloader.stakater.com/auto: "true"
           secret.reloader.stakater.com/reload: openclaw-secret,openclaw-paperless-secret,openclaw-nextcloud-secret

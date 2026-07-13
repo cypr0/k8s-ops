@@ -19,9 +19,12 @@ data:
     echo "SSH key lines: $(wc -l < /tmp/ssh-rw/id_rsa)"
     head -1 /tmp/ssh-rw/id_rsa
 
-    # $${VAR} → Flux ignores and passes through as ${VAR} to the shell at runtime.
-    # Without $$, Flux's postBuild.substituteFrom would replace ${VAR} with empty
-    # because these env vars are not in cluster-secrets.
+    # $$$${VAR} -> Flux ignores and passes through as $${VAR} to the shell at
+    # runtime. Without doubling, Flux's postBuild.substituteFrom would replace
+    # $${VAR} with empty because these env vars are not in cluster-secrets.
+    # (Doubled again here vs. the actual usage below: this is a comment, and
+    # Flux's substitution scans the whole rendered text, comments included --
+    # a bare $${VAR} in prose is itself a live substitution attempt.)
     echo "[proxmox]" > /tmp/inventory.ini
     echo "proxmox-host ansible_host=$${PROXMOX_SSH_HOST} ansible_user=root ansible_ssh_private_key_file=/tmp/ssh-rw/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
     echo "Inventory written for host: $${PROXMOX_SSH_HOST}"
@@ -63,7 +66,7 @@ data:
     print('first line:', fixed.splitlines()[0])
     open(sys.argv[2], 'w').write(fixed + '\n')
 
-  hardening.yml: |
+  hardening.yml: |-
     ---
     - name: Proxmox Host — Hardening and Maintenance
       hosts: proxmox
