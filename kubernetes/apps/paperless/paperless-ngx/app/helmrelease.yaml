@@ -51,7 +51,14 @@ spec:
               PAPERLESS_TIKA_ENABLED: 1
               PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg-http.paperless.svc.cluster.local:3000
               PAPERLESS_TIKA_ENDPOINT: http://tika-http.paperless.svc.cluster.local:9998
-              PAPERLESS_TIME_ZONE: ${TIMEZONE}
+              # No TIMEZONE key exists in cluster-secrets (checked: only
+              # SECRET_ALLOWED_IP/SECRET_DOMAIN/SECRET_MAIL_SERVER/
+              # SECRET_NFS_SERVER) -- ${TIMEZONE} here failed Flux's postBuild
+              # substitution in strict mode, blocking this Kustomization
+              # entirely. Every other app in this repo hardcodes TZ literally
+              # (open-webui, open-terminal, gatus, openclaw all use
+              # Europe/Berlin); match that instead of inventing a shared var.
+              PAPERLESS_TIME_ZONE: Europe/Berlin
               PAPERLESS_TRUSTED_PROXIES: 10.96.0.0/16,10.69.0.0/16,192.168.0.0/16
               PAPERLESS_URL: https://paperless.${SECRET_DOMAIN}
               USERMAP_UID: 3000
