@@ -15,3 +15,35 @@ roleRef:
   kind: ClusterRole
   name: view
   apiGroup: rbac.authorization.k8s.io
+---
+# `view` only covers namespaced resources -- Nodes are cluster-scoped and
+# absent from it entirely (its "nodes" grant under metrics.k8s.io is for
+# node *metrics*, not the core Node object). Grant read-only access to the
+# core Node object separately so cluster-health questions ("any node
+# NotReady?") don't need cluster-admin.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: openclaw-nodes-view
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "nodes"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openclaw-nodes-view
+subjects:
+  - kind: ServiceAccount
+    name: openclaw
+    namespace: openclaw
+roleRef:
+  kind: ClusterRole
+  name: openclaw-nodes-view
+  apiGroup: rbac.authorization.k8s.io
