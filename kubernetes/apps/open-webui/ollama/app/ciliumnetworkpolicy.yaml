@@ -1,0 +1,50 @@
+---
+# ollama: local LLM inference backend for paperless-ai (cross-namespace) and
+# open-webui (same namespace) - no internet egress needed, everything local.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: ollama
+  namespace: open-webui
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  ingress:
+    # paperless-ai (paperless namespace) - document tagging/metadata
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless-ai
+      toPorts:
+        - ports:
+            - port: "11434"
+              protocol: TCP
+    # open-webui (same namespace) - chat UI backend
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "11434"
+              protocol: TCP
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Pulling model blobs from the Ollama model library over the public internet
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

@@ -1,0 +1,95 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ollama
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controllers:
+      ollama:
+        replicas: 1
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              repository: docker.io/ollama/ollama
+              # renovate: datasource=docker depName=ollama/ollama
+              tag: 0.32.0
+            env:
+              OLLAMA_HOST: "0.0.0.0:11434"
+              # Model is ~9Gi (Q4_K_M) and lives on NFS - keep it resident so
+              # paperless-ai's hourly cron doesn't pay a reload cost each run.
+              OLLAMA_KEEP_ALIVE: "-1"
+              OLLAMA_NUM_PARALLEL: "1"
+              OLLAMA_MAX_LOADED_MODELS: "1"
+            # One-time (idempotent) pull on startup so the model is baked into
+            # the deployment instead of a manual post-install step.
+            lifecycle:
+              postStart:
+                exec:
+                  command:
+                    - /bin/sh
+                    - -c
+                    - ollama pull qwen2.5:14b-instruct-q4_K_M
+            probes:
+              liveness:
+                enabled: true
+                spec:
+                  initialDelaySeconds: 30
+              readiness:
+                enabled: true
+              startup:
+                enabled: true
+                spec:
+                  failureThreshold: 60
+                  periodSeconds: 10
+            resources:
+              requests:
+                cpu: "3"
+                memory: 10Gi
+              limits:
+                cpu: "5"
+                memory: 12Gi
+
+    pod:
+      # 14B-Q4 CPU inference is throughput-bound - prefer the 6-vCPU workers
+      # over k8s-wrk-3 (only 4 vCPU) without hard-pinning to a single node.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k8s-wrk-0
+                      - k8s-wrk-1
+                      - k8s-wrk-2
+
+    service:
+      app:
+        controller: ollama
+        ports:
+          http:
+            port: 11434
+
+    persistence:
+      data:
+        existingClaim: ollama-pvc
+        advancedMounts:
+          ollama:
+            app:
+              - path: /root/.ollama

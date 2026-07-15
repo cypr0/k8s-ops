@@ -11,3 +11,4 @@ resources:
   - ./open-webui/ks.yaml
   - ./tika/ks.yaml
   - ./open-terminal/ks.yaml
+  - ./ollama/ks.yaml
