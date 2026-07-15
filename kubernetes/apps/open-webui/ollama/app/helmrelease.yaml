@@ -34,15 +34,6 @@ spec:
               OLLAMA_KEEP_ALIVE: "-1"
               OLLAMA_NUM_PARALLEL: "1"
               OLLAMA_MAX_LOADED_MODELS: "1"
-            # One-time (idempotent) pull on startup so the model is baked into
-            # the deployment instead of a manual post-install step.
-            lifecycle:
-              postStart:
-                exec:
-                  command:
-                    - /bin/sh
-                    - -c
-                    - ollama pull qwen2.5:14b-instruct-q4_K_M
             probes:
               liveness:
                 enabled: true
