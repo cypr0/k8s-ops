@@ -44,7 +44,8 @@ spec:
               TZ: Europe/Berlin
               ENABLE_DIRECT_CONNECTIONS: "false"
 
-              ENABLE_OLLAMA_API: "false"
+              ENABLE_OLLAMA_API: "true"
+              OLLAMA_BASE_URL: http://ollama.open-webui.svc.cluster.local:11434
               OPENAI_API_BASE_URL: https://openrouter.ai/api/v1
 
               # Web search via the SearXNG sidecar (localhost in the same pod)
@@ -151,7 +152,8 @@ spec:
             securityContext:
               allowPrivilegeEscalation: false
               capabilities:
-                drop: ["ALL"]
+                drop:
+                  - "ALL"
               runAsUser: 977
               runAsNonRoot: true
 
