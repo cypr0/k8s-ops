@@ -40,12 +40,10 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
-    # Local Ollama LLM backend (open-webui namespace)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": open-webui
-            app.kubernetes.io/name: ollama
+    # OpenRouter LLM API (world)
+    - toEntities:
+        - world
       toPorts:
         - ports:
-            - port: "11434"
+            - port: "443"
               protocol: TCP

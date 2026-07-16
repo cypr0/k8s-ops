@@ -44,8 +44,10 @@ spec:
               TZ: Europe/Berlin
               ENABLE_DIRECT_CONNECTIONS: "false"
 
-              ENABLE_OLLAMA_API: "true"
-              OLLAMA_BASE_URL: http://ollama.open-webui.svc.cluster.local:11434
+              # Ollama deprovisioned: CPU-only inference on this cluster's
+              # overcommitted worker VMs was throttled to ~2 tok/s. All
+              # chat now goes through OpenRouter.
+              ENABLE_OLLAMA_API: "false"
               OPENAI_API_BASE_URL: https://openrouter.ai/api/v1
 
               # Web search via the SearXNG sidecar (localhost in the same pod)

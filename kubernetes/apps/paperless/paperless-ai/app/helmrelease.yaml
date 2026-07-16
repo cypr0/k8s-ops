@@ -38,8 +38,14 @@ spec:
               PROMPT_TAGS: ""
               USE_EXISTING_DATA: "yes"
               ACTIVATE_CUSTOM_FIELDS: "no"
-              CUSTOM_API_URL: "http://ollama.open-webui.svc.cluster.local:11434/v1"
-              CUSTOM_MODEL: "qwen2.5:7b-instruct-q4_K_M"
+              # OpenRouter (replaces the local CPU-only Ollama backend - a
+              # 14B/7B model on this cluster's overcommitted worker VMs was
+              # throttled to ~2 tok/s, taking minutes per document).
+              # gemini-2.5-flash-lite: strong instruction-following for the
+              # strict JSON schema below, and very cheap (~$0.10/$0.40 per
+              # 1M in/out tokens).
+              CUSTOM_API_URL: "https://openrouter.ai/api/v1"
+              CUSTOM_MODEL: "google/gemini-2.5-flash-lite"
             envFrom:
               - secretRef:
                   name: paperless-ai-secret

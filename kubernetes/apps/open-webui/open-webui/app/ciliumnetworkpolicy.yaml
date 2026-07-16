@@ -51,15 +51,6 @@ spec:
         - ports:
             - port: "9998"
               protocol: TCP
-    # Local Ollama LLM backend (same namespace)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": open-webui
-            app.kubernetes.io/name: ollama
-      toPorts:
-        - ports:
-            - port: "11434"
-              protocol: TCP
     # Open Terminal multi-user shell sandbox (same namespace); the backend
     # proxies user terminal requests to it on :8000
     - toEndpoints:
