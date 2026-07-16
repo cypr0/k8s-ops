@@ -29,7 +29,7 @@ spec:
               tag: 0.32.0
             env:
               OLLAMA_HOST: "0.0.0.0:11434"
-              # Model is ~9Gi (Q4_K_M) and lives on NFS - keep it resident so
+              # Model is ~4.7Gi (Q4_K_M) and lives on NFS - keep it resident so
               # paperless-ai's hourly cron doesn't pay a reload cost each run.
               OLLAMA_KEEP_ALIVE: "-1"
               OLLAMA_NUM_PARALLEL: "1"
@@ -57,38 +57,40 @@ spec:
                 cpu: "3"
                 memory: 12Gi
 
-    pod:
-      # 14B-Q4 CPU inference is throughput-bound - prefer the 6-vCPU workers
-      # over k8s-wrk-3 (only 4 vCPU) without hard-pinning to a single node.
-      affinity:
-        nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - k8s-wrk-0
-                      - k8s-wrk-1
-                      - k8s-wrk-2
-                      - k8s-wrk-3
-        # Never share a node with CNPG Postgres or OpenSearch - a saturated
-        # inference run must not take a database/search pod down with it.
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - topologyKey: kubernetes.io/hostname
-              labelSelector:
-                matchLabels:
-                  cnpg.io/cluster: postgres
-              namespaces:
-                - database
-            - topologyKey: kubernetes.io/hostname
-              labelSelector:
-                matchLabels:
-                  opensearch.org/opensearch-cluster: opensearch
-              namespaces:
-                - logging
+        pod:
+          # 14B-Q4 CPU inference is throughput-bound - prefer the 6-vCPU
+          # workers over k8s-wrk-3 (only 4 vCPU) without hard-pinning to a
+          # single node.
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  preference:
+                    matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: In
+                        values:
+                          - k8s-wrk-0
+                          - k8s-wrk-1
+                          - k8s-wrk-2
+                          - k8s-wrk-3
+            # Never share a node with CNPG Postgres or OpenSearch - a
+            # saturated inference run must not take a database/search pod
+            # down with it.
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      cnpg.io/cluster: postgres
+                  namespaces:
+                    - database
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      opensearch.org/opensearch-cluster: opensearch
+                  namespaces:
+                    - logging
 
     service:
       app:

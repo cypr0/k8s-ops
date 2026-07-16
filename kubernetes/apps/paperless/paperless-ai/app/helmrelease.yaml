@@ -39,7 +39,7 @@ spec:
               USE_EXISTING_DATA: "yes"
               ACTIVATE_CUSTOM_FIELDS: "no"
               CUSTOM_API_URL: "http://ollama.open-webui.svc.cluster.local:11434/v1"
-              CUSTOM_MODEL: "qwen2.5:14b-instruct-q4_K_M"
+              CUSTOM_MODEL: "qwen2.5:7b-instruct-q4_K_M"
             envFrom:
               - secretRef:
                   name: paperless-ai-secret
