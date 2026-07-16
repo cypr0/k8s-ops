@@ -144,6 +144,22 @@ data:
             name: fail2ban
             state: present
 
+        # Send fail2ban's own activity (bans/unbans/detections) to syslog so
+        # the existing rsyslog `*.*` forwarder ships it to Fluent-Bit/OpenSearch
+        # alongside the rest of the Proxmox host logs. Without this, fail2ban
+        # only writes to /var/log/fail2ban.log, which nothing forwards.
+        - name: Deploy fail2ban.local (log to syslog)
+          ansible.builtin.copy:
+            dest: /etc/fail2ban/fail2ban.local
+            owner: root
+            group: root
+            mode: "0644"
+            content: |
+              [Definition]
+              logtarget = SYSLOG
+              syslogsocket = /dev/log
+          notify: Restart fail2ban
+
         - name: Deploy fail2ban jail.local
           ansible.builtin.copy:
             dest: /etc/fail2ban/jail.local

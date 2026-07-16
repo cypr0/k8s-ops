@@ -44,7 +44,13 @@ data:
         'else if (msg.contains("Disconnected")) { ctx.action = "ssh_disconnected"; ctx.action_category = "connection"; } '
         'else if (msg.contains("Connection closed by invalid")) { ctx.action = "ssh_closed_invalid"; ctx.action_category = "connection"; } '
         'else if (msg.contains("Connection closed")) { ctx.action = "ssh_closed"; ctx.action_category = "connection"; } '
-        'else if (msg.contains("check pass")) { ctx.action = "pam_check"; ctx.action_category = "auth_check"; }'
+        'else if (msg.contains("check pass")) { ctx.action = "pam_check"; ctx.action_category = "auth_check"; } '
+        # fail2ban: "NOTICE  [sshd] Ban 1.2.3.4" / "Unban" / "Restore Ban" / "Found"
+        # (jail + src_ip already extracted by the grok patterns below)
+        'else if (msg.contains("] Restore Ban ")) { ctx.action = "fail2ban_restore_ban"; ctx.action_category = "ban"; } '
+        'else if (msg.contains("] Ban ")) { ctx.action = "fail2ban_ban"; ctx.action_category = "ban"; } '
+        'else if (msg.contains("] Unban ")) { ctx.action = "fail2ban_unban"; ctx.action_category = "unban"; } '
+        'else if (msg.contains("] Found ")) { ctx.action = "fail2ban_found"; ctx.action_category = "auth_failure"; }'
     )
 
     print("Creating ingest pipeline...")
@@ -61,7 +67,11 @@ data:
                 "Connection closed by invalid user %{WORD:username} %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
                 "Connection closed by %{IP:src_ip} port %{NUMBER:src_port:int} %{GREEDYDATA}",
                 "authentication failure; rhost=::ffff:%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}",
-                "authentication failure; rhost=%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}"
+                "authentication failure; rhost=%{IP:src_ip} user=%{DATA:username} %{GREEDYDATA}",
+                "\\[%{DATA:jail}\\] Restore Ban %{IP:src_ip}",
+                "\\[%{DATA:jail}\\] Ban %{IP:src_ip}",
+                "\\[%{DATA:jail}\\] Unban %{IP:src_ip}",
+                "\\[%{DATA:jail}\\] Found %{IP:src_ip}"
             ]}},
             {"script": {"lang": "painless", "source": painless}}
         ]
@@ -111,11 +121,12 @@ data:
                 "username":         {"type": "keyword"},
                 "auth_method":      {"type": "keyword"},
                 "action":           {"type": "keyword"},
-                "action_category":  {"type": "keyword"}
+                "action_category":  {"type": "keyword"},
+                "jail":             {"type": "keyword"}
             }}
         }
     })
     print("  Template:", "OK" if r.get("acknowledged") else ("ERROR " + str(s)))
 
     print("=== Pipeline setup complete ===")
-    print("Fields: src_ip, src_port, username, auth_method, action, action_category")
+    print("Fields: src_ip, src_port, username, auth_method, action, action_category, jail")

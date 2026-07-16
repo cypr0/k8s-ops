@@ -211,3 +211,108 @@ data:
     print()
     print("=== Proxmox Security Dashboard ready ===")
     print("  URL: <OSD>/app/dashboards#/view/proxmox-security")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # DASHBOARD 2 — Fail2ban Bans & Activity
+    # Same proxmox-* index/pipeline: action in {fail2ban_ban, fail2ban_unban,
+    # fail2ban_restore_ban, fail2ban_found}, action_category in {ban, unban},
+    # jail + src_ip extracted by the proxmox-syslog-enrich grok patterns.
+    # ════════════════════════════════════════════════════════════════════════
+    ban_flt        = [{"term": {"action_category": "ban"}}]
+    fail2ban_flt   = [{"terms": {"action": ["fail2ban_ban", "fail2ban_unban", "fail2ban_restore_ban", "fail2ban_found"]}}]
+
+    f2b_vizs = [
+        viz("f2b-v1-bans",     "🚫 Bans",              "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}],
+            [{"term": {"action": "fail2ban_ban"}}]),
+
+        viz("f2b-v2-unbans",   "✅ Unbans",            "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}],
+            [{"term": {"action": "fail2ban_unban"}}]),
+
+        viz("f2b-v3-unique",   "🌍 Unique Banned IPs", "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"src_ip"}}],
+            ban_flt),
+
+        viz("f2b-v4-restored", "🔁 Bans Restored (restarts)", "metric", METRIC_PARAMS,
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}}],
+            [{"term": {"action": "fail2ban_restore_ban"}}]),
+
+        viz("f2b-v5-timeline", "Ban Activity Over Time", "line",
+            {"type":"line","grid":{"categoryLines":False},
+             "categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"bottom","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"filter":True,"truncate":100},"title":{}}],
+             "valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"left","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Count"}}],
+             "seriesParams":[{"show":True,"type":"line","mode":"normal","data":{"label":"Bans","id":"1"},"drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True,"interpolate":"linear","valueAxis":"ValueAxis-1"}],
+             "addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"date_histogram","schema":"segment","params":{"field":"@timestamp","useNormalizedEsInterval":True,"interval":"auto","drop_partials":False,"min_doc_count":1,"extended_bounds":{}}},
+             {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"jail","size":10,"order":"desc","orderBy":"1"}}],
+            fail2ban_flt),
+
+        viz("f2b-v6-top-ips",  "Top 15 Banned IPs", "horizontal_bar",
+            {"type":"histogram","grid":{"categoryLines":False},
+             "categoryAxes":[{"id":"CategoryAxis-1","type":"category","position":"left","show":True,"style":{},"scale":{"type":"linear"},"labels":{"show":True,"rotate":0,"filter":True,"truncate":200},"title":{}}],
+             "valueAxes":[{"id":"ValueAxis-1","name":"LeftAxis-1","type":"value","position":"bottom","show":True,"style":{},"scale":{"type":"linear","mode":"normal"},"labels":{"show":True,"rotate":0,"filter":False,"truncate":100},"title":{"text":"Bans"}}],
+             "seriesParams":[{"show":True,"type":"histogram","mode":"stacked","data":{"label":"Count","id":"1"},"valueAxis":"ValueAxis-1","drawLinesBetweenPoints":True,"lineWidth":2,"showCircles":True}],
+             "addTooltip":True,"addLegend":True,"legendPosition":"right","times":[],"addTimeMarker":False,"truncateLegend":True,"maxLegendLines":1,"distinctColors":False},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":"src_ip","size":15,"order":"desc","orderBy":"1"}}],
+            ban_flt),
+
+        viz("f2b-v7-jails",    "Bans by Jail", "pie",
+            {"type":"pie","addTooltip":True,"addLegend":True,"legendPosition":"right","isDonut":True,
+             "labels":{"show":True,"values":True,"last_level":True,"truncate":100}},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":"jail","size":10,"order":"desc","orderBy":"1"}}],
+            ban_flt),
+
+        viz("f2b-v8-actions",  "Ban vs. Unban vs. Restored", "pie",
+            {"type":"pie","addTooltip":True,"addLegend":True,"legendPosition":"right","isDonut":True,
+             "labels":{"show":True,"values":True,"last_level":True,"truncate":100}},
+            [{"id":"1","enabled":True,"type":"count","schema":"metric","params":{}},
+             {"id":"2","enabled":True,"type":"terms","schema":"segment","params":{"field":"action","size":10,"order":"desc","orderBy":"1"}}],
+            fail2ban_flt),
+    ]
+
+    print("Creating fail2ban visualizations...")
+    for v in f2b_vizs:
+        r, s = osd("POST", f"/api/saved_objects/{v['type']}/{v['id']}?overwrite=true",
+                   {"attributes": v["attributes"], "references": v.get("references", [])})
+        ok = "✅" if s < 300 else f"❌ {s}: {r.get('message','?')[:80]}"
+        print(f"  {v['attributes']['title']}: {ok}")
+
+    f2b_panels = [
+        # Row 1: KPIs h=9
+        {"id":"f2b-v1-bans",     "x":0,  "y":0,  "w":12, "h":9},
+        {"id":"f2b-v2-unbans",   "x":12, "y":0,  "w":12, "h":9},
+        {"id":"f2b-v3-unique",   "x":24, "y":0,  "w":12, "h":9},
+        {"id":"f2b-v4-restored", "x":36, "y":0,  "w":12, "h":9},
+        # Row 2: Timeline (full width)
+        {"id":"f2b-v5-timeline", "x":0,  "y":9,  "w":48, "h":12},
+        # Row 3: Top IPs + jails
+        {"id":"f2b-v6-top-ips",  "x":0,  "y":21, "w":24, "h":14},
+        {"id":"f2b-v7-jails",    "x":24, "y":21, "w":12, "h":14},
+        {"id":"f2b-v8-actions",  "x":36, "y":21, "w":12, "h":14},
+    ]
+
+    f2b_p_json, f2b_refs = [], []
+    for i, p in enumerate(f2b_panels):
+        pid = f"panel_{i+1}"
+        f2b_p_json.append({"version":"3.6.0","gridData":{"x":p["x"],"y":p["y"],"w":p["w"],"h":p["h"],"i":str(i+1)},"panelIndex":str(i+1),"embeddableConfig":{},"panelRefName":pid})
+        f2b_refs.append({"name":pid,"type":"visualization","id":p["id"]})
+
+    r, s = osd("POST", "/api/saved_objects/dashboard/fail2ban-activity?overwrite=true", {
+        "attributes": {
+            "title": "Fail2ban — Bans & Activity",
+            "description": "Bans/unbans across all fail2ban jails on Proxmox (sshd, proxmox API).",
+            "panelsJSON": json.dumps(f2b_p_json),
+            "optionsJSON": json.dumps({"useMargins":True,"syncColors":False,"hidePanelTitles":False}),
+            "version": 1, "timeRestore": False,
+            "kibanaSavedObjectMeta": {"searchSourceJSON": json.dumps({"query":{"match_all":{}},"filter":[]})}
+        },
+        "references": f2b_refs
+    })
+    print(f"  Dashboard: {s} — ID: fail2ban-activity")
+    print()
+    print("=== Fail2ban Dashboard ready ===")
+    print("  URL: <OSD>/app/dashboards#/view/fail2ban-activity")

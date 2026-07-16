@@ -4,7 +4,7 @@ kind: Job
 metadata:
   name: proxmox-pipeline-setup
   annotations:
-    pipeline-version: "1"
+    pipeline-version: "2"
 spec:
   backoffLimit: 3
   template:
