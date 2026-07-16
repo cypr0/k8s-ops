@@ -74,23 +74,29 @@ spec:
                           - k8s-wrk-1
                           - k8s-wrk-2
                           - k8s-wrk-3
-            # Never share a node with CNPG Postgres or OpenSearch - a
-            # saturated inference run must not take a database/search pod
-            # down with it.
+            # Prefer not to share a node with CNPG Postgres or OpenSearch - a
+            # saturated inference run shouldn't starve a database/search pod.
+            # Soft preference only: with 4 workers and OpenSearch (3 masters)
+            # + CNPG (3 replicas) already spread across all of them, a hard
+            # "required" rule leaves zero schedulable nodes.
             podAntiAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                - topologyKey: kubernetes.io/hostname
-                  labelSelector:
-                    matchLabels:
-                      cnpg.io/cluster: postgres
-                  namespaces:
-                    - database
-                - topologyKey: kubernetes.io/hostname
-                  labelSelector:
-                    matchLabels:
-                      opensearch.org/opensearch-cluster: opensearch
-                  namespaces:
-                    - logging
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchLabels:
+                        cnpg.io/cluster: postgres
+                    namespaces:
+                      - database
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchLabels:
+                        opensearch.org/opensearch-cluster: opensearch
+                    namespaces:
+                      - logging
 
     service:
       app:
