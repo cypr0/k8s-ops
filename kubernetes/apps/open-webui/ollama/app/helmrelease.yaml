@@ -51,10 +51,14 @@ spec:
                 cpu: "2"
                 memory: 6Gi
               limits:
-                # Capped at half a 6-vCPU worker - a full-tilt inference run
-                # must not starve co-located stateful workloads (CNPG/OpenSearch
-                # probes timed out and crashlooped when this was 5).
-                cpu: "3"
+                # cpu=3 throttled ~96% of CPU periods (cgroup cpu.stat:
+                # nr_throttled/nr_periods) with the 7B model, tanking
+                # inference to ~2 tok/s eval. Raised to 5 - the pod
+                # anti-affinity below is now "preferred" (not required),
+                # so a saturated run is much less likely to land on the
+                # same node as CNPG/OpenSearch, and this is still capped
+                # below the 6-vCPU worker total to leave room for it.
+                cpu: "5"
                 memory: 12Gi
 
         pod:
