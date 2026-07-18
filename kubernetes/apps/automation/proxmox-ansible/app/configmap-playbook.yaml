@@ -305,12 +305,19 @@ data:
         # side - OPNsense/WireGuard still need their own rule permitting
         # 192.168.40.0/24 to reach this host; that's outside this playbook.
         # NOTE: post-up rules only apply on `ifreload -a` / reboot, not immediately.
+        #
+        # NOTE: the "192.168.200.0/24 via 192.168.10.1" line referenced by the
+        # task above does not actually exist on this host (that task only ever
+        # ran in no-op "fix if present" mode) - anchoring on it here previously
+        # caused this line to be appended past `source /etc/network/interfaces.d/*`,
+        # outside any iface block, which ifupdown2 refuses to parse. Anchor on
+        # the vmbr1 stanza's own address line instead, which is guaranteed present.
         - name: Ensure LAN route to scanner network (192.168.40.0/24) via OPNsense
           ansible.builtin.lineinfile:
             path: /etc/network/interfaces
             regexp: 'post-up ip route add 192\.168\.40\.0/24 via'
             line: "        post-up ip route add 192.168.40.0/24 via 192.168.10.1"
-            insertafter: 'post-up ip route add 192.168.200.0/24 via 192.168.10.1'
+            insertafter: '^\s*address 192\.168\.10\.0/24$'
             state: present
 
         # Validate sysctl forwarding is enabled
