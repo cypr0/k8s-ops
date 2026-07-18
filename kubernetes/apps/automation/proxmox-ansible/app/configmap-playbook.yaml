@@ -77,6 +77,7 @@ data:
         allowed_ip: "{{ allowed_ip }}"
         proxmox_host: "{{ proxmox_host }}"
         ansible_pubkey: "{{ lookup('env', 'PROXMOX_ANSIBLE_SSH_PUBKEY') }}"
+        ftp_password: "{{ lookup('env', 'FTP_SCANNER_PASSWORD') }}"
 
       tasks:
 
@@ -189,6 +190,14 @@ data:
               logpath  = /var/log/daemon.log
               maxretry = 3
               bantime  = 86400
+
+              [vsftpd]
+              enabled  = true
+              port     = ftp,ftp-data,21100:21110
+              filter   = vsftpd
+              logpath  = /var/log/vsftpd.log
+              maxretry = 4
+              bantime  = 7200
           notify: Restart fail2ban
 
         - name: Deploy fail2ban Proxmox filter
@@ -290,6 +299,19 @@ data:
             regexp: 'post-up ip route add 192.168.200.0/24 via'
             line: "        post-up ip route add 192.168.200.0/24 via 192.168.10.1"
             backrefs: yes
+
+        # Route for the Brother scanner's subnet (reaches Proxmox via S2S WireGuard
+        # terminating on OPNsense). This only fixes return routing on the Proxmox
+        # side - OPNsense/WireGuard still need their own rule permitting
+        # 192.168.40.0/24 to reach this host; that's outside this playbook.
+        # NOTE: post-up rules only apply on `ifreload -a` / reboot, not immediately.
+        - name: Ensure LAN route to scanner network (192.168.40.0/24) via OPNsense
+          ansible.builtin.lineinfile:
+            path: /etc/network/interfaces
+            regexp: 'post-up ip route add 192\.168\.40\.0/24 via'
+            line: "        post-up ip route add 192.168.40.0/24 via 192.168.10.1"
+            insertafter: 'post-up ip route add 192.168.200.0/24 via 192.168.10.1'
+            state: present
 
         # Validate sysctl forwarding is enabled
         - name: Validate IPv4 forwarding sysctl in interfaces
@@ -462,6 +484,118 @@ data:
             enabled: yes
             state: started
 
+        # ── FTP for Brother scanner → Paperless consume share ────────────────
+        # Consume dir is served over NFS to Kubernetes/Paperless (USERMAP_UID/GID
+        # 3000) at /rpool/k8s-rwx/paperless-consume. The FTP-uploading local user
+        # is created with the identical uid/gid so files land with the exact same
+        # ownership Paperless already expects - no all_squash/anonuid needed.
+        - name: Determine Proxmox host LAN IP (vmbr1, 192.168.10.0/24)
+          ansible.builtin.set_fact:
+            ftp_lan_ip: "{{ ansible_facts.all_ipv4_addresses | select('match', '^192\\.168\\.10\\.') | list | first }}"
+
+        - name: Assert LAN IP was found for vsftpd binding
+          ansible.builtin.assert:
+            that:
+              - ftp_lan_ip is defined
+              - ftp_lan_ip | length > 0
+            fail_msg: "Could not determine this host's 192.168.10.0/24 (vmbr1) address from gathered facts - refusing to guess a bind address for vsftpd."
+
+        - name: Install vsftpd
+          ansible.builtin.apt:
+            name: vsftpd
+            state: present
+
+        - name: Ensure scanner group exists (gid matches Paperless USERMAP_GID)
+          ansible.builtin.group:
+            name: scanner
+            gid: 3000
+            state: present
+
+        - name: Ensure scanner FTP user exists (uid matches Paperless USERMAP_UID)
+          ansible.builtin.user:
+            name: scanner
+            uid: 3000
+            group: scanner
+            shell: /usr/sbin/nologin
+            home: /rpool/k8s-rwx/paperless-consume
+            create_home: no
+            state: present
+
+        - name: Set scanner FTP password
+          ansible.builtin.shell: "echo 'scanner:{{ ftp_password }}' | chpasswd"
+          no_log: true
+          when: ftp_password | length > 0
+          changed_when: true
+
+        - name: Ensure Paperless consume directory ownership matches Kubernetes side
+          ansible.builtin.file:
+            path: /rpool/k8s-rwx/paperless-consume
+            state: directory
+            owner: 3000
+            group: 3000
+            mode: "0770"
+
+        - name: Deploy vsftpd userlist (allow-list of FTP users)
+          ansible.builtin.copy:
+            dest: /etc/vsftpd.userlist
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              scanner
+
+        - name: Deploy vsftpd.conf
+          ansible.builtin.copy:
+            dest: /etc/vsftpd.conf
+            owner: root
+            group: root
+            mode: "0600"
+            content: |
+              # vsftpd.conf — Brother scanner upload into Paperless consume share
+              # Managed by Ansible. Do not edit manually.
+
+              listen=YES
+              listen_ipv6=NO
+              listen_address={{ ftp_lan_ip }}
+              anonymous_enable=NO
+              local_enable=YES
+              write_enable=YES
+
+              # Only the scanner account may log in.
+              userlist_enable=YES
+              userlist_file=/etc/vsftpd.userlist
+              userlist_deny=NO
+
+              chroot_local_user=YES
+              # local_root must be writable by the chrooted user (files land directly
+              # in the Paperless consume share) - accepted trade-off for a single
+              # trusted device reachable only from its own isolated /24 via S2S WG.
+              allow_writeable_chroot=YES
+              local_root=/rpool/k8s-rwx/paperless-consume
+              local_umask=002
+              file_open_mode=0660
+
+              pasv_enable=YES
+              pasv_address={{ ftp_lan_ip }}
+              pasv_min_port=21100
+              pasv_max_port=21110
+
+              max_clients=5
+              max_per_ip=2
+
+              xferlog_enable=YES
+              dual_log_enable=YES
+              vsftpd_log_file=/var/log/vsftpd.log
+
+              session_support=NO
+          notify: Restart vsftpd
+
+        - name: Enable and start vsftpd
+          ansible.builtin.service:
+            name: vsftpd
+            enabled: yes
+            state: started
+
       handlers:
         - name: Restart fail2ban
           ansible.builtin.service:
@@ -482,4 +616,9 @@ data:
         - name: Restart rsyslog
           ansible.builtin.service:
             name: rsyslog
+            state: restarted
+
+        - name: Restart vsftpd
+          ansible.builtin.service:
+            name: vsftpd
             state: restarted

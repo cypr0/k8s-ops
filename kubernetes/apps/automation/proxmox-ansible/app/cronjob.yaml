@@ -28,7 +28,9 @@ spec:
           containers:
             - name: ansible
               image: python:3.14-alpine
-              command: ["/bin/sh", "/scripts/run.sh"]
+              command:
+                - "/bin/sh"
+                - "/scripts/run.sh"
               env:
                 - name: PROXMOX_SSH_HOST
                   valueFrom:
@@ -40,6 +42,11 @@ spec:
                     secretKeyRef:
                       name: proxmox-ansible-credentials
                       key: PROXMOX_ANSIBLE_SSH_PUBKEY
+                - name: FTP_SCANNER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: proxmox-ansible-credentials
+                      key: FTP_SCANNER_PASSWORD
                 # Flux substitutes ${SECRET_ALLOWED_IP} from cluster-secrets
                 - name: ALLOWED_IP
                   value: "${SECRET_ALLOWED_IP}"
@@ -62,7 +69,8 @@ spec:
                 runAsNonRoot: false
                 runAsUser: 0
                 capabilities:
-                  drop: ["ALL"]
+                  drop:
+                    - "ALL"
           volumes:
             - name: scripts
               configMap:
