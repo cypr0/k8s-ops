@@ -46,7 +46,10 @@ spec:
               # PAPERLESS_SOCIALACCOUNT_PROVIDERS is built in externalsecret.yaml
               # (client_id/secret come from 1Password) and injected via
               # envFrom: secretRef: paperless-secret below.
-              PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS: "true"
+              # false: locally-managed groups (e.g. "Standard User") aren't
+              # in Authentik's OIDC groups claim, so syncing would wipe them
+              # on every login - group membership is managed in Paperless.
+              PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS: "false"
               PAPERLESS_TASK_WORKERS: 2
               PAPERLESS_TIKA_ENABLED: 1
               PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://gotenberg-http.paperless.svc.cluster.local:3000
