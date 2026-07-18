@@ -528,6 +528,17 @@ data:
             create_home: no
             state: present
 
+        # vsftpd's PAM stack uses pam_shells, which rejects login for any user
+        # whose shell isn't listed in /etc/shells - /usr/sbin/nologin isn't
+        # there by default. Adding it here only satisfies that check; the
+        # nologin binary itself still refuses any actual interactive session
+        # (e.g. via SSH), so this doesn't weaken anything.
+        - name: Allow nologin shell to pass vsftpd's pam_shells check
+          ansible.builtin.lineinfile:
+            path: /etc/shells
+            line: /usr/sbin/nologin
+            state: present
+
         - name: Set scanner FTP password
           ansible.builtin.shell: "echo 'scanner:{{ ftp_password }}' | chpasswd"
           no_log: true
