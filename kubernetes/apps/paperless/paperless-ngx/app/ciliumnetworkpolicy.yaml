@@ -120,9 +120,13 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
-    # External IMAP mail server for mail-fetch integration
+    # External IMAP mail server for mail-fetch integration. ndots:5 in the
+    # pod's resolv.conf makes the resolver try the namespace-suffixed search
+    # domain before the absolute name, so Cilium learns the IP under that
+    # suffixed FQDN - allowlist both forms.
     - toFQDNs:
         - matchName: "${SECRET_PAPERLESS_IMAP_SERVER}"
+        - matchName: "${SECRET_PAPERLESS_IMAP_SERVER}.paperless.svc.cluster.local"
       toPorts:
         - ports:
             - port: "993"
