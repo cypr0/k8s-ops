@@ -34,7 +34,12 @@ spec:
               TAGS: "Neu"
               ADD_AI_PROCESSED_TAG: "yes"
               AI_PROCESSED_TAG_NAME: "Pre-processed"
-              USE_PROMPT_TAGS: "yes"
+              # "yes" replaces SYSTEM_PROMPT entirely with a minimal built-in
+              # prompt (title/correspondent/tags/date/language only - no
+              # document_type, no custom fields) - incompatible with our
+              # custom prompt below. Tag consistency is instead handled by
+              # SYSTEM_PROMPT's own rules (normalize, 2-5 specific tags).
+              USE_PROMPT_TAGS: "no"
               PROMPT_TAGS: "Steuer,IT-Sicherheit,Datenschutz,Hosting,Software-Abo,Hardware,Telekommunikation,Gesundheit,Fortbildung,Handwerkerleistung,Haushaltsnahe-Dienstleistung,Immobilie,Nebenkosten,Bank,Versicherung,Behoerde,Mitgliedschaft,Abonnement,Fahrzeug,Familie"
               USE_EXISTING_DATA: "yes"
               ACTIVATE_CUSTOM_FIELDS: "yes"
