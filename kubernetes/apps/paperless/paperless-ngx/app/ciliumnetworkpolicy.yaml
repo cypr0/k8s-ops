@@ -53,7 +53,8 @@ spec:
             - port: "80"
               protocol: TCP
   egress:
-    # DNS resolution
+    # DNS resolution (matchPattern required so Cilium learns resolved IPs
+    # for the toFQDNs rule below - see velero/opensearch policies for same pattern)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": kube-system
@@ -64,6 +65,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
     # Database access (PostgreSQL and Redis/Dragonfly in database namespace)
     - toEndpoints:
         - matchLabels:
@@ -115,6 +119,13 @@ spec:
       toPorts:
         - ports:
             - port: "10443"
+              protocol: TCP
+    # External IMAP mail server for mail-fetch integration
+    - toFQDNs:
+        - matchName: "${SECRET_PAPERLESS_IMAP_SERVER}"
+      toPorts:
+        - ports:
+            - port: "993"
               protocol: TCP
 ---
 # tika: document text extraction service

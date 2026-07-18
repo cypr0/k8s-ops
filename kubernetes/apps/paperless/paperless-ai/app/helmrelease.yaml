@@ -34,10 +34,10 @@ spec:
               TAGS: "Neu"
               ADD_AI_PROCESSED_TAG: "yes"
               AI_PROCESSED_TAG_NAME: "Pre-processed"
-              USE_PROMPT_TAGS: "no"
-              PROMPT_TAGS: ""
+              USE_PROMPT_TAGS: "yes"
+              PROMPT_TAGS: "Steuer,IT-Sicherheit,Datenschutz,Hosting,Software-Abo,Hardware,Telekommunikation,Gesundheit,Fortbildung,Handwerkerleistung,Haushaltsnahe-Dienstleistung,Immobilie,Nebenkosten,Bank,Versicherung,Behoerde,Mitgliedschaft,Abonnement,Fahrzeug,Familie"
               USE_EXISTING_DATA: "yes"
-              ACTIVATE_CUSTOM_FIELDS: "no"
+              ACTIVATE_CUSTOM_FIELDS: "yes"
               # OpenRouter (replaces the local CPU-only Ollama backend - a
               # 14B/7B model on this cluster's overcommitted worker VMs was
               # throttled to ~2 tok/s, taking minutes per document).
