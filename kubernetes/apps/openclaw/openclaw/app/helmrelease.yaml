@@ -199,7 +199,7 @@ spec:
             image:
               repository: flux159/mcp-server-kubernetes
               # renovate: datasource=docker depName=flux159/mcp-server-kubernetes
-              tag: v4.0.4
+              tag: v4.0.7
             env:
               HOST: 127.0.0.1
               PORT: "3001"
