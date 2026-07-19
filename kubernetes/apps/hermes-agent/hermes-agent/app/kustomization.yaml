@@ -3,11 +3,14 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: hermes-agent
 resources:
-  - ./gitrepository.yaml
   - ./externalsecret.yaml
-  - ./helmrelease.yaml
+  - ./serviceaccount.yaml
+  - ./pvc.yaml
+  - ./configmap.yaml
+  - ./deployment.yaml
   - ./rbac.yaml
   - ./ciliumnetworkpolicy.yaml
-# Hand-rolled externalsecret.yaml instead of the chart's own
-# externalSecret.enabled mechanism: that template hardcodes apiVersion
-# external-secrets.io/v1beta1, which this cluster's ESO doesn't serve.
+# No chart, no GitRepository/HelmRelease: hand-rolled instead of depending
+# on ultraworkers/hermes-agent-helm-chart (young, unofficial, and both its
+# default image tag and its ExternalSecret apiVersion were wrong on first
+# real deploy). See deployment.yaml for details.

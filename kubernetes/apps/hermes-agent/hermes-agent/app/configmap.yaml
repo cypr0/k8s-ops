@@ -1,0 +1,52 @@
+---
+# Bootstrap config.yaml, copied into HERMES_HOME by the bootstrap-config
+# init container (deployment.yaml) on every pod start. This is the full set
+# of values -- the upstream chart's own defaults (agent/terminal/display/
+# browser/compression) merged with our two overrides (model.default,
+# security.tirith_fail_open) that Helm's values-merge used to do implicitly.
+# Made explicit here on purpose: no hidden chart defaults left to track down.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-agent-config
+  labels:
+    app.kubernetes.io/name: hermes-agent
+data:
+  config.yaml: |-
+    model:
+      # Mistral: strong German/European-language fluency at a low price
+      # ($0.10 / $0.30 per M tokens prompt/completion, verified live against
+      # https://openrouter.ai/api/v1/models). Noticeably better German than
+      # similarly-priced Qwen/DeepSeek models in practice. Bump to
+      # mistralai/mistral-medium-3.1 if quality matters more than cost.
+      default: mistralai/mistral-small-3.2-24b-instruct
+      provider: auto
+      base_url: https://openrouter.ai/api/v1
+    agent:
+      max_turns: 90
+      gateway_timeout: 1800
+      restart_drain_timeout: 60
+      tool_use_enforcement: auto
+    terminal:
+      backend: local
+      cwd: .
+      timeout: 180
+    display:
+      tool_progress: all
+      interim_assistant_messages: true
+    browser:
+      inactivity_timeout: 120
+      command_timeout: 30
+      allow_private_urls: false
+    compression:
+      enabled: true
+      threshold: 0.5
+      target_ratio: 0.2
+      protect_last_n: 20
+    security:
+      redact_secrets: true
+      tirith_enabled: true
+      # Upstream default is `true` (fail OPEN: an errored guardrail check
+      # lets the action through). This agent has shell + WhatsApp + a
+      # read-only k8s view, so flip to fail-closed instead.
+      tirith_fail_open: false

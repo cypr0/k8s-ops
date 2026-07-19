@@ -1,0 +1,223 @@
+---
+# Hand-rolled instead of using the ultraworkers/hermes-agent-helm-chart's
+# own Deployment template: that chart is young (3.5 months old), unofficial,
+# and both its default image tag and its ExternalSecret apiVersion turned
+# out to be wrong on first real deploy. We already hand-roll RBAC/CNP/
+# ExternalSecret around it anyway, and this app's actual container spec is
+# simple enough that the chart wasn't buying us much abstraction -- this
+# mirrors (the working parts of) upstream's templates/deployment.yaml.
+#
+# NOTE: this ConfigMap is a plain resource, not hash-suffixed -- editing
+# config.yaml does NOT automatically roll the pod. Run
+# `kubectl rollout restart deployment/hermes-agent -n hermes-agent` after
+# changing configmap.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-agent
+  labels:
+    app.kubernetes.io/name: hermes-agent
+spec:
+  replicas: 1
+  # HERMES_HOME holds mutable state (config, WhatsApp session, memory) on a
+  # ReadWriteOnce PVC -- must stay single-replica, Recreate (not
+  # RollingUpdate) so the old and new pod are never both attached at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-agent
+    spec:
+      serviceAccountName: hermes-agent
+      automountServiceAccountToken: true
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Seeds HERMES_HOME/config.yaml from the ConfigMap on every start
+        # (always-overwrite -- matches the chart's bootstrap.overwrite=true
+        # default, since we want the ConfigMap to stay the single source of
+        # truth rather than drifting from whatever the running agent wrote
+        # back to its own config at runtime).
+        - name: bootstrap-config
+          image: &image nousresearch/hermes-agent:v2026.7.7.2
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              set -eu
+              mkdir -p /opt/data/home
+              cp /bootstrap/config.yaml /opt/data/config.yaml
+          env:
+            - name: HERMES_HOME
+              value: &home /opt/data
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: bootstrap
+              mountPath: /bootstrap
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          securityContext: &initSecurityContext
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+            seccompProfile:
+              type: RuntimeDefault
+        # Curated, reviewable tool installation -- the safer alternative to
+        # giving the running agent sudo/root. An init container's root
+        # filesystem is NOT shared with the main container, only volume
+        # mounts are -- so anything installed here must land on the shared
+        # /opt/data volume (not /usr/*) to be visible to the main container.
+        # kubectl is what gives the agent's "terminal" tool a way to
+        # actually use the read-only RBAC granted in rbac.yaml (RBAC alone
+        # is just permission, not an interface). Add further tools the same
+        # way, one reviewable diff at a time -- pip install --target=
+        # /opt/data/tools/pip works too, if the image ships python3/pip
+        # (unverified, the image is primarily Node-based).
+        - name: tools-install
+          image: *image
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              set -eu
+              mkdir -p /opt/data/tools/bin /opt/data/tools/pip
+              # kubectl v1.36.2, linux/amd64 -- checksum from
+              # https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl.sha256
+              # Bump both the version and this checksum together on upgrade.
+              curl -fsSL -o /tmp/kubectl \
+                https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl
+              echo "1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82  /tmp/kubectl" | sha256sum -c -
+              install -m 0755 /tmp/kubectl /opt/data/tools/bin/kubectl
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: tmp
+              mountPath: /tmp
+          securityContext: *initSecurityContext
+      containers:
+        - name: hermes-agent
+          image: *image
+          args:
+            - gateway
+            - run
+          workingDir: /opt/hermes
+          env:
+            - name: HERMES_HOME
+              value: *home
+            - name: HOME
+              value: /opt/data/home
+            # Exposes whatever tools-install placed on the shared volume.
+            # Must repeat the base image's own system dirs -- setting PATH
+            # via env replaces the image's built-in PATH, it doesn't extend
+            # it.
+            - name: PATH
+              value: "/opt/data/tools/bin:/opt/data/tools/pip/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            - name: PYTHONPATH
+              value: "/opt/data/tools/pip"
+            - name: WEB_TOOLS_DEBUG
+              value: "false"
+            - name: VISION_TOOLS_DEBUG
+              value: "false"
+            - name: MOA_TOOLS_DEBUG
+              value: "false"
+            - name: IMAGE_TOOLS_DEBUG
+              value: "false"
+            - name: HERMES_HUMAN_DELAY_MODE
+              value: "off"
+            - name: HERMES_HUMAN_DELAY_MIN_MS
+              value: "800"
+            - name: HERMES_HUMAN_DELAY_MAX_MS
+              value: "2500"
+            - name: GATEWAY_ALLOW_ALL_USERS
+              value: "false"
+            - name: WHATSAPP_ENABLED
+              value: "true"
+            # self-chat: Hermes uses the owner's own linked WhatsApp session
+            # (paired once via `kubectl exec ... -- hermes whatsapp`,
+            # QR-code scan) rather than a separate bot number.
+            - name: WHATSAPP_MODE
+              value: "self-chat"
+            # Phone number kept out of the public repo: resolved via Flux
+            # postBuild substitution from the cluster-secrets Secret
+            # (kubernetes/components/sops/cluster-secrets.sops.yaml, key
+            # SECRET_HERMES_WHATSAPP_USER). Format per the WhatsApp-specific
+            # setup docs is digits only, no leading "+".
+            - name: WHATSAPP_ALLOWED_USERS
+              value: "${SECRET_HERMES_WHATSAPP_USER}"
+            # Every other channel stays off in this first pass.
+            - name: TELEGRAM_ALLOWED_USERS
+              value: ""
+            - name: TELEGRAM_HOME_CHANNEL
+              value: ""
+            - name: DISCORD_ALLOWED_USERS
+              value: ""
+            - name: DISCORD_HOME_CHANNEL
+              value: ""
+            - name: SLACK_ALLOWED_USERS
+              value: ""
+            - name: SIGNAL_ALLOWED_USERS
+              value: ""
+            - name: SIGNAL_GROUP_ALLOWED_USERS
+              value: ""
+          envFrom:
+            - secretRef:
+                name: hermes-agent-secrets
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          # Root, unrestricted: the image's entrypoint is s6-overlay, which
+          # wants to own /run and write various runtime dirs at boot --
+          # under non-root + readOnlyRootFilesystem it fails hard ("/run
+          # belongs to uid 0 instead of 1000 ... lacking the privileges to
+          # fix it"). Same tradeoff kubernetes/apps/openclaw and open-webui
+          # already made for the same class of image; s6-overlay typically
+          # drops privileges internally after its own bootstrap, so the
+          # long-running hermes process itself may not stay root regardless.
+          # The init containers above (which don't run s6-overlay) stay
+          # fully hardened.
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: tmp
+              mountPath: /tmp
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hermes-agent-data
+        - name: bootstrap
+          configMap:
+            name: hermes-agent-config
+        - name: tmp
+          emptyDir: {}
+        # Browser tool uses shared memory for headless rendering.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+      terminationGracePeriodSeconds: 120

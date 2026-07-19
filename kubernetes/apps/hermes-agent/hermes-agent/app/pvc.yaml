@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-agent-data
+  labels:
+    app.kubernetes.io/name: hermes-agent
+spec:
+  # Single replica only (HERMES_HOME holds mutable state -- config, WhatsApp
+  # session, memory) -- ReadWriteOnce is enough, no need for RWX/zfs-nfs's
+  # multi-attach.
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: zfs-nfs
+  resources:
+    requests:
+      storage: 5Gi
