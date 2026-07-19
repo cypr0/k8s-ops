@@ -26,6 +26,7 @@ sys.path.insert(0, "/opt/data/tools/pip")
 from lib import constants as C
 from lib import db
 from lib import kraken
+from lib import stats
 
 
 def cmd_get_price(args: argparse.Namespace) -> None:
@@ -69,6 +70,27 @@ def cmd_get_portfolio(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_get_stats(args: argparse.Namespace) -> None:
+    conn = db.connect()
+    try:
+        with conn, conn.cursor() as cur:
+            lines = []
+            for symbol in C.ALLOWED_SYMBOLS:
+                s = stats.get_win_rate(cur, symbol)
+                kelly = stats.kelly_fraction(s["win_rate"])
+                capped = min(kelly, C.MAX_POSITION_PCT)
+                lines.append(
+                    f"{symbol}: {s['wins']}W/{s['losses']}L closed "
+                    f"({s['total_closed']} total), smoothed win rate "
+                    f"{s['win_rate']:.1%}, Kelly fraction {kelly:.1%} "
+                    f"(capped at {capped:.1%} of portfolio, hard ceiling "
+                    f"{C.MAX_POSITION_PCT:.0%})"
+                )
+            print("\n".join(lines))
+    finally:
+        conn.close()
+
+
 def cmd_propose_buy(args: argparse.Namespace) -> None:
     if args.symbol not in C.ALLOWED_SYMBOLS:
         print(f"Rejected: {args.symbol} is not tradeable. Allowed: {', '.join(C.ALLOWED_SYMBOLS)}")
@@ -102,12 +124,17 @@ def cmd_propose_buy(args: argparse.Namespace) -> None:
 
             price = kraken.get_price(args.symbol)
             total_value = db.compute_total_portfolio_value(cur, kraken)
-            max_position = total_value * C.MAX_POSITION_PCT
+            # Kelly-derived cap: can only be <= MAX_POSITION_PCT, never
+            # more -- see lib/stats.py. When there's no trade history yet,
+            # this starts near the flat MAX_POSITION_PCT (neutral prior)
+            # and tightens or loosens as our own win rate becomes clearer.
+            position_pct = stats.capped_kelly_position_pct(cur, args.symbol)
+            max_position = total_value * position_pct
             if amount > max_position:
                 print(
-                    f"Rejected: EUR {amount} exceeds the max position size "
-                    f"({C.MAX_POSITION_PCT:.0%} of EUR {total_value:.2f} = "
-                    f"EUR {max_position:.2f})."
+                    f"Rejected: EUR {amount} exceeds the current max position size "
+                    f"({position_pct:.1%} of EUR {total_value:.2f} = "
+                    f"EUR {max_position:.2f}, Kelly-adjusted from our own trade history)."
                 )
                 return
             cash = db.get_portfolio_cash(cur)
@@ -115,7 +142,7 @@ def cmd_propose_buy(args: argparse.Namespace) -> None:
                 print(f"Rejected: EUR {amount} exceeds available cash (EUR {cash}).")
                 return
 
-            proposal_id = db.create_buy_proposal(cur, args.symbol, amount, price)
+            proposal_id = db.create_buy_proposal(cur, args.symbol, amount, price, source="user")
             print(
                 f"Proposal: BUY EUR {amount} of {args.symbol} at ~EUR {price} "
                 f"(expires in {C.PROPOSAL_EXPIRY_MINUTES} min).\n"
@@ -152,12 +179,16 @@ def cmd_confirm_buy(args: argparse.Namespace) -> None:
 
             price = kraken.get_price(proposal["symbol"])
             total_value = db.compute_total_portfolio_value(cur, kraken)
-            max_position = total_value * C.MAX_POSITION_PCT
+            # Re-check the Kelly-derived cap fresh -- our own win rate may
+            # have shifted (more trades closed) since the proposal was made.
+            position_pct = stats.capped_kelly_position_pct(cur, proposal["symbol"])
+            max_position = total_value * position_pct
             if proposal["amount_eur"] > max_position:
                 db.reject_proposal(cur, proposal["id"], "exceeds max position size at confirm-time")
                 print(
                     f"Cancelled: EUR {proposal['amount_eur']} now exceeds the max position "
-                    f"size (EUR {max_position:.2f}) -- portfolio value moved. Propose a smaller amount."
+                    f"size (EUR {max_position:.2f}, {position_pct:.1%} of portfolio) -- "
+                    f"portfolio value or our own trade history moved. Propose a smaller amount."
                 )
                 return
             cash = db.get_portfolio_cash(cur)
@@ -222,6 +253,9 @@ def main() -> int:
 
     p = sub.add_parser("get_portfolio")
     p.set_defaults(func=cmd_get_portfolio)
+
+    p = sub.add_parser("get_stats")
+    p.set_defaults(func=cmd_get_stats)
 
     p = sub.add_parser("propose_buy")
     p.add_argument("symbol", choices=C.ALLOWED_SYMBOLS)

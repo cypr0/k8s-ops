@@ -64,3 +64,28 @@ TIMEZONE = "Europe/Berlin"
 # Cross-check (Kraken vs. Alpha Vantage): divergence beyond this flags data
 # quality as bad and blocks new BUY proposals until a later check agrees again.
 DATA_QUALITY_DIVERGENCE_PCT = Decimal("0.02")
+
+# --- Phase 2: Kelly Criterion / EV scoring / feedback loop ---
+# Methodology constants, not personal financial data -- plain code is fine
+# (unlike the capital/risk-% figures above).
+
+KRAKEN_OHLC_URL = "https://api.kraken.com/0/public/OHLC"
+
+# Feedback loop: Bayesian-smoothed win rate from our own closed positions.
+# A weak neutral prior (starts at 50/50) keeps early estimates from being
+# wildly noisy before enough trade history exists.
+FEEDBACK_PRIOR_WINS = Decimal("2")
+FEEDBACK_PRIOR_LOSSES = Decimal("2")
+
+# Kelly Criterion: fractional multiplier applied to the raw Kelly fraction
+# (half-Kelly is standard practice to reduce variance from estimation
+# error). The result is ALWAYS additionally clamped to
+# [0, MAX_POSITION_PCT] -- Kelly can only shrink the position size below
+# the existing hard cap above, never grow beyond it.
+KELLY_FRACTION_MULTIPLIER = Decimal("0.5")
+
+# Technical signal: simple mean-reversion heuristic over hourly candles.
+# NOT a claim of real predictive edge -- a common, well-known indicator,
+# appropriate to test cheaply in paper trading, nothing more.
+SMA_PERIOD_HOURS = 20
+MEAN_REVERSION_THRESHOLD_PCT = Decimal("0.03")

@@ -28,8 +28,11 @@ configMapGenerator:
       - lib_db.py=trading-scripts/lib/db.py
       - lib_kraken.py=trading-scripts/lib/kraken.py
       - lib_alphavantage.py=trading-scripts/lib/alphavantage.py
+      - lib_stats.py=trading-scripts/lib/stats.py
+      - lib_signals.py=trading-scripts/lib/signals.py
       - check_positions.py=trading-scripts/check_positions.py
       - check_data_quality.py=trading-scripts/check_data_quality.py
+      - check_opportunities.py=trading-scripts/check_opportunities.py
       - cli.py=trading-scripts/cli.py
       - soul_briefing.md=trading-scripts/soul_briefing.md
     options:

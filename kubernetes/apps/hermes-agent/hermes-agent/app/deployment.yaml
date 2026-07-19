@@ -138,11 +138,13 @@ spec:
           securityContext: *initSecurityContext
         # Lays down the trading bot scripts (real .py files, see
         # trading-scripts/ + the configMapGenerator in kustomization.yaml),
-        # runs the idempotent Postgres migration, registers the two cron
-        # jobs exactly once each (state persists at /opt/data/cron/jobs.json
-        # on the PVC), and idempotently appends the hard-rule briefing to
-        # SOUL.md. Runs after tools-install (needs its pip packages) and
-        # bootstrap-config (needs config.yaml/HERMES_HOME already seeded).
+        # runs the idempotent Postgres migration, registers the cron jobs
+        # exactly once each (state persists at /opt/data/cron/jobs.json on
+        # the PVC), and keeps the SOUL.md briefing in sync (replace-between-
+        # markers, not "append once and never touch again" -- so editing
+        # soul_briefing.md and redeploying actually takes effect). Runs
+        # after tools-install (needs its pip packages) and bootstrap-config
+        # (needs config.yaml/HERMES_HOME already seeded).
         - name: bootstrap-trading
           image: *image
           command:
@@ -157,8 +159,11 @@ spec:
               cp /trading-src/lib_db.py           /opt/data/scripts/trading/lib/db.py
               cp /trading-src/lib_kraken.py        /opt/data/scripts/trading/lib/kraken.py
               cp /trading-src/lib_alphavantage.py /opt/data/scripts/trading/lib/alphavantage.py
+              cp /trading-src/lib_stats.py         /opt/data/scripts/trading/lib/stats.py
+              cp /trading-src/lib_signals.py       /opt/data/scripts/trading/lib/signals.py
               cp /trading-src/check_positions.py     /opt/data/scripts/trading/check_positions.py
               cp /trading-src/check_data_quality.py  /opt/data/scripts/trading/check_data_quality.py
+              cp /trading-src/check_opportunities.py /opt/data/scripts/trading/check_opportunities.py
               cp /trading-src/cli.py                 /opt/data/scripts/trading/cli.py
 
               /opt/hermes/.venv/bin/python3 -c "
@@ -183,10 +188,18 @@ spec:
                   --no-agent \
                   --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
               fi
-
-              if ! grep -q 'TRADING-BOT-BRIEFING v1' /opt/data/SOUL.md 2>/dev/null; then
-                cat /trading-src/soul_briefing.md >> /opt/data/SOUL.md
+              if ! grep -q '"name": "trading-check-opportunities"' /opt/data/cron/jobs.json 2>/dev/null; then
+                /opt/hermes/.venv/bin/hermes cron create "every 30m" \
+                  --name trading-check-opportunities \
+                  --script trading/check_opportunities.py \
+                  --no-agent \
+                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
               fi
+
+              if [ -f /opt/data/SOUL.md ] && grep -q 'TRADING-BOT-BRIEFING START' /opt/data/SOUL.md; then
+                sed -i '/<!-- TRADING-BOT-BRIEFING START -->/,/<!-- TRADING-BOT-BRIEFING END -->/d' /opt/data/SOUL.md
+              fi
+              cat /trading-src/soul_briefing.md >> /opt/data/SOUL.md
           env:
             - name: HERMES_HOME
               value: *home
