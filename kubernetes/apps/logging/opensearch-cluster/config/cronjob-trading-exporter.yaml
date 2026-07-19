@@ -41,6 +41,22 @@ spec:
                 - |
                   set -e
                   apk add --no-cache gcc musl-dev postgresql-dev >/dev/null
+                  # This cluster has no IPv6 egress route, but pypi.org /
+                  # files.pythonhosted.org resolve to both A and AAAA records
+                  # -- pip's resolver picks the AAAA record and hangs
+                  # retrying instead of falling back to IPv4 (verified live:
+                  # `curl -6` to pypi.org fails instantly with "Network
+                  # unreachable", `curl -4` succeeds immediately). Pinning
+                  # both hostnames to their IPv4 address in /etc/hosts via
+                  # socket.gethostbyname (IPv4-only by definition) removes
+                  # the IPv6 option before pip ever resolves them.
+                  python3 -c "
+                  import socket
+                  for host in ('pypi.org', 'files.pythonhosted.org'):
+                      ip = socket.gethostbyname(host)
+                      with open('/etc/hosts', 'a') as f:
+                          f.write(f'{ip} {host}\n')
+                  "
                   pip install --quiet --no-cache-dir psycopg2
                   python3 /scripts/export_trading.py
               env:
