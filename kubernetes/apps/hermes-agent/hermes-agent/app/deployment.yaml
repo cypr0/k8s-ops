@@ -123,11 +123,15 @@ spec:
             - name: HOME
               value: /opt/data/home
             # Exposes whatever tools-install placed on the shared volume.
-            # Must repeat the base image's own system dirs -- setting PATH
-            # via env replaces the image's built-in PATH, it doesn't extend
-            # it.
+            # Must repeat the image's OWN bin dirs too -- setting PATH via
+            # env replaces the image's built-in PATH, it doesn't extend it.
+            # /opt/hermes/bin (and the venv) is where the `hermes` CLI
+            # itself lives (confirmed via `find` in the running container:
+            # /opt/hermes/bin/hermes) -- omitting it broke
+            # `kubectl exec ... -- hermes whatsapp` with "executable file
+            # not found in $PATH".
             - name: PATH
-              value: "/opt/data/tools/bin:/opt/data/tools/pip/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+              value: "/opt/data/tools/bin:/opt/data/tools/pip/bin:/opt/hermes/bin:/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             - name: PYTHONPATH
               value: "/opt/data/tools/pip"
             - name: WEB_TOOLS_DEBUG
