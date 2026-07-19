@@ -59,8 +59,22 @@ spec:
                       with open('/etc/hosts', 'a') as f:
                           f.write(f'{ip} {host}\n')
                   "
-                  apk add --no-cache gcc musl-dev postgresql-dev >/dev/null
-                  pip install --quiet --no-cache-dir psycopg2
+                  # Even with IPv4 pinned, a brand-new pod's first connections
+                  # to a not-yet-contacted FQDN occasionally get dropped --
+                  # Cilium's DNS-proxy egress allow-list for that IP can lag
+                  # a moment behind the DNS answer. Retry the whole install
+                  # rather than let one bad attempt fail the Job.
+                  n=0
+                  until apk add --no-cache gcc musl-dev postgresql-dev >/dev/null 2>&1 \
+                        && pip install --quiet --no-cache-dir psycopg2; do
+                    n=$((n + 1))
+                    if [ "$n" -ge 5 ]; then
+                      echo "apk/pip install failed after $n attempts" >&2
+                      exit 1
+                    fi
+                    echo "apk/pip install attempt $n failed, retrying in 10s..." >&2
+                    sleep 10
+                  done
                   python3 /scripts/export_trading.py
               env:
                 - name: OPENSEARCH_HOST
