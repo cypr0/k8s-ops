@@ -25,7 +25,7 @@ spec:
     image:
       repository: nousresearch/hermes-agent
       # renovate: datasource=docker depName=nousresearch/hermes-agent
-      tag: "0.8.0"
+      tag: "v2026.7.7.2"
 
     serviceAccount:
       create: true
@@ -175,7 +175,7 @@ spec:
       # Nothing is installed by default below -- add packages here
       # deliberately, one reviewable git diff at a time.
       - name: tools-install
-        image: nousresearch/hermes-agent:0.8.0
+        image: nousresearch/hermes-agent:v2026.7.7.2
         command:
           - /bin/sh
           - -ec
