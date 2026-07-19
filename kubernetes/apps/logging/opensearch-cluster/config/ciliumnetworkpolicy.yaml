@@ -71,3 +71,12 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # PyPI (trading-to-opensearch compiles psycopg2 from source at
+    # container start -- no musl wheel exists, see cronjob-trading-exporter.yaml)
+    - toFQDNs:
+        - matchName: "pypi.org"
+        - matchName: "files.pythonhosted.org"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
