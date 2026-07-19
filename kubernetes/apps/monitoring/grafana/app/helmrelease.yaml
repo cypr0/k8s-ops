@@ -161,9 +161,15 @@ spec:
             type: postgres
             uid: trading-postgres
             url: postgres-rw.database.svc.cluster.local:5432
-            database: trading
             user: tradingreadonly
+            # The newer grafana-postgresql-datasource plugin reads the
+            # database name from jsonData.database, not the legacy
+            # top-level `database:` field -- that field is silently
+            # ignored, which surfaced as "You do not currently have a
+            # default database configured for this data source" on every
+            # panel despite the datasource's own health check passing.
             jsonData:
+              database: trading
               sslmode: require
               postgresVersion: 1700
             secureJsonData:
