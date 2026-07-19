@@ -109,7 +109,13 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_time ON portfolio_snapshots (
 -- migration running (same CNPG role-reconciliation lag as tradingusr
 -- originally had); a no-op until the role exists, takes effect on the
 -- next migration run after it does.
-DO $$
+--
+-- NOTE: dollar-quote delimiters below are doubled ($$$$ instead of $$) --
+-- Flux's postBuild.substituteFrom collapses "$$" -> "$" unconditionally
+-- when rendering this ConfigMap (same escaping quirk already hit with
+-- "${TRADING_WHATSAPP_NUMBER}" in deployment.yaml), so $$$$ is what
+-- actually reaches Postgres as $$.
+DO $$$$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tradingreadonly') THEN
     GRANT CONNECT ON DATABASE trading TO tradingreadonly;
@@ -118,7 +124,7 @@ BEGIN
     ALTER DEFAULT PRIVILEGES FOR ROLE tradingusr IN SCHEMA public
       GRANT SELECT ON TABLES TO tradingreadonly;
   END IF;
-END $$;
+END $$$$;
 """
 
 
