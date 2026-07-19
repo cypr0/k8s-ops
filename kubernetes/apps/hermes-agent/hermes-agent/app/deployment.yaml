@@ -196,6 +196,19 @@ spec:
                   --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
               fi
 
+              # One-time migration: the very first briefing format used a
+              # single "<!-- TRADING-BOT-BRIEFING v1 -->" marker with no
+              # closing tag (replaced by the START/END pair below), so it
+              # was never cleaned up by the delete-and-reappend step that
+              # follows -- both blocks ended up permanently duplicated in
+              # SOUL.md. Becomes a no-op forever once the v1 marker is gone.
+              if [ -f /opt/data/SOUL.md ] && grep -q 'TRADING-BOT-BRIEFING v1' /opt/data/SOUL.md; then
+                if grep -q 'TRADING-BOT-BRIEFING START' /opt/data/SOUL.md; then
+                  sed -i '/<!-- TRADING-BOT-BRIEFING v1 -->/,/<!-- TRADING-BOT-BRIEFING START -->/{/<!-- TRADING-BOT-BRIEFING START -->/!d}' /opt/data/SOUL.md
+                else
+                  sed -i '/<!-- TRADING-BOT-BRIEFING v1 -->/,$d' /opt/data/SOUL.md
+                fi
+              fi
               if [ -f /opt/data/SOUL.md ] && grep -q 'TRADING-BOT-BRIEFING START' /opt/data/SOUL.md; then
                 sed -i '/<!-- TRADING-BOT-BRIEFING START -->/,/<!-- TRADING-BOT-BRIEFING END -->/d' /opt/data/SOUL.md
               fi
