@@ -36,7 +36,7 @@ spec:
             image:
               repository: ghcr.io/openclaw/openclaw
               # renovate: datasource=docker depName=ghcr.io/openclaw/openclaw
-              tag: 2026.6.11
+              tag: 2026.7.1
             env:
               # Running as uid 0 resolves $HOME to /root, not the image's
               # default /home/node, which is where the data PVC is mounted.
@@ -140,7 +140,7 @@ spec:
             image:
               repository: ghcr.io/openclaw/openclaw
               # renovate: datasource=docker depName=ghcr.io/openclaw/openclaw
-              tag: 2026.6.11
+              tag: 2026.7.1
             env:
               TZ: Europe/Berlin
               # Running as uid 0 resolves $HOME to /root, not the image's
