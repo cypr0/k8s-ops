@@ -1,6 +1,6 @@
 ---
 # hermes-agent: WhatsApp-only AI agent (no web UI/ingress in this minimal-safe
-# first deployment -- see helmrelease.yaml). No Service is exposed, so this
+# first deployment -- see deployment.yaml). No Service is exposed, so this
 # policy is egress-only in practice; Ingress is still declared with zero
 # rules for explicit default-deny (defense in depth if a Service ever gets
 # added later without someone remembering to revisit this file).
@@ -34,6 +34,16 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
-    # k8s-mcp sidecar: read-only Kubernetes API access (RBAC-gated, see rbac.yaml)
+    # kubectl (installed by tools-install, invoked via the agent's terminal
+    # tool): read-only Kubernetes API access (RBAC-gated, see rbac.yaml)
     - toEntities:
         - kube-apiserver
+    # Trading bot: Postgres "trading" DB in the shared CNPG cluster (see
+    # externalsecret-postgres.yaml). Mirrors nextcloud's identical rule.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP

@@ -14,6 +14,8 @@ spec:
       namespace: kube-system
     - name: external-secrets-stores
       namespace: security
+    - name: cloudnative-pg-databases
+      namespace: database
   interval: 1h
   path: ./kubernetes/apps/hermes-agent/hermes-agent/app
   postBuild:

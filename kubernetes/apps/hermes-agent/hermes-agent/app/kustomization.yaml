@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: hermes-agent
 resources:
   - ./externalsecret.yaml
+  - ./externalsecret-postgres.yaml
   - ./serviceaccount.yaml
   - ./pvc.yaml
   - ./configmap.yaml
@@ -14,3 +15,22 @@ resources:
 # on ultraworkers/hermes-agent-helm-chart (young, unofficial, and both its
 # default image tag and its ExternalSecret apiVersion were wrong on first
 # real deploy). See deployment.yaml for details.
+
+# Trading bot scripts as real, reviewable .py files (not inlined YAML) --
+# generated into a ConfigMap. disableNameSuffixHash keeps the name stable
+# (bootstrap-trading's grep-based idempotency check and the Deployment's
+# volume reference don't need to track a content-hash suffix).
+configMapGenerator:
+  - name: hermes-agent-trading-scripts
+    files:
+      - lib_init.py=trading-scripts/lib/__init__.py
+      - lib_constants.py=trading-scripts/lib/constants.py
+      - lib_db.py=trading-scripts/lib/db.py
+      - lib_kraken.py=trading-scripts/lib/kraken.py
+      - lib_alphavantage.py=trading-scripts/lib/alphavantage.py
+      - check_positions.py=trading-scripts/check_positions.py
+      - check_data_quality.py=trading-scripts/check_data_quality.py
+      - cli.py=trading-scripts/cli.py
+      - soul_briefing.md=trading-scripts/soul_briefing.md
+    options:
+      disableNameSuffixHash: true
