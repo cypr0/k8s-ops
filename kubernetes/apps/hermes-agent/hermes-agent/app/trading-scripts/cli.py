@@ -107,6 +107,17 @@ def cmd_propose_buy(args: argparse.Namespace) -> None:
     conn = db.connect()
     try:
         with conn, conn.cursor() as cur:
+            # Max position size is a per-*symbol* cap -- a second manual buy
+            # while one's already open would silently stack past it
+            # (the automated scanner already avoided this, this closes the
+            # same gap for manually requested buys).
+            if db.get_open_positions(cur, args.symbol):
+                print(
+                    f"Rejected: you already have an open {args.symbol} position. "
+                    f"Only one open position per symbol at a time -- close it "
+                    f"first (stop-loss/profit-target) before opening another."
+                )
+                return
             if db.is_circuit_breaker_tripped_today(cur):
                 print(
                     "Rejected: daily circuit breaker is tripped (portfolio down "
@@ -167,6 +178,14 @@ def cmd_confirm_buy(args: argparse.Namespace) -> None:
 
             # Re-validate everything fresh -- price/portfolio may have moved
             # since the proposal was created.
+            if db.get_open_positions(cur, proposal["symbol"]):
+                db.reject_proposal(cur, proposal["id"], "a position in this symbol was opened since proposal")
+                print(
+                    f"Cancelled: you already opened a {proposal['symbol']} position "
+                    f"since this proposal was made (e.g. from confirming another "
+                    f"pending buy first) -- only one open position per symbol at a time."
+                )
+                return
             if db.is_circuit_breaker_tripped_today(cur):
                 db.reject_proposal(cur, proposal["id"], "circuit breaker tripped since proposal")
                 print("Cancelled: the daily circuit breaker tripped since you asked -- buy cancelled.")
