@@ -153,13 +153,23 @@ spec:
             # QR-code scan) rather than a separate bot number.
             - name: WHATSAPP_MODE
               value: "self-chat"
-            # Phone number kept out of the public repo: resolved via Flux
-            # postBuild substitution from the cluster-secrets Secret
-            # (kubernetes/components/sops/cluster-secrets.sops.yaml, key
-            # SECRET_HERMES_WHATSAPP_USER). Format per the WhatsApp-specific
-            # setup docs is digits only, no leading "+".
+            # Phone number kept out of the public repo: read directly from
+            # the cluster-secrets Secret (kubernetes/components/sops/
+            # cluster-secrets.sops.yaml, key SECRET_HERMES_WHATSAPP_USER;
+            # the sops Kustomize component copies it into this namespace).
+            # Deliberately NOT using Flux's ${VAR} postBuild substitution
+            # here -- when a field's entire value is a purely-numeric
+            # substituted string, Flux/kustomize can render it as an
+            # unquoted YAML number instead of a string, which the apiserver
+            # then rejects for this string-typed field
+            # ("expected string, got ...Value:4917662016474"). A real
+            # secretKeyRef avoids that whole class of bug. Format per the
+            # WhatsApp-specific setup docs is digits only, no leading "+".
             - name: WHATSAPP_ALLOWED_USERS
-              value: "${SECRET_HERMES_WHATSAPP_USER}"
+              valueFrom:
+                secretKeyRef:
+                  name: cluster-secrets
+                  key: SECRET_HERMES_WHATSAPP_USER
             # Every other channel stays off in this first pass.
             - name: TELEGRAM_ALLOWED_USERS
               value: ""
