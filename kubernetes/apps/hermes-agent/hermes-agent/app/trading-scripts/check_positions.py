@@ -40,12 +40,15 @@ def main() -> None:
                             f"Stop-losses/closes still active."
                         )
 
-                for pos in db.get_open_positions(cur):
+                positions = db.get_open_positions(cur)
+                closed_this_tick = 0
+                for pos in positions:
                     price = kraken.get_price(pos["symbol"])
                     change_pct = (price - pos["entry_price_eur"]) / pos["entry_price_eur"]
 
                     if price <= pos["stop_loss_price"]:
                         db.execute_stop_loss(cur, pos, price)
+                        closed_this_tick += 1
                         alerts.append(
                             f"\U0001F6D1 STOP-LOSS executed on {pos['symbol']} "
                             f"position #{pos['id']}: sold at EUR {price} "
@@ -61,6 +64,14 @@ def main() -> None:
                                 f"now at EUR {price}. Reply 'yes' to close, then I'll run:\n"
                                 f"  confirm_sell_target {proposal_id}"
                             )
+
+                # Phase 3: historical record for the Grafana/OpenSearch
+                # dashboards -- total value above already reflects any
+                # stop-losses just executed in this same tick.
+                db.record_portfolio_snapshot(
+                    cur, db.get_portfolio_cash(cur), total_value,
+                    len(positions) - closed_this_tick,
+                )
         db.expire_stale_proposals(conn)
     finally:
         conn.close()

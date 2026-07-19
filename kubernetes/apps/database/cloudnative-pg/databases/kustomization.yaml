@@ -14,3 +14,4 @@ resources:
   - ./database-nextcloud.yaml
   - ./externalsecret-hermes-agent-trading.yaml
   - ./database-hermes-agent-trading.yaml
+  - ./externalsecret-hermes-agent-trading-readonly.yaml

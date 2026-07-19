@@ -153,6 +153,21 @@ spec:
             jsonData:
               implementation: prometheus
               handleGrafanaManagedAlerts: false
+          # Hermes trading bot (paper-trading simulation) -- read-only role,
+          # see kubernetes/apps/database/cloudnative-pg/cluster/cluster.yaml
+          # for the tradingreadonly role and lib/db.py for the GRANT that
+          # makes it possible (CNPG's managed roles can't declare grants).
+          - name: TradingDB
+            type: postgres
+            uid: trading-postgres
+            url: postgres-rw.database.svc.cluster.local:5432
+            database: trading
+            user: tradingreadonly
+            jsonData:
+              sslmode: require
+              postgresVersion: 1700
+            secureJsonData:
+              password: "$TRADING_READONLY_PASSWORD"
 
     # ── Dashboard providers ───────────────────────────────────────────────
     dashboardProviders:
@@ -478,6 +493,70 @@ spec:
                   "targets": [{"refId": "A", "datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "nextcloud_system_info", "instant": true, "format": "table"}],
                   "options": {"showHeader": true},
                   "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true, "instance": true, "job": true, "endpoint": true, "namespace": true, "pod": true, "service": true, "container": true}}}]
+                }
+              ]
+            }
+        # Custom: Hermes trading bot (BTC/ETH paper-trading simulation)
+        hermes-trading:
+          datasource: TradingDB
+          json: |
+            {
+              "annotations": {"list": []},
+              "editable": true,
+              "graphTooltip": 1,
+              "time": {"from": "now-7d", "to": "now"},
+              "title": "Hermes — Trading Bot",
+              "uid": "hermes-trading",
+              "tags": ["apps", "hermes-agent", "trading"],
+              "schemaVersion": 39,
+              "version": 1,
+              "refresh": "5m",
+              "templating": {"list": []},
+              "panels": [
+                {
+                  "id": 1, "type": "timeseries", "title": "Portfolio Value Over Time",
+                  "gridPos": {"h": 10, "w": 48, "x": 0, "y": 0},
+                  "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                  "targets": [{
+                    "refId": "A", "format": "time_series", "editorMode": "code",
+                    "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                    "rawSql": "SELECT snapshot_time AS \"time\", total_value_eur AS \"value\" FROM portfolio_snapshots WHERE $__timeFilter(snapshot_time) ORDER BY 1"
+                  }],
+                  "fieldConfig": {"defaults": {"unit": "currencyEUR", "custom": {"drawStyle": "line", "fillOpacity": 15}}, "overrides": []},
+                  "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+                },
+                {
+                  "id": 2, "type": "table", "title": "Open Positions",
+                  "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
+                  "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                  "targets": [{
+                    "refId": "A", "format": "table", "editorMode": "code",
+                    "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                    "rawSql": "SELECT id, symbol, quantity, entry_price_eur, entry_time, stop_loss_price, profit_target_price FROM positions WHERE status='OPEN' ORDER BY entry_time DESC"
+                  }],
+                  "options": {"showHeader": true}
+                },
+                {
+                  "id": 3, "type": "table", "title": "Win/Loss by Symbol (closed positions)",
+                  "gridPos": {"h": 10, "w": 24, "x": 24, "y": 10},
+                  "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                  "targets": [{
+                    "refId": "A", "format": "table", "editorMode": "code",
+                    "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                    "rawSql": "SELECT symbol, count(*) FILTER (WHERE close_reason='PROFIT_TARGET') AS wins, count(*) FILTER (WHERE close_reason='STOP_LOSS') AS losses FROM positions WHERE status='CLOSED' GROUP BY symbol"
+                  }],
+                  "options": {"showHeader": true}
+                },
+                {
+                  "id": 4, "type": "table", "title": "Recent Trades",
+                  "gridPos": {"h": 12, "w": 48, "x": 0, "y": 20},
+                  "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                  "targets": [{
+                    "refId": "A", "format": "table", "editorMode": "code",
+                    "datasource": {"type": "postgres", "uid": "trading-postgres"},
+                    "rawSql": "SELECT executed_at, symbol, side, quantity, price_eur, value_eur, trade_type FROM trades ORDER BY executed_at DESC LIMIT 50"
+                  }],
+                  "options": {"showHeader": true}
                 }
               ]
             }

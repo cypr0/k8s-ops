@@ -88,6 +88,37 @@ INSERT INTO data_quality_status (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 -- not a safety gate. ADD COLUMN IF NOT EXISTS is safe to rerun against
 -- the already-live table.
 ALTER TABLE proposals ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'user';
+
+-- Phase 3: historical portfolio value, recorded on every check_positions.py
+-- tick -- total value is otherwise always computed live (never stored) to
+-- avoid drift, but a dashboard time-series panel needs real history.
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    id                  BIGSERIAL PRIMARY KEY,
+    snapshot_time       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    cash_eur            NUMERIC(14,2) NOT NULL,
+    total_value_eur     NUMERIC(14,2) NOT NULL,
+    num_open_positions  SMALLINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_time ON portfolio_snapshots (snapshot_time);
+
+-- Phase 3: read-only access for the Grafana datasource and the OpenSearch
+-- stats exporter. CNPG's managed roles only support attributes, never
+-- grants, so this is the only way to give either of them SELECT-only
+-- access -- granted by tradingusr, the schema owner. Guarded by IF EXISTS
+-- since the tradingreadonly role's own reconcile may lag behind this
+-- migration running (same CNPG role-reconciliation lag as tradingusr
+-- originally had); a no-op until the role exists, takes effect on the
+-- next migration run after it does.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tradingreadonly') THEN
+    GRANT CONNECT ON DATABASE trading TO tradingreadonly;
+    GRANT USAGE ON SCHEMA public TO tradingreadonly;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO tradingreadonly;
+    ALTER DEFAULT PRIVILEGES FOR ROLE tradingusr IN SCHEMA public
+      GRANT SELECT ON TABLES TO tradingreadonly;
+  END IF;
+END $$;
 """
 
 
@@ -138,6 +169,16 @@ def compute_total_portfolio_value(cur, price_source) -> "Decimal":
         price = price_source.get_price(pos["symbol"])
         total += pos["quantity"] * price
     return total
+
+
+def record_portfolio_snapshot(cur, cash_eur, total_value_eur, num_open_positions: int) -> None:
+    cur.execute(
+        """
+        INSERT INTO portfolio_snapshots (cash_eur, total_value_eur, num_open_positions)
+        VALUES (%s, %s, %s)
+        """,
+        (cash_eur, total_value_eur, num_open_positions),
+    )
 
 
 def get_or_create_daily_snapshot(cur, total_value_now) -> dict:

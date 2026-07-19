@@ -70,6 +70,14 @@ spec:
         - ports:
             - port: "9093"
               protocol: TCP
+    # TradingDB datasource (Hermes trading bot Postgres, read-only role)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
     # Authentik OIDC: id.cisotop.de is resolved in-cluster to the envoy-internal
     # ClusterIP by CoreDNS hosts plugin. Grafana connects to ClusterIP:443, which
     # is then DNAT'd to container port 10443. Cilium evaluates egress policy

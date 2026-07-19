@@ -31,6 +31,14 @@ spec:
     # Kubernetes API (crd-to-opensearch reads Trivy/Kubescape CRDs)
     - toEntities:
         - kube-apiserver
+    # Trading bot Postgres (trading-to-opensearch, read-only role)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
     # OpenSearch REST API
     - toEndpoints:
         - matchLabels:
