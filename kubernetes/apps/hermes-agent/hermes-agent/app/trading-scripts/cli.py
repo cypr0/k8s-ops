@@ -17,6 +17,12 @@ import argparse
 import sys
 from decimal import Decimal, InvalidOperation
 
+# Scoped to this one-off process only -- deliberately not a global
+# PYTHONPATH on the main container, which would also apply to the
+# long-running `hermes gateway run` process and risk shadowing Hermes' own
+# internal dependency versions.
+sys.path.insert(0, "/opt/data/tools/pip")
+
 from lib import constants as C
 from lib import db
 from lib import kraken

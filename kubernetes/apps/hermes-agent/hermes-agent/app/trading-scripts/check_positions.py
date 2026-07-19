@@ -9,6 +9,11 @@ Kraken only, by design -- doesn't wait on the slower Alpha Vantage
 cross-check (see check_data_quality.py). Stdout is delivered verbatim to
 WhatsApp by the cron scheduler; empty stdout = no alert this tick.
 """
+import sys
+
+# Scoped to this one-off process only, see cli.py for why.
+sys.path.insert(0, "/opt/data/tools/pip")
+
 from lib import constants as C
 from lib import db
 from lib import kraken

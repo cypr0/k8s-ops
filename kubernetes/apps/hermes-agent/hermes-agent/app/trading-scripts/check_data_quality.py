@@ -9,6 +9,11 @@ trust Kraken directly, see check_positions.py).
 Deliberately low-frequency: Alpha Vantage's free tier has a very small daily
 call budget. Silent (no WhatsApp alert) when nothing changed.
 """
+import sys
+
+# Scoped to this one-off process only, see cli.py for why.
+sys.path.insert(0, "/opt/data/tools/pip")
+
 from lib import constants as C
 from lib import alphavantage
 from lib import db
