@@ -264,7 +264,7 @@ spec:
             image:
               repository: ghcr.io/cbcoutinho/nextcloud-mcp-server
               # renovate: datasource=docker depName=ghcr.io/cbcoutinho/nextcloud-mcp-server
-              tag: "0.136.0"
+              tag: "0.141.2"
             env:
               NEXTCLOUD_HOST: http://nextcloud.nextcloud.svc.cluster.local:8080
               NEXTCLOUD_USERNAME: openclaw-reader
