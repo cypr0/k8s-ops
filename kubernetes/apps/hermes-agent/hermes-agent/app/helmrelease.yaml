@@ -98,20 +98,13 @@ spec:
       # Hand-rolled instead, see ciliumnetworkpolicy.yaml.
       enabled: false
 
-    externalSecret:
-      enabled: true
-      refreshInterval: 1h
-      secretStoreRef:
-        kind: ClusterSecretStore
-        name: onepassword
-      data:
-        # secretKey is the name Hermes Agent's own envFrom expects in the
-        # rendered K8s Secret (fixed by the chart/app, unrelated to the
-        # 1Password field name below).
-        - secretKey: OPENROUTER_API_KEY
-          remoteRef:
-            key: openrouter
-            property: OPENROUTER_HERMES_API_KEY
+    # The chart's own externalSecret.enabled mechanism hardcodes apiVersion
+    # external-secrets.io/v1beta1 in its template, which this cluster's ESO
+    # doesn't serve (v1beta1 exists in the CRD schema but served=false --
+    # only v1 is live). Hand-rolled in externalsecret.yaml instead (this
+    # repo's normal convention anyway), consumed here via existingSecret.
+    secrets:
+      existingSecret: hermes-agent-secrets
 
     # Left empty on purpose: use the tools-install init container below
     # (pip --target / static-binary pattern) instead of npm for anything

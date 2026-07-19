@@ -4,9 +4,10 @@ kind: Kustomization
 namespace: hermes-agent
 resources:
   - ./gitrepository.yaml
+  - ./externalsecret.yaml
   - ./helmrelease.yaml
   - ./rbac.yaml
   - ./ciliumnetworkpolicy.yaml
-# No standalone externalsecret.yaml: unlike most charts in this repo, the
-# hermes-agent chart renders its own ExternalSecret from HelmRelease values
-# (externalSecret.* below) -- see templates/external-secret.yaml upstream.
+# Hand-rolled externalsecret.yaml instead of the chart's own
+# externalSecret.enabled mechanism: that template hardcodes apiVersion
+# external-secrets.io/v1beta1, which this cluster's ESO doesn't serve.
