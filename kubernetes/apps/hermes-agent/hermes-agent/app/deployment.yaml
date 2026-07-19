@@ -58,6 +58,15 @@ spec:
               set -eu
               mkdir -p /opt/data/home
               cp /bootstrap/config.yaml /opt/data/config.yaml
+              # The `hermes whatsapp` pairing CLI writes its session to
+              # /opt/data/whatsapp/session, but the gateway process checks
+              # for creds at /opt/data/platforms/whatsapp/session/creds.json
+              # -- a real path inconsistency in the app itself (confirmed:
+              # gateway logged "not paired" even with a valid session
+              # present at the CLI's path, until this symlink was added).
+              # -sfn: safe to re-run every pod start.
+              mkdir -p /opt/data/platforms
+              ln -sfn /opt/data/whatsapp /opt/data/platforms/whatsapp
           env:
             - name: HERMES_HOME
               value: &home /opt/data
