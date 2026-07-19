@@ -166,14 +166,14 @@ spec:
                   --name trading-check-positions \
                   --script trading/check_positions.py \
                   --no-agent \
-                  --deliver "whatsapp:${TRADING_WHATSAPP_NUMBER}"
+                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
               fi
               if ! grep -q '"name": "trading-check-data-quality"' /opt/data/cron/jobs.json 2>/dev/null; then
                 /opt/hermes/.venv/bin/hermes cron create "every 4h" \
                   --name trading-check-data-quality \
                   --script trading/check_data_quality.py \
                   --no-agent \
-                  --deliver "whatsapp:${TRADING_WHATSAPP_NUMBER}"
+                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
               fi
 
               if ! grep -q 'TRADING-BOT-BRIEFING v1' /opt/data/SOUL.md 2>/dev/null; then
