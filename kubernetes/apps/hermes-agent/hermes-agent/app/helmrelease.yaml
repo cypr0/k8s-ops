@@ -111,48 +111,18 @@ spec:
     # beyond Node packages.
     npmPackages: []
 
-    extraContainers:
-      # Read-only Kubernetes object/log inspection MCP tool, scoped by the
-      # `view` ClusterRoleBinding on this pod's ServiceAccount (rbac.yaml).
-      # Bound to loopback only -- reached by the main container via
-      # localhost, never exposed on the pod IP/Service. Same image/config
-      # already proven in kubernetes/apps/openclaw.
-      - name: k8s-mcp
-        image: flux159/mcp-server-kubernetes:v4.0.7
-        # renovate: datasource=docker depName=flux159/mcp-server-kubernetes
-        env:
-          - name: HOST
-            value: "127.0.0.1"
-          - name: PORT
-            value: "3001"
-          - name: ENABLE_UNSAFE_STREAMABLE_HTTP_TRANSPORT
-            value: "1"
-          - name: ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS
-            value: "true"
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            memory: 256Mi
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-              - "ALL"
-          runAsNonRoot: true
-          runAsUser: 1000
-          seccompProfile:
-            type: RuntimeDefault
-            # TODO (unverified): Hermes Agent needs to be told this MCP server
-            # exists. OpenClaw exposes a CLI for this (`openclaw mcp set k8s
-            # '{"url":"http://localhost:3001/mcp",...}'`) run from an initContainer
-            # command; I have not found equivalent documentation for Hermes
-            # Agent's own config schema (its keywords list "mcp"/"acp" as
-            # supported, but the actual config.yaml key names are unconfirmed).
-            # Check Hermes Agent's docs/config.yaml reference after first deploy
-            # and add the right `config.values` (or `config.raw`) block to
-            # register `http://localhost:3001/mcp` as a tool source.
+    # No k8s-mcp sidecar: RBAC (rbac.yaml) only grants the ServiceAccount
+    # permission to call the API, it doesn't give the agent a way to
+    # actually place those calls. Hermes already has a local-shell
+    # "terminal" tool though (config.values.terminal.backend: local,
+    # chart default) -- so `kubectl`, installed by tools-install below,
+    # IS that interface. `kubectl` auto-detects in-cluster auth purely
+    # from the auto-mounted ServiceAccount token/CA (automountServiceAccountToken:
+    # true above) + the KUBERNETES_SERVICE_HOST/PORT env vars kubelet
+    # injects into every pod -- no separate MCP server, sidecar, or extra
+    # config needed. Simpler than kubernetes/apps/openclaw's k8s-mcp
+    # sidecar and avoids depending on Hermes's (unconfirmed) MCP config
+    # schema entirely.
 
     extraInitContainers:
       # Curated, reviewable tool installation -- the safer alternative to
@@ -172,8 +142,8 @@ spec:
       #      the image is primarily Node-based; check before relying on this)
       #   2) A pinned, checksum-verified static binary download into
       #      /opt/data/tools/bin (works regardless of base image contents)
-      # Nothing is installed by default below -- add packages here
-      # deliberately, one reviewable git diff at a time.
+      # kubectl below uses pattern (2); add further packages the same way,
+      # one reviewable git diff at a time.
       - name: tools-install
         image: nousresearch/hermes-agent:v2026.7.7.2
         command:
@@ -183,12 +153,13 @@ spec:
           - |
             set -eu
             mkdir -p /opt/data/tools/bin /opt/data/tools/pip
-            # CHANGEME: add pinned tool installs here, e.g.:
-            #   curl -fsSL -o /tmp/rg.tar.gz \
-            #     https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
-            #   echo "<pinned-sha256>  /tmp/rg.tar.gz" | sha256sum -c -
-            #   tar -xzf /tmp/rg.tar.gz -C /opt/data/tools/bin --strip-components=1 \
-            #     ripgrep-14.1.1-x86_64-unknown-linux-musl/rg
+            # kubectl v1.36.2, linux/amd64 -- checksum from
+            # https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl.sha256
+            # Bump both the version and this checksum together on upgrade.
+            curl -fsSL -o /tmp/kubectl \
+              https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl
+            echo "1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82  /tmp/kubectl" | sha256sum -c -
+            install -m 0755 /tmp/kubectl /opt/data/tools/bin/kubectl
         volumeMounts:
           - name: data
             mountPath: /opt/data

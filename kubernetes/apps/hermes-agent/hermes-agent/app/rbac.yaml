@@ -3,7 +3,8 @@
 # in helmrelease.yaml, name derived from the release name) to the built-in
 # read-only `view` ClusterRole -- get/list/watch on namespaced objects only,
 # no writes, and Secrets are NOT included in `view` by design. This is what
-# lets the k8s-mcp sidecar (see helmrelease.yaml extraContainers) answer
+# lets the agent's own `kubectl` (installed by the tools-install init
+# container, see helmrelease.yaml) answer
 # "what's the cluster status" without ever being able to read a Secret value.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
