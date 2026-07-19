@@ -100,31 +100,25 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     num_open_positions  SMALLINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_time ON portfolio_snapshots (snapshot_time);
+"""
 
--- Phase 3: read-only access for the Grafana datasource and the OpenSearch
--- stats exporter. CNPG's managed roles only support attributes, never
--- grants, so this is the only way to give either of them SELECT-only
--- access -- granted by tradingusr, the schema owner. Guarded by IF EXISTS
--- since the tradingreadonly role's own reconcile may lag behind this
--- migration running (same CNPG role-reconciliation lag as tradingusr
--- originally had); a no-op until the role exists, takes effect on the
--- next migration run after it does.
---
--- NOTE: dollar-quote delimiters below are doubled ($$$$ instead of $$) --
--- Flux's postBuild.substituteFrom collapses "$$" -> "$" unconditionally
--- when rendering this ConfigMap (same escaping quirk already hit with
--- "${TRADING_WHATSAPP_NUMBER}" in deployment.yaml), so $$$$ is what
--- actually reaches Postgres as $$.
-DO $$$$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tradingreadonly') THEN
-    GRANT CONNECT ON DATABASE trading TO tradingreadonly;
-    GRANT USAGE ON SCHEMA public TO tradingreadonly;
-    GRANT SELECT ON ALL TABLES IN SCHEMA public TO tradingreadonly;
-    ALTER DEFAULT PRIVILEGES FOR ROLE tradingusr IN SCHEMA public
-      GRANT SELECT ON TABLES TO tradingreadonly;
-  END IF;
-END $$$$;
+# Phase 3: read-only access for the Grafana datasource and the OpenSearch
+# stats exporter. CNPG's managed roles only support attributes, never
+# grants, so this is the only way to give either of them SELECT-only
+# access -- granted by tradingusr, the schema owner. The existence check
+# is a plain Python conditional rather than a PL/pgSQL DO-block, because
+# a PL/pgSQL block needs dollar-quoting and Flux's postBuild.substituteFrom
+# mangles repeated dollar-sign sequences when rendering this ConfigMap
+# (the same class of issue already hit with the WhatsApp number env var
+# in deployment.yaml) -- avoiding dollar-quoting sidesteps it entirely.
+# A no-op until the tradingreadonly role exists; takes effect on the
+# next migration run after it does.
+GRANT_READONLY_SQL = """
+GRANT CONNECT ON DATABASE trading TO tradingreadonly;
+GRANT USAGE ON SCHEMA public TO tradingreadonly;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO tradingreadonly;
+ALTER DEFAULT PRIVILEGES FOR ROLE tradingusr IN SCHEMA public
+  GRANT SELECT ON TABLES TO tradingreadonly;
 """
 
 
@@ -144,6 +138,9 @@ def migrate() -> None:
     try:
         with conn, conn.cursor() as cur:
             cur.execute(SCHEMA_SQL, {"starting_capital": C.STARTING_CAPITAL_EUR})
+            cur.execute("SELECT 1 FROM pg_roles WHERE rolname = 'tradingreadonly'")
+            if cur.fetchone():
+                cur.execute(GRANT_READONLY_SQL)
     finally:
         conn.close()
 
