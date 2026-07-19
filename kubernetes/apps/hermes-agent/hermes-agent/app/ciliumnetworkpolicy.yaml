@@ -1,0 +1,39 @@
+---
+# hermes-agent: WhatsApp-only AI agent (no web UI/ingress in this minimal-safe
+# first deployment -- see helmrelease.yaml). No Service is exposed, so this
+# policy is egress-only in practice; Ingress is still declared with zero
+# rules for explicit default-deny (defense in depth if a Service ever gets
+# added later without someone remembering to revisit this file).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hermes-agent
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-agent
+  ingress: []
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # OpenRouter (LLM API) + outbound WhatsApp connection, both over the
+    # public internet on 443. Mirrors openclaw's identical world:443 rule.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # k8s-mcp sidecar: read-only Kubernetes API access (RBAC-gated, see rbac.yaml)
+    - toEntities:
+        - kube-apiserver

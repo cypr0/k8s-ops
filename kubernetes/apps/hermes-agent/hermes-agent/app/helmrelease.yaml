@@ -1,0 +1,220 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hermes-agent
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: "."
+      sourceRef:
+        kind: GitRepository
+        name: hermes-agent-chart
+  install:
+    timeout: 10m
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 10m
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    image:
+      repository: nousresearch/hermes-agent
+      # renovate: datasource=docker depName=nousresearch/hermes-agent
+      tag: "0.8.0"
+
+    serviceAccount:
+      create: true
+      # The k8s-mcp sidecar below needs the pod's ServiceAccount token
+      # mounted to authenticate to the API server as this SA (bound
+      # read-only to the built-in `view` ClusterRole, see rbac.yaml).
+      # Chart default is false (CIS 5.1.6 posture) -- same override
+      # kubernetes/apps/openclaw needs, for the identical reason.
+      automountServiceAccountToken: true
+
+    rbac:
+      # Hand-rolled in rbac.yaml instead (binds to the built-in `view`
+      # ClusterRole rather than reinventing rules from scratch).
+      create: false
+
+    persistence:
+      enabled: true
+      storageClass: zfs-nfs
+      accessMode: ReadWriteOnce
+      size: 5Gi
+
+    config:
+      values:
+        model:
+          # Mistral: strong German/European-language fluency at a low price
+          # ($0.10 / $0.30 per M tokens prompt/completion, verified live
+          # against https://openrouter.ai/api/v1/models). Noticeably better
+          # German than similarly-priced Qwen/DeepSeek models in practice.
+          # Bump to mistralai/mistral-medium-3.1 if quality matters more
+          # than rock-bottom cost.
+          default: "mistralai/mistral-small-3.2-24b-instruct"
+          provider: auto
+          base_url: https://openrouter.ai/api/v1
+        security:
+          redact_secrets: true
+          tirith_enabled: true
+          # Chart default is `true` (fail OPEN: an errored guardrail check
+          # lets the action through). This agent has shell + WhatsApp + a
+          # read-only k8s view, so flip to fail-closed instead.
+          tirith_fail_open: false
+
+    env:
+      WHATSAPP_ENABLED: "true"
+      # self-chat: Hermes uses the owner's own linked WhatsApp session
+      # (paired once via `kubectl exec ... -- hermes whatsapp`, QR-code
+      # scan) rather than a separate bot number.
+      WHATSAPP_MODE: "self-chat"
+      # Single-user allow-list -- WhatsApp is the only enabled channel in
+      # this first pass, everything else stays off. Phone number kept out
+      # of the public repo: resolved via Flux postBuild substitution from
+      # the cluster-secrets Secret (kubernetes/components/sops/cluster-secrets.sops.yaml,
+      # key SECRET_HERMES_WHATSAPP_USER) rather than hardcoded here.
+      # NOTE: format per the WhatsApp-specific setup docs is digits only,
+      # no leading "+" (a separate, more generic doc page showed a "+"
+      # example -- trusting the WhatsApp-specific page here; verify after
+      # first pairing and adjust the stored secret if it's rejected).
+      WHATSAPP_ALLOWED_USERS: "${SECRET_HERMES_WHATSAPP_USER}"
+      GATEWAY_ALLOW_ALL_USERS: "false"
+
+    # No web UI / API exposure in this first, minimal-safe pass -- WhatsApp
+    # is the only interface. Revisit if a Control-UI/API is wanted later
+    # (would mirror openclaw's HTTPRoute + Authentik forward-auth pattern).
+    apiServer:
+      enabled: false
+    service:
+      enabled: false
+    ingress:
+      enabled: false
+    networkPolicy:
+      # Hand-rolled instead, see ciliumnetworkpolicy.yaml.
+      enabled: false
+
+    externalSecret:
+      enabled: true
+      refreshInterval: 1h
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: onepassword
+      data:
+        # secretKey is the name Hermes Agent's own envFrom expects in the
+        # rendered K8s Secret (fixed by the chart/app, unrelated to the
+        # 1Password field name below).
+        - secretKey: OPENROUTER_API_KEY
+          remoteRef:
+            key: openrouter
+            property: OPENROUTER_HERMES_API_KEY
+
+    # Left empty on purpose: use the tools-install init container below
+    # (pip --target / static-binary pattern) instead of npm for anything
+    # beyond Node packages.
+    npmPackages: []
+
+    extraContainers:
+      # Read-only Kubernetes object/log inspection MCP tool, scoped by the
+      # `view` ClusterRoleBinding on this pod's ServiceAccount (rbac.yaml).
+      # Bound to loopback only -- reached by the main container via
+      # localhost, never exposed on the pod IP/Service. Same image/config
+      # already proven in kubernetes/apps/openclaw.
+      - name: k8s-mcp
+        image: flux159/mcp-server-kubernetes:v4.0.7
+        # renovate: datasource=docker depName=flux159/mcp-server-kubernetes
+        env:
+          - name: HOST
+            value: "127.0.0.1"
+          - name: PORT
+            value: "3001"
+          - name: ENABLE_UNSAFE_STREAMABLE_HTTP_TRANSPORT
+            value: "1"
+          - name: ALLOW_ONLY_NON_DESTRUCTIVE_TOOLS
+            value: "true"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - "ALL"
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+            # TODO (unverified): Hermes Agent needs to be told this MCP server
+            # exists. OpenClaw exposes a CLI for this (`openclaw mcp set k8s
+            # '{"url":"http://localhost:3001/mcp",...}'`) run from an initContainer
+            # command; I have not found equivalent documentation for Hermes
+            # Agent's own config schema (its keywords list "mcp"/"acp" as
+            # supported, but the actual config.yaml key names are unconfirmed).
+            # Check Hermes Agent's docs/config.yaml reference after first deploy
+            # and add the right `config.values` (or `config.raw`) block to
+            # register `http://localhost:3001/mcp` as a tool source.
+
+    extraInitContainers:
+      # Curated, reviewable tool installation -- the safer alternative to
+      # giving the running agent sudo/root (see PR discussion). Runs once at
+      # pod start with its own hardened, non-root securityContext.
+      #
+      # IMPORTANT: an init container's root filesystem is NOT shared with
+      # the main container -- only volume mounts are. `apt install` here
+      # would install into /usr/*, which vanishes when this container exits;
+      # it would NOT become available to the main container. Only things
+      # written to the shared /opt/data volume are visible to both. Two
+      # patterns that actually work, mirroring the chart's own
+      # npmPackages init container (which uses `npm install --prefix
+      # /opt/data/npm-global` for exactly this reason):
+      #   1) pip install --target=/opt/data/tools/pip <pkg>==<pinned-version>
+      #      (only if the hermes-agent image ships python3/pip -- unverified,
+      #      the image is primarily Node-based; check before relying on this)
+      #   2) A pinned, checksum-verified static binary download into
+      #      /opt/data/tools/bin (works regardless of base image contents)
+      # Nothing is installed by default below -- add packages here
+      # deliberately, one reviewable git diff at a time.
+      - name: tools-install
+        image: nousresearch/hermes-agent:0.8.0
+        command:
+          - /bin/sh
+          - -ec
+        args:
+          - |
+            set -eu
+            mkdir -p /opt/data/tools/bin /opt/data/tools/pip
+            # CHANGEME: add pinned tool installs here, e.g.:
+            #   curl -fsSL -o /tmp/rg.tar.gz \
+            #     https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz
+            #   echo "<pinned-sha256>  /tmp/rg.tar.gz" | sha256sum -c -
+            #   tar -xzf /tmp/rg.tar.gz -C /opt/data/tools/bin --strip-components=1 \
+            #     ripgrep-14.1.1-x86_64-unknown-linux-musl/rg
+        volumeMounts:
+          - name: data
+            mountPath: /opt/data
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - "ALL"
+          runAsNonRoot: true
+          runAsUser: 1000
+          seccompProfile:
+            type: RuntimeDefault
+
+    # Exposes whatever tools-install placed on the shared volume to the main
+    # (still non-root, no-sudo) agent container. Must repeat the base
+    # image's own system dirs -- setting PATH via env replaces the image's
+    # built-in PATH rather than extending it.
+    extraEnv:
+      - name: PATH
+        value: "/opt/data/tools/bin:/opt/data/tools/pip/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      - name: PYTHONPATH
+        value: "/opt/data/tools/pip"

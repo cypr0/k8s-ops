@@ -1,0 +1,18 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/source.toolkit.fluxcd.io/gitrepository_v1.json
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: hermes-agent-chart
+spec:
+  interval: 1h
+  url: https://github.com/ultraworkers/hermes-agent-helm-chart
+  # This is an UNOFFICIAL, third-party chart (not NousResearch's own) with no
+  # published releases/tags and no OCI artifact -- it only exists as raw chart
+  # source on the `main` branch. Every other HelmRelease in this repo sources
+  # its chart from an OCIRepository or HelmRepository (see kubernetes/apps/**);
+  # this is the first GitRepository-sourced chart. Pinned to an exact commit
+  # (not `branch: main`) so an upstream push can never silently change what we
+  # deploy -- bump this SHA deliberately after reviewing the diff upstream.
+  ref:
+    commit: e3b685d4d0288668a37216435742cd0a659ebc6c

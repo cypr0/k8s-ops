@@ -1,0 +1,50 @@
+---
+# Binds the chart's auto-created ServiceAccount "hermes-agent" (serviceAccount.create=true
+# in helmrelease.yaml, name derived from the release name) to the built-in
+# read-only `view` ClusterRole -- get/list/watch on namespaced objects only,
+# no writes, and Secrets are NOT included in `view` by design. This is what
+# lets the k8s-mcp sidecar (see helmrelease.yaml extraContainers) answer
+# "what's the cluster status" without ever being able to read a Secret value.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hermes-agent-view
+subjects:
+  - kind: ServiceAccount
+    name: hermes-agent
+    namespace: hermes-agent
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
+---
+# `view` only covers namespaced resources -- Nodes are cluster-scoped and
+# absent from it entirely. Grant read-only access to the core Node object
+# separately so "any node NotReady?" doesn't need cluster-admin.
+# (Mirrors kubernetes/apps/openclaw/openclaw/app/rbac.yaml.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hermes-agent-nodes-view
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "nodes"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hermes-agent-nodes-view
+subjects:
+  - kind: ServiceAccount
+    name: hermes-agent
+    namespace: hermes-agent
+roleRef:
+  kind: ClusterRole
+  name: hermes-agent-nodes-view
+  apiGroup: rbac.authorization.k8s.io
