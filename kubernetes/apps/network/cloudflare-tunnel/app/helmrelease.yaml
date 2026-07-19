@@ -27,7 +27,9 @@ spec:
             envFrom:
               - secretRef:
                   name: cloudflare-tunnel-secret
-            args: ["tunnel", "run"]
+            args:
+              - "tunnel"
+              - "run"
             probes:
               liveness: &probes
                 enabled: true
@@ -44,7 +46,7 @@ spec:
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
-              capabilities: { drop: ["ALL"] }
+              capabilities: {drop: ["ALL"]}
             resources:
               requests:
                 cpu: 10m
@@ -70,6 +72,22 @@ spec:
           config.yaml: |-
             ingress:
               - hostname: "*.${SECRET_DOMAIN}"
+                originRequest:
+                  http2Origin: true
+                  originServerName: external.${SECRET_DOMAIN}
+                service: https://envoy-external.{{ .Release.Namespace }}.svc.cluster.local:443
+              # philipp-rosch.de: separate apex domain (portfolio site), same
+              # tunnel/backend as above. originServerName stays pinned to
+              # external.${SECRET_DOMAIN} -- that's just the origin-side TLS
+              # SNI cloudflared presents to Envoy Gateway's existing wildcard
+              # cert; Envoy still routes by the real HTTP Host header to the
+              # philipp-rosch-site HTTPRoute regardless.
+              - hostname: "philipp-rosch.de"
+                originRequest:
+                  http2Origin: true
+                  originServerName: external.${SECRET_DOMAIN}
+                service: https://envoy-external.{{ .Release.Namespace }}.svc.cluster.local:443
+              - hostname: "www.philipp-rosch.de"
                 originRequest:
                   http2Origin: true
                   originServerName: external.${SECRET_DOMAIN}

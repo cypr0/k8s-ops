@@ -1,0 +1,21 @@
+---
+# Same tunnel as kubernetes/apps/network/cloudflare-tunnel/app/dnsendpoint.yaml
+# (f768b542-...cfargotunnel.com), just for the philipp-rosch.de zone instead
+# of ${SECRET_DOMAIN}. Requires philipp-rosch.de to be a zone in the same
+# Cloudflare account, and cloudflare-dns's domainFilters to include it (see
+# kubernetes/apps/network/cloudflare-dns/app/helmrelease.yaml) -- otherwise
+# external-dns will silently ignore this CRD.
+apiVersion: externaldns.k8s.io/v1alpha1
+kind: DNSEndpoint
+metadata:
+  name: philipp-rosch-site
+spec:
+  endpoints:
+    - dnsName: "philipp-rosch.de"
+      recordType: CNAME
+      targets:
+        - "f768b542-3a28-4fa6-b132-daa8e38b2658.cfargotunnel.com"
+    - dnsName: "www.philipp-rosch.de"
+      recordType: CNAME
+      targets:
+        - "f768b542-3a28-4fa6-b132-daa8e38b2658.cfargotunnel.com"
