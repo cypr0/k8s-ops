@@ -12,3 +12,5 @@ resources:
   - ./database-open-webui-rag.yaml
   - ./externalsecret-nextcloud.yaml
   - ./database-nextcloud.yaml
+  - ./externalsecret-hermes-agent-trading.yaml
+  - ./database-hermes-agent-trading.yaml
