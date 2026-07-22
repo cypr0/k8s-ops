@@ -104,16 +104,17 @@ KRAKEN_TICKER_URL = "https://api.kraken.com/0/public/Ticker"
 KRAKEN_PAIR = {"BTC": "XBTEUR", "ETH": "ETHEUR"}
 KRAKEN_RESULT_KEY = {"BTC": "XXBTZEUR", "ETH": "XETHZEUR"}
 
-# Finnhub: primary price/candle/news source for stocks (lib/finnhub.py,
-# routed via lib/prices.py), and the crypto cross-check source for
-# check_data_quality.py -- replaces Alpha Vantage, whose free-tier daily
-# quota (25 req/day) turned out to be shared with the user's other,
-# unrelated use of the same API key and was permanently exhausted as a
-# result (see check_data_quality.py). Finnhub's free tier has no daily cap,
-# only a 60-req/min rate limit, and this system's call volume is nowhere
-# near that.
+# Finnhub: primary price/candle/news/fundamentals source for stocks
+# (lib/finnhub.py, routed via lib/prices.py) -- NOT used for crypto, see
+# lib/finnhub.py's module docstring (its /crypto/candle needs a paid plan).
+# Originally replaced Alpha Vantage as the crypto cross-check source too,
+# but Alpha Vantage's free-tier daily quota (25 req/day) turned out to be
+# shared with the user's other, unrelated use of the same API key and was
+# permanently exhausted as a result -- see check_data_quality.py, which now
+# uses lib/binance.py for that instead. Finnhub's free tier has no daily
+# cap, only a 60-req/min rate limit, and this system's stock call volume is
+# nowhere near that.
 FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
-FINNHUB_CRYPTO_SYMBOL = {"BTC": "BINANCE:BTCUSDT", "ETH": "BINANCE:ETHUSDT"}
 
 # Personal capital/risk figures -- kept out of the public repo, see module
 # docstring above for why this is safe.

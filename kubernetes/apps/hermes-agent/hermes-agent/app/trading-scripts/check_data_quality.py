@@ -1,16 +1,20 @@
 #!/opt/hermes/.venv/bin/python3
-"""Periodic (every 4 hours) cross-check of Kraken vs. Finnhub prices for
+"""Periodic (every 4 hours) cross-check of Kraken vs. Binance prices for
 BTC/ETH only (stocks have no separate cross-check -- Finnhub IS the
 primary stock price source, there's nothing independent to compare it
 against), run via Hermes' cron scheduler in --no-agent mode. If the two
 sources diverge beyond DATA_QUALITY_DIVERGENCE_PCT, flags data quality as
-bad -- propose_buy() in cli.py then refuses new BUY proposals until a later
-check confirms agreement again. Stop-losses/closes are unaffected (they
-trust Kraken directly, see check_positions.py).
+bad -- propose_buy() in cli.py then refuses new crypto BUY proposals until
+a later check confirms agreement again (stocks are unaffected, see cli.py).
+Stop-losses/closes are unaffected too (they trust Kraken directly, see
+check_positions.py).
 
-Was Alpha Vantage instead of Finnhub until the free-tier daily quota (25
-req/day) turned out to already be exhausted by the user's own unrelated use
-of the same API key -- see constants.py. Finnhub has no daily cap.
+Was Alpha Vantage until its free-tier daily quota (25 req/day) turned out
+to already be exhausted by the user's own unrelated use of the same API
+key -- see constants.py. Tried Finnhub next, but its /crypto/candle needs a
+paid plan (confirmed live: 403 on an otherwise-working free-tier key).
+Binance's public ticker needs no API key at all and has no such
+restriction -- see lib/binance.py.
 
 Alerts on every ok<->not-ok transition, AND once every 24h while
 continuously flagged (db.data_quality_alert_due) -- a *persistent* failure
@@ -22,9 +26,10 @@ import sys
 # Scoped to this one-off process only, see cli.py for why.
 sys.path.insert(0, "/opt/data/tools/pip")
 
+from lib import binance
 from lib import constants as C
 from lib import db
-from lib import finnhub
+from lib import fx
 from lib import kraken
 
 
@@ -39,15 +44,23 @@ def main() -> None:
             worst_symbol = None
             failure_reason = None
 
+            try:
+                usd_to_eur = fx.get_usd_to_eur_rate()
+            except Exception as exc:  # noqa: BLE001 -- any fetch failure is a data-quality concern
+                usd_to_eur = None
+                failure_reason = f"FX rate fetch failed ({exc})"
+
             for symbol in C.CRYPTO_SYMBOLS:
+                if usd_to_eur is None:
+                    break
                 try:
                     kraken_price = kraken.get_price(symbol)
-                    finnhub_price = finnhub.get_price(symbol)
+                    binance_price = binance.get_price_usd(symbol) * usd_to_eur
                 except Exception as exc:  # noqa: BLE001 -- any fetch failure is a data-quality concern
                     failure_reason = f"{symbol}: fetch failed ({exc})"
                     continue
 
-                divergence = abs(kraken_price - finnhub_price) / kraken_price
+                divergence = abs(kraken_price - binance_price) / kraken_price
                 if worst_divergence is None or divergence > worst_divergence:
                     worst_divergence = divergence
                     worst_symbol = symbol
@@ -59,7 +72,7 @@ def main() -> None:
                 still_ok = False
                 reason = (
                     f"{worst_symbol} price diverges {worst_divergence:.2%} between "
-                    f"Kraken and Finnhub (threshold {C.DATA_QUALITY_DIVERGENCE_PCT:.0%})"
+                    f"Kraken and Binance (threshold {C.DATA_QUALITY_DIVERGENCE_PCT:.0%})"
                 )
             else:
                 still_ok = True
@@ -71,12 +84,12 @@ def main() -> None:
                 db.mark_data_quality_alerted(cur)
                 if not still_ok:
                     alerts.append(
-                        f"⚠️ Data quality flagged: {reason}. No new BUY proposals until this clears."
+                        f"⚠️ Data quality flagged: {reason}. No new crypto BUY proposals until this clears."
                     )
                 elif not status["ok"]:
                     alerts.append(
-                        "✅ Data quality restored: Kraken and Finnhub agree again. "
-                        "New BUY proposals allowed."
+                        "✅ Data quality restored: Kraken and Binance agree again. "
+                        "New crypto BUY proposals allowed."
                     )
     finally:
         conn.close()

@@ -1,11 +1,13 @@
-"""Finnhub client. Two roles:
-  1. Primary price/candle source for stocks (lib/prices.py routes stock
-     symbols here, see constants.ASSET_CLASS).
-  2. Secondary crypto price source for check_data_quality.py's Kraken
-     cross-check (replaces the old, quota-fragile Alpha Vantage dependency
-     -- see constants.py module docstring for why).
+"""Finnhub client: primary price/candle/news/fundamentals source for
+stocks (lib/prices.py routes stock symbols here, see constants.ASSET_CLASS).
 Free tier: 60 calls/min, no daily cap (unlike Alpha Vantage) -- see
 constants.py for the API key env var.
+
+NOT used for crypto (unlike an earlier version of this module) --
+/crypto/candle turned out to need a paid plan (confirmed live: 403 "You
+don't have access to this resource" on an otherwise-working free-tier
+key, even though /stock/quote and /stock/candle both work fine on it).
+check_data_quality.py's crypto cross-check uses lib.binance instead.
 """
 import os
 from decimal import Decimal
@@ -35,16 +37,9 @@ def _get(path: str, params: dict) -> dict:
 
 
 def get_price(symbol: str) -> Decimal:
-    """Current price in EUR, regardless of asset class."""
-    asset_class = C.ASSET_CLASS.get(symbol)
-    if asset_class == "crypto":
-        return _get_crypto_price_eur(symbol)
-    if asset_class == "stock":
-        return _get_stock_price_eur(symbol)
-    raise ValueError(f"symbol not in allow-list: {symbol!r}")
-
-
-def _get_stock_price_eur(symbol: str) -> Decimal:
+    """Current price in EUR. Stocks only, see module docstring."""
+    if C.ASSET_CLASS.get(symbol) != "stock":
+        raise ValueError(f"finnhub.get_price is stock-only, got {symbol!r}")
     data = _get("/quote", {"symbol": symbol})
     price_usd = data.get("c")
     if not price_usd or price_usd <= 0:
@@ -53,22 +48,10 @@ def _get_stock_price_eur(symbol: str) -> Decimal:
     return Decimal(str(price_usd)) * rate
 
 
-def _get_crypto_price_eur(symbol: str) -> Decimal:
-    closes = _get_crypto_closes_usd(symbol, interval_minutes=1, count=1)
-    if not closes:
-        raise FinnhubError(f"Finnhub returned no crypto candle for {symbol}")
-    rate = fx.get_usd_to_eur_rate()
-    return closes[-1] * rate
-
-
 def get_closes(symbol: str, interval_minutes: int = 60, count: int | None = None) -> list:
-    """Historical closing prices in EUR, oldest first. Stocks only -- crypto
-    cross-check only ever needs the latest price (see _get_crypto_price_eur),
-    never a series, so that path isn't exposed generically here.
-    """
-    asset_class = C.ASSET_CLASS.get(symbol)
-    if asset_class != "stock":
-        raise ValueError(f"get_closes is stock-only, got {symbol!r} ({asset_class!r})")
+    """Historical closing prices in EUR, oldest first. Stocks only."""
+    if C.ASSET_CLASS.get(symbol) != "stock":
+        raise ValueError(f"get_closes is stock-only, got {symbol!r}")
     resp_key = _finnhub_resolution(interval_minutes)
     data = _get(
         "/stock/candle",
@@ -83,24 +66,9 @@ def get_closes(symbol: str, interval_minutes: int = 60, count: int | None = None
     return closes
 
 
-def _get_crypto_closes_usd(symbol: str, interval_minutes: int, count: int) -> list:
-    finnhub_symbol = C.FINNHUB_CRYPTO_SYMBOL[symbol]
-    resp_key = _finnhub_resolution(interval_minutes)
-    data = _get(
-        "/crypto/candle",
-        {"symbol": finnhub_symbol, "resolution": resp_key, **_lookback_range(interval_minutes, count)},
-    )
-    if data.get("s") != "ok":
-        raise FinnhubError(f"Finnhub crypto candle error for {symbol}: {data!r}")
-    return [Decimal(str(c)) for c in data["c"]]
-
-
 def _finnhub_resolution(interval_minutes: int) -> str:
     # Finnhub resolutions are one of 1,5,15,30,60,D,W,M -- only the
-    # granularities lib/signals.py and the crypto cross-check actually use
-    # are mapped here.
-    if interval_minutes == 1:
-        return "1"
+    # granularity lib/signals.py actually uses is mapped here.
     if interval_minutes == 60:
         return "60"
     raise ValueError(f"unsupported interval_minutes: {interval_minutes}")

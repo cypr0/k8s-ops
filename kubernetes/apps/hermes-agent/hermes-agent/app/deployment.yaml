@@ -158,6 +158,7 @@ spec:
               cp /trading-src/lib_constants.py    /opt/data/scripts/trading/lib/constants.py
               cp /trading-src/lib_db.py           /opt/data/scripts/trading/lib/db.py
               cp /trading-src/lib_kraken.py        /opt/data/scripts/trading/lib/kraken.py
+              cp /trading-src/lib_binance.py       /opt/data/scripts/trading/lib/binance.py
               cp /trading-src/lib_finnhub.py       /opt/data/scripts/trading/lib/finnhub.py
               cp /trading-src/lib_fx.py            /opt/data/scripts/trading/lib/fx.py
               cp /trading-src/lib_prices.py        /opt/data/scripts/trading/lib/prices.py
