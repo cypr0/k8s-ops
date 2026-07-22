@@ -5,9 +5,19 @@
   - proposes profit-target closes (requires human confirmation separately)
   - updates/checks the daily circuit breaker
 
-Kraken only, by design -- doesn't wait on the slower Alpha Vantage
-cross-check (see check_data_quality.py). Stdout is delivered verbatim to
-WhatsApp by the cron scheduler; empty stdout = no alert this tick.
+Covers both crypto (Kraken, 24/7) and stock (Finnhub) positions via
+lib.prices' asset-class dispatch. Stock positions are skipped in the
+per-position stop-loss/profit-target loop outside NYSE trading hours (see
+lib.market_hours) -- Finnhub just returns the last close price when the
+market's shut, so checking it 24/7 like crypto would compare a frozen price
+against itself (harmless) or fire on a stale price the moment the market
+reopens with a materially different one (not harmless). Portfolio
+valuation (compute_total_portfolio_value) still includes stock positions
+at their last-known price even when the market's closed -- a stale
+valuation is fine, only the trading *decisions* need the guard.
+
+Stdout is delivered verbatim to WhatsApp by the cron scheduler; empty
+stdout = no alert this tick.
 """
 import sys
 
@@ -16,7 +26,8 @@ sys.path.insert(0, "/opt/data/tools/pip")
 
 from lib import constants as C
 from lib import db
-from lib import kraken
+from lib import market_hours
+from lib import prices
 
 
 def main() -> None:
@@ -25,7 +36,7 @@ def main() -> None:
     try:
         with conn:
             with conn.cursor() as cur:
-                total_value = db.compute_total_portfolio_value(cur, kraken)
+                total_value = db.compute_total_portfolio_value(cur, prices)
                 snapshot = db.get_or_create_daily_snapshot(cur, total_value)
 
                 if not snapshot["circuit_breaker_tripped"]:
@@ -43,7 +54,11 @@ def main() -> None:
                 positions = db.get_open_positions(cur)
                 closed_this_tick = 0
                 for pos in positions:
-                    price = kraken.get_price(pos["symbol"])
+                    asset_class = C.ASSET_CLASS[pos["symbol"]]
+                    if not market_hours.is_market_open(asset_class):
+                        continue
+
+                    price = prices.get_price(pos["symbol"])
                     change_pct = (price - pos["entry_price_eur"]) / pos["entry_price_eur"]
 
                     if price <= pos["stop_loss_price"]:

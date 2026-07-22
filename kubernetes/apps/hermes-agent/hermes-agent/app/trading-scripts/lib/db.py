@@ -22,7 +22,7 @@ INSERT INTO portfolio (id, cash_eur) VALUES (1, %(starting_capital)s) ON CONFLIC
 
 CREATE TABLE IF NOT EXISTS positions (
     id                  BIGSERIAL PRIMARY KEY,
-    symbol              TEXT NOT NULL CHECK (symbol IN ('BTC','ETH')),
+    symbol              TEXT NOT NULL,
     quantity            NUMERIC(20,8) NOT NULL CHECK (quantity > 0),
     entry_price_eur     NUMERIC(14,4) NOT NULL CHECK (entry_price_eur > 0),
     entry_time          TIMESTAMPTZ NOT NULL,
@@ -39,7 +39,7 @@ CREATE INDEX IF NOT EXISTS idx_positions_open ON positions (symbol) WHERE status
 CREATE TABLE IF NOT EXISTS proposals (
     id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     proposal_type          TEXT NOT NULL CHECK (proposal_type IN ('BUY','SELL_PROFIT_TARGET')),
-    symbol                 TEXT NOT NULL CHECK (symbol IN ('BTC','ETH')),
+    symbol                 TEXT NOT NULL,
     quantity               NUMERIC(20,8),
     amount_eur             NUMERIC(14,2),
     position_id            BIGINT REFERENCES positions(id),
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS trades (
     id            BIGSERIAL PRIMARY KEY,
     position_id   BIGINT REFERENCES positions(id),
     proposal_id   UUID REFERENCES proposals(id),
-    symbol        TEXT NOT NULL CHECK (symbol IN ('BTC','ETH')),
+    symbol        TEXT NOT NULL,
     side          TEXT NOT NULL CHECK (side IN ('BUY','SELL')),
     quantity      NUMERIC(20,8) NOT NULL,
     price_eur     NUMERIC(14,4) NOT NULL,
@@ -83,6 +83,13 @@ CREATE TABLE IF NOT EXISTS data_quality_status (
 );
 INSERT INTO data_quality_status (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
+-- Phase 4: without this, a *persistent* failure (e.g. the Alpha Vantage
+-- quota exhaustion incident) only ever alerted once, on the ok->not-ok
+-- transition -- every following check also failed but stayed silent
+-- (alerts only fired on a state *change*), so the block on new BUY
+-- proposals could sit unnoticed for days. See check_data_quality.py.
+ALTER TABLE data_quality_status ADD COLUMN IF NOT EXISTS last_alerted_at TIMESTAMPTZ;
+
 -- Phase 2: tracks whether a BUY proposal was manually requested or
 -- bot-suggested by the opportunity scanner -- reporting/feedback only,
 -- not a safety gate. ADD COLUMN IF NOT EXISTS is safe to rerun against
@@ -100,6 +107,25 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     num_open_positions  SMALLINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_time ON portfolio_snapshots (snapshot_time);
+"""
+
+# Phase 4 (stocks): the original CREATE TABLEs above inlined
+# CHECK (symbol IN ('BTC','ETH')) directly on the column -- too narrow now
+# that STOCK_SYMBOLS exists (constants.py). Postgres auto-names a single-
+# column inline CHECK "<table>_symbol_check", so DROP CONSTRAINT IF EXISTS
+# + a freshly named ADD CONSTRAINT is rerun-safe without needing a
+# PL/pgSQL DO-block (which Flux's postBuild.substituteFrom would mangle,
+# see the GRANT_READONLY_SQL comment above). Re-executes on every
+# migrate() call, which is fine -- widening to the exact same list is a
+# no-op.
+_SYMBOL_LIST_SQL = ", ".join(f"'{s}'" for s in C.ALL_SYMBOLS)
+WIDEN_SYMBOL_CHECKS_SQL = f"""
+ALTER TABLE positions DROP CONSTRAINT IF EXISTS positions_symbol_check;
+ALTER TABLE positions ADD CONSTRAINT positions_symbol_check CHECK (symbol IN ({_SYMBOL_LIST_SQL}));
+ALTER TABLE proposals DROP CONSTRAINT IF EXISTS proposals_symbol_check;
+ALTER TABLE proposals ADD CONSTRAINT proposals_symbol_check CHECK (symbol IN ({_SYMBOL_LIST_SQL}));
+ALTER TABLE trades DROP CONSTRAINT IF EXISTS trades_symbol_check;
+ALTER TABLE trades ADD CONSTRAINT trades_symbol_check CHECK (symbol IN ({_SYMBOL_LIST_SQL}));
 """
 
 # Phase 3: read-only access for the Grafana datasource and the OpenSearch
@@ -138,6 +164,7 @@ def migrate() -> None:
     try:
         with conn, conn.cursor() as cur:
             cur.execute(SCHEMA_SQL, {"starting_capital": C.STARTING_CAPITAL_EUR})
+            cur.execute(WIDEN_SYMBOL_CHECKS_SQL)
             cur.execute("SELECT 1 FROM pg_roles WHERE rolname = 'tradingreadonly'")
             if cur.fetchone():
                 cur.execute(GRANT_READONLY_SQL)
@@ -237,6 +264,28 @@ def set_data_quality_status(cur, ok: bool, divergence_pct, reason: str | None) -
         """,
         (ok, divergence_pct, reason),
     )
+
+
+def mark_data_quality_alerted(cur) -> None:
+    cur.execute("UPDATE data_quality_status SET last_alerted_at = now() WHERE id = 1")
+
+
+def data_quality_alert_due(status: dict, still_ok: bool) -> bool:
+    """Whether check_data_quality.py should actually send a WhatsApp alert
+    this run, vs. staying silent. Always alerts on a state transition
+    (ok<->not-ok); if it's been continuously flagged, re-alerts once every
+    24h as a reminder rather than either spamming every run or going silent
+    forever (see the ALTER TABLE ... last_alerted_at comment above).
+    """
+    was_ok = status["ok"]
+    if was_ok != still_ok:
+        return True
+    if still_ok:
+        return False  # was ok, still ok -- nothing to say
+    last_alerted_at = status["last_alerted_at"]
+    if last_alerted_at is None:
+        return True
+    return (datetime.now(ZoneInfo("UTC")) - last_alerted_at) >= timedelta(hours=24)
 
 
 def execute_stop_loss(cur, position: dict, current_price) -> None:

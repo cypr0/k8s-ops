@@ -7,7 +7,7 @@ from . import constants as C
 
 
 def get_price(symbol: str) -> Decimal:
-    if symbol not in C.ALLOWED_SYMBOLS:
+    if symbol not in C.CRYPTO_SYMBOLS:
         raise ValueError(f"symbol not in allow-list: {symbol!r}")
     pair = C.KRAKEN_PAIR[symbol]
     resp = requests.get(C.KRAKEN_TICKER_URL, params={"pair": pair}, timeout=10)
@@ -24,7 +24,7 @@ def get_closes(symbol: str, interval_minutes: int = 60, count: int | None = None
     """Historical closing prices, oldest first. Candle format from Kraken:
     [time, open, high, low, close, vwap, volume, count] -- close is index 4.
     """
-    if symbol not in C.ALLOWED_SYMBOLS:
+    if symbol not in C.CRYPTO_SYMBOLS:
         raise ValueError(f"symbol not in allow-list: {symbol!r}")
     pair = C.KRAKEN_PAIR[symbol]
     resp = requests.get(

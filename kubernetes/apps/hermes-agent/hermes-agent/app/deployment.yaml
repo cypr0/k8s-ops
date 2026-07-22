@@ -158,7 +158,10 @@ spec:
               cp /trading-src/lib_constants.py    /opt/data/scripts/trading/lib/constants.py
               cp /trading-src/lib_db.py           /opt/data/scripts/trading/lib/db.py
               cp /trading-src/lib_kraken.py        /opt/data/scripts/trading/lib/kraken.py
-              cp /trading-src/lib_alphavantage.py /opt/data/scripts/trading/lib/alphavantage.py
+              cp /trading-src/lib_finnhub.py       /opt/data/scripts/trading/lib/finnhub.py
+              cp /trading-src/lib_fx.py            /opt/data/scripts/trading/lib/fx.py
+              cp /trading-src/lib_prices.py        /opt/data/scripts/trading/lib/prices.py
+              cp /trading-src/lib_market_hours.py  /opt/data/scripts/trading/lib/market_hours.py
               cp /trading-src/lib_stats.py         /opt/data/scripts/trading/lib/stats.py
               cp /trading-src/lib_signals.py       /opt/data/scripts/trading/lib/signals.py
               cp /trading-src/check_positions.py     /opt/data/scripts/trading/check_positions.py
@@ -193,6 +196,18 @@ spec:
                   --name trading-check-opportunities \
                   --script trading/check_opportunities.py \
                   --no-agent \
+                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
+              fi
+              # Agent-mode (LLM-driven), unlike the three --no-agent jobs
+              # above: reviews the stock pool via news/fundamentals and
+              # decides itself whether a candidate is compelling enough to
+              # propose_buy -- see soul_briefing.md's "Stock scan" section
+              # for its exact instructions and the same confirm_buy
+              # restriction as every other proposal path.
+              if ! grep -q '"name": "trading-stock-scan"' /opt/data/cron/jobs.json 2>/dev/null; then
+                /opt/hermes/.venv/bin/hermes cron create "every 6h" \
+                  "Run the stock scan described in your trading-bot briefing (SOUL.md): review the stock pool for buy candidates via get_news/get_fundamentals and propose_buy anything genuinely compelling." \
+                  --name trading-stock-scan \
                   --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
               fi
 

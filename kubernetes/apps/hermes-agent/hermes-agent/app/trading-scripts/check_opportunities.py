@@ -1,11 +1,15 @@
 #!/opt/hermes/.venv/bin/python3
 """Proactive opportunity scanner, run every 30 minutes via Hermes' cron
 scheduler in --no-agent mode (no LLM involved -- the EV/Kelly math is
-deterministic). For each symbol with no existing open position, not
-circuit-breaker-tripped, with market data quality ok: scores the entry via
-lib.signals.expected_value_score() (a technical mean-reversion signal
-combined with our own historical win rate). If favorable, creates a
-Kelly-sized BUY proposal and alerts WhatsApp with the reasoning.
+deterministic). Crypto only -- stocks have their own, separate,
+fundamentals/news-driven scan (see the agent-mode "trading-stock-scan" cron
+job, deployment.yaml + soul_briefing.md); a technical mean-reversion signal
+is Kraken-specific and doesn't need repeating for stocks. For each crypto
+symbol with no existing open position, not circuit-breaker-tripped, with
+market data quality ok: scores the entry via lib.signals.expected_value_score()
+(a technical mean-reversion signal combined with our own historical win
+rate). If favorable, creates a Kelly-sized BUY proposal and alerts WhatsApp
+with the reasoning.
 
 IMPORTANT: this only ever creates a *proposal*. Nothing executes without
 the user's explicit confirmation via `cli.py confirm_buy <id>` -- identical
@@ -19,7 +23,7 @@ sys.path.insert(0, "/opt/data/tools/pip")
 
 from lib import constants as C
 from lib import db
-from lib import kraken
+from lib import prices
 from lib import signals
 
 
@@ -34,7 +38,7 @@ def main() -> None:
             if not quality["ok"]:
                 return  # ditto, check_data_quality.py already announced this
 
-            for symbol in C.ALLOWED_SYMBOLS:
+            for symbol in C.CRYPTO_SYMBOLS:
                 if db.get_open_positions(cur, symbol):
                     continue  # already holding this symbol
                 if db.get_pending_buy_proposal(cur, symbol):
@@ -44,7 +48,7 @@ def main() -> None:
                 if not score["favorable"]:
                     continue
 
-                total_value = db.compute_total_portfolio_value(cur, kraken)
+                total_value = db.compute_total_portfolio_value(cur, prices)
                 cash = db.get_portfolio_cash(cur)
                 amount_eur = min(total_value * score["position_pct"], cash)
                 if amount_eur <= 0:

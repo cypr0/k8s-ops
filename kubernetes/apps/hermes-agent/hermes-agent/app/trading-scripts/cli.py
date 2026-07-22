@@ -25,12 +25,14 @@ sys.path.insert(0, "/opt/data/tools/pip")
 
 from lib import constants as C
 from lib import db
-from lib import kraken
+from lib import finnhub
+from lib import market_hours
+from lib import prices
 from lib import stats
 
 
 def cmd_get_price(args: argparse.Namespace) -> None:
-    price = kraken.get_price(args.symbol)
+    price = prices.get_price(args.symbol)
     print(f"{args.symbol}: EUR {price}")
 
 
@@ -48,7 +50,7 @@ def cmd_get_portfolio(args: argparse.Namespace) -> None:
             if positions:
                 lines.append("Open positions:")
                 for pos in positions:
-                    price = kraken.get_price(pos["symbol"])
+                    price = prices.get_price(pos["symbol"])
                     value = pos["quantity"] * price
                     total_value += value
                     change_pct = (price - pos["entry_price_eur"]) / pos["entry_price_eur"]
@@ -75,7 +77,7 @@ def cmd_get_stats(args: argparse.Namespace) -> None:
     try:
         with conn, conn.cursor() as cur:
             lines = []
-            for symbol in C.ALLOWED_SYMBOLS:
+            for symbol in C.ALL_SYMBOLS:
                 s = stats.get_win_rate(cur, symbol)
                 kelly = stats.kelly_fraction(s["win_rate"])
                 capped = min(kelly, C.MAX_POSITION_PCT)
@@ -92,8 +94,8 @@ def cmd_get_stats(args: argparse.Namespace) -> None:
 
 
 def cmd_propose_buy(args: argparse.Namespace) -> None:
-    if args.symbol not in C.ALLOWED_SYMBOLS:
-        print(f"Rejected: {args.symbol} is not tradeable. Allowed: {', '.join(C.ALLOWED_SYMBOLS)}")
+    if args.symbol not in C.ALL_SYMBOLS:
+        print(f"Rejected: {args.symbol} is not tradeable. Allowed: {', '.join(C.ALL_SYMBOLS)}")
         return
     try:
         amount = Decimal(args.amount_eur)
@@ -132,9 +134,13 @@ def cmd_propose_buy(args: argparse.Namespace) -> None:
                     f"({quality['flagged_reason']}) -- new buys are paused until it clears."
                 )
                 return
+            asset_class = C.ASSET_CLASS[args.symbol]
+            if not market_hours.is_market_open(asset_class):
+                print(f"Rejected: {args.symbol}'s market is currently closed -- try again during trading hours.")
+                return
 
-            price = kraken.get_price(args.symbol)
-            total_value = db.compute_total_portfolio_value(cur, kraken)
+            price = prices.get_price(args.symbol)
+            total_value = db.compute_total_portfolio_value(cur, prices)
             # Kelly-derived cap: can only be <= MAX_POSITION_PCT, never
             # more -- see lib/stats.py. When there's no trade history yet,
             # this starts near the flat MAX_POSITION_PCT (neutral prior)
@@ -195,9 +201,14 @@ def cmd_confirm_buy(args: argparse.Namespace) -> None:
                 db.reject_proposal(cur, proposal["id"], "data quality flagged since proposal")
                 print("Cancelled: market data quality became flagged since you asked -- buy cancelled.")
                 return
+            asset_class = C.ASSET_CLASS[proposal["symbol"]]
+            if not market_hours.is_market_open(asset_class):
+                db.reject_proposal(cur, proposal["id"], "market closed at confirm-time")
+                print(f"Cancelled: {proposal['symbol']}'s market closed since you asked -- buy cancelled.")
+                return
 
-            price = kraken.get_price(proposal["symbol"])
-            total_value = db.compute_total_portfolio_value(cur, kraken)
+            price = prices.get_price(proposal["symbol"])
+            total_value = db.compute_total_portfolio_value(cur, prices)
             # Re-check the Kelly-derived cap fresh -- our own win rate may
             # have shifted (more trades closed) since the proposal was made.
             position_pct = stats.capped_kelly_position_pct(cur, proposal["symbol"])
@@ -244,7 +255,7 @@ def cmd_confirm_sell_target(args: argparse.Namespace) -> None:
                 print("Cancelled: that position is no longer open (already closed, e.g. by a stop-loss).")
                 return
 
-            price = kraken.get_price(proposal["symbol"])
+            price = prices.get_price(proposal["symbol"])
             if price < position["profit_target_price"]:
                 db.reject_proposal(cur, proposal["id"], "price fell back below target at confirm-time")
                 print(
@@ -262,12 +273,45 @@ def cmd_confirm_sell_target(args: argparse.Namespace) -> None:
         conn.close()
 
 
+def cmd_get_news(args: argparse.Namespace) -> None:
+    if C.ASSET_CLASS.get(args.symbol) != "stock":
+        print(f"Rejected: get_news is stock-only, {args.symbol} is not a stock symbol.")
+        return
+    articles = finnhub.get_company_news(args.symbol, days=args.days)
+    if not articles:
+        print(f"No recent news found for {args.symbol}.")
+        return
+    lines = [f"Recent news for {args.symbol}:"]
+    for a in articles[:10]:
+        lines.append(f"- {a['headline']}")
+        if a.get("summary"):
+            lines.append(f"  {a['summary']}")
+    print("\n".join(lines))
+
+
+def cmd_get_fundamentals(args: argparse.Namespace) -> None:
+    if C.ASSET_CLASS.get(args.symbol) != "stock":
+        print(f"Rejected: get_fundamentals is stock-only, {args.symbol} is not a stock symbol.")
+        return
+    metric = finnhub.get_basic_financials(args.symbol)
+    keys = [
+        "peNormalizedAnnual", "pbAnnual", "epsGrowth5Y", "revenueGrowth5Y",
+        "roeTTM", "netProfitMarginTTM", "totalDebt/totalEquityAnnual",
+        "52WeekHigh", "52WeekLow", "beta",
+    ]
+    lines = [f"Fundamentals for {args.symbol}:"]
+    for key in keys:
+        if key in metric and metric[key] is not None:
+            lines.append(f"  {key}: {metric[key]}")
+    print("\n".join(lines))
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Crypto paper-trading CLI")
+    parser = argparse.ArgumentParser(description="Crypto + stock paper-trading CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("get_price")
-    p.add_argument("symbol", choices=C.ALLOWED_SYMBOLS)
+    p.add_argument("symbol", choices=C.ALL_SYMBOLS)
     p.set_defaults(func=cmd_get_price)
 
     p = sub.add_parser("get_portfolio")
@@ -277,7 +321,7 @@ def main() -> int:
     p.set_defaults(func=cmd_get_stats)
 
     p = sub.add_parser("propose_buy")
-    p.add_argument("symbol", choices=C.ALLOWED_SYMBOLS)
+    p.add_argument("symbol", choices=C.ALL_SYMBOLS)
     p.add_argument("amount_eur")
     p.set_defaults(func=cmd_propose_buy)
 
@@ -288,6 +332,15 @@ def main() -> int:
     p = sub.add_parser("confirm_sell_target")
     p.add_argument("proposal_id")
     p.set_defaults(func=cmd_confirm_sell_target)
+
+    p = sub.add_parser("get_news")
+    p.add_argument("symbol", choices=C.ALL_STOCK_SYMBOLS)
+    p.add_argument("--days", type=int, default=3)
+    p.set_defaults(func=cmd_get_news)
+
+    p = sub.add_parser("get_fundamentals")
+    p.add_argument("symbol", choices=C.ALL_STOCK_SYMBOLS)
+    p.set_defaults(func=cmd_get_fundamentals)
 
     args = parser.parse_args()
     args.func(args)

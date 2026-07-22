@@ -27,7 +27,10 @@ configMapGenerator:
       - lib_constants.py=trading-scripts/lib/constants.py
       - lib_db.py=trading-scripts/lib/db.py
       - lib_kraken.py=trading-scripts/lib/kraken.py
-      - lib_alphavantage.py=trading-scripts/lib/alphavantage.py
+      - lib_finnhub.py=trading-scripts/lib/finnhub.py
+      - lib_fx.py=trading-scripts/lib/fx.py
+      - lib_prices.py=trading-scripts/lib/prices.py
+      - lib_market_hours.py=trading-scripts/lib/market_hours.py
       - lib_stats.py=trading-scripts/lib/stats.py
       - lib_signals.py=trading-scripts/lib/signals.py
       - check_positions.py=trading-scripts/check_positions.py
