@@ -127,14 +127,19 @@ def cmd_propose_buy(args: argparse.Namespace) -> None:
                     "until tomorrow."
                 )
                 return
-            quality = db.get_data_quality_status(cur)
-            if not quality["ok"]:
-                print(
-                    f"Rejected: market data quality is currently flagged "
-                    f"({quality['flagged_reason']}) -- new buys are paused until it clears."
-                )
-                return
             asset_class = C.ASSET_CLASS[args.symbol]
+            # The data-quality flag only ever reflects the crypto
+            # Kraken-vs-Finnhub cross-check (check_data_quality.py) -- it
+            # has nothing to do with stock pricing, so it must not block
+            # stock buys too.
+            if asset_class == "crypto":
+                quality = db.get_data_quality_status(cur)
+                if not quality["ok"]:
+                    print(
+                        f"Rejected: market data quality is currently flagged "
+                        f"({quality['flagged_reason']}) -- new buys are paused until it clears."
+                    )
+                    return
             if not market_hours.is_market_open(asset_class):
                 print(f"Rejected: {args.symbol}'s market is currently closed -- try again during trading hours.")
                 return
@@ -196,12 +201,14 @@ def cmd_confirm_buy(args: argparse.Namespace) -> None:
                 db.reject_proposal(cur, proposal["id"], "circuit breaker tripped since proposal")
                 print("Cancelled: the daily circuit breaker tripped since you asked -- buy cancelled.")
                 return
-            quality = db.get_data_quality_status(cur)
-            if not quality["ok"]:
-                db.reject_proposal(cur, proposal["id"], "data quality flagged since proposal")
-                print("Cancelled: market data quality became flagged since you asked -- buy cancelled.")
-                return
             asset_class = C.ASSET_CLASS[proposal["symbol"]]
+            # See cmd_propose_buy: crypto-only check, doesn't apply to stocks.
+            if asset_class == "crypto":
+                quality = db.get_data_quality_status(cur)
+                if not quality["ok"]:
+                    db.reject_proposal(cur, proposal["id"], "data quality flagged since proposal")
+                    print("Cancelled: market data quality became flagged since you asked -- buy cancelled.")
+                    return
             if not market_hours.is_market_open(asset_class):
                 db.reject_proposal(cur, proposal["id"], "market closed at confirm-time")
                 print(f"Cancelled: {proposal['symbol']}'s market closed since you asked -- buy cancelled.")
