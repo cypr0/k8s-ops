@@ -10,6 +10,15 @@ spec:
     matchLabels:
       app.kubernetes.io/name: loki
   ingress:
+    # Gatus health check (GET /ready)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
     # Alloy log push
     - fromEndpoints:
         - matchLabels:

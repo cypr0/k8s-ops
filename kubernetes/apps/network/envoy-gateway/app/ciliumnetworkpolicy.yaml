@@ -138,6 +138,15 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
+    # Gatus: health check against id.cisotop.de (Authentik SSO)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
     # Paperless: OIDC discovery/token exchange with Authentik (id.cisotop.de)
     - fromEndpoints:
         - matchLabels:
