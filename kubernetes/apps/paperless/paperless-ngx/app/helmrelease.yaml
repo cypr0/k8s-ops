@@ -29,7 +29,7 @@ spec:
             image:
               repository: ghcr.io/paperless-ngx/paperless-ngx
               # renovate: datasource=docker depName=ghcr.io/paperless-ngx/paperless-ngx
-              tag: 2.20.15
+              tag: 3.0.5
             env:
               PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
               PAPERLESS_CONSUMER_POLLING: 60
