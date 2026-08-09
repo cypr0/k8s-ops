@@ -139,7 +139,7 @@ spec:
         [INPUT]
             Name              tail
             Tag               kube.app
-            Path              /var/log/containers/*_nextcloud_*.log,/var/log/containers/*_paperless_*.log,/var/log/containers/*_open-webui_*.log,/var/log/containers/*_openclaw_*.log
+            Path              /var/log/containers/*_nextcloud_*.log,/var/log/containers/*_paperless_*.log,/var/log/containers/*_open-webui_*.log,/var/log/containers/*_hermes-agent_*.log
             Parser            cri
             Path_Key          filename
             DB                /var/log/flb_kube_apps.db
