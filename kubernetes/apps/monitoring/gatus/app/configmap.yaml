@@ -4,7 +4,7 @@ kind: ConfigMap
 metadata:
   name: gatus-config
 data:
-  config.yaml: |
+  config.yaml: |-
     web:
       port: 8080
 
@@ -16,8 +16,8 @@ data:
 
     alerting:
       pushover:
-        application-token: "${GATUS_PUSHOVER_API_TOKEN}"
-        user-key: "${PUSHOVER_USER_KEY}"
+        application-token: "$${GATUS_PUSHOVER_API_TOKEN}"
+        user-key: "$${PUSHOVER_USER_KEY}"
         title: "Gatus — ${SECRET_DOMAIN}"
         default-alert:
           failure-threshold: 3
