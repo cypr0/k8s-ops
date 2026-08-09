@@ -24,6 +24,15 @@ spec:
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": nextcloud
+    # Gatus health check (GET /status.php)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
     # openclaw's nextcloud-mcp sidecar: WebDAV/OCS API, restricted to the
     # dedicated openclaw-reader account (see post-install-job.yaml)
     - fromEndpoints:

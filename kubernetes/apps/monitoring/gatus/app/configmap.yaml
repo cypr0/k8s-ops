@@ -33,7 +33,13 @@ data:
         conditions:
           - "[STATUS] == 200"
           - "[RESPONSE_TIME] < 3000"
-          - "[CERTIFICATE_EXPIRATION] > 336h"
+          # The cisotop-de-production Certificate (network ns) is deliberately
+          # short-lived (spec.duration: 160h ~= 6.7 days, cert-manager renews
+          # ~53h before expiry) -- a >336h (14d) threshold can never pass
+          # against a cert that's never valid for more than 160h in the first
+          # place. 24h still catches a genuinely stuck renewal with a full
+          # day to react, comfortably inside the ~53h renewal buffer.
+          - "[CERTIFICATE_EXPIRATION] > 24h"
         alerts:
           - type: pushover
 
@@ -117,5 +123,64 @@ data:
         interval: 1m
         conditions:
           - "[STATUS] < 500"
+        alerts:
+          - type: pushover
+
+      # ── Apps ─────────────────────────────────────────────────────────────
+      - name: Grafana
+        group: Apps
+        url: "http://grafana.monitoring.svc.cluster.local/api/health"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Nextcloud
+        group: Apps
+        url: "http://nextcloud.nextcloud.svc.cluster.local:8080/status.php"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Collabora
+        group: Apps
+        url: "http://collabora-app.nextcloud.svc.cluster.local:9980/hosting/discovery"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Open WebUI
+        group: Apps
+        url: "http://open-webui-app.open-webui.svc.cluster.local:8090/health"
+        interval: 1m
+        # Endpoint path/behavior not independently confirmed (couldn't reach
+        # it directly to verify during setup) -- permissive status range so
+        # an auth-required response doesn't false-alarm the way the
+        # certificate threshold above once did; tighten once observed live.
+        conditions:
+          - "[STATUS] == any(200, 302, 401, 403)"
+        alerts:
+          - type: pushover
+
+      - name: Paperless-ngx
+        group: Apps
+        url: "http://paperless.paperless.svc.cluster.local/"
+        interval: 1m
+        conditions:
+          - "[STATUS] == any(200, 302, 401, 403)"
+        alerts:
+          - type: pushover
+
+      - name: Paperless-AI
+        group: Apps
+        url: "http://paperless-ai.paperless.svc.cluster.local:3000/"
+        interval: 1m
+        conditions:
+          - "[STATUS] == any(200, 302, 401, 403)"
         alerts:
           - type: pushover

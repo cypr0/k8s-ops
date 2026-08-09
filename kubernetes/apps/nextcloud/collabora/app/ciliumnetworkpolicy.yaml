@@ -22,6 +22,15 @@ spec:
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": nextcloud
+    # Gatus health check (GET /hosting/discovery)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "9980"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

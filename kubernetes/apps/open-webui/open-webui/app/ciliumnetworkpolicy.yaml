@@ -20,6 +20,15 @@ spec:
         - ports:
             - port: "8090"
               protocol: TCP
+    # Gatus health check (GET /health)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "8090"
+              protocol: TCP
   egress:
     # DNS resolution
     - toEndpoints:

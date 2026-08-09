@@ -52,6 +52,15 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Gatus health check
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
   egress:
     # DNS resolution (matchPattern required so Cilium learns resolved IPs
     # for the toFQDNs rule below - see velero/opensearch policies for same pattern)

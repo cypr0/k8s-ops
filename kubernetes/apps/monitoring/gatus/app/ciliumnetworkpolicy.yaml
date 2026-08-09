@@ -52,7 +52,7 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    # Monitoring namespace health checks (prometheus, alertmanager, loki)
+    # Monitoring namespace health checks (prometheus, alertmanager, loki, grafana)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
@@ -63,6 +63,8 @@ spec:
             - port: "9093"
               protocol: TCP
             - port: "3100"
+              protocol: TCP
+            - port: "3000"
               protocol: TCP
     # Logging namespace health checks (opensearch, dashboards)
     - toEndpoints:
@@ -83,6 +85,34 @@ spec:
             - port: "5432"
               protocol: TCP
             - port: "6379"
+              protocol: TCP
+    # Nextcloud namespace health checks (nextcloud, collabora)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "9980"
+              protocol: TCP
+    # Open WebUI namespace health check
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+      toPorts:
+        - ports:
+            - port: "8090"
+              protocol: TCP
+    # Paperless namespace health checks (paperless-ngx, paperless-ai)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "3000"
               protocol: TCP
     # Security namespace health checks (onepassword-connect)
     - toEndpoints:
