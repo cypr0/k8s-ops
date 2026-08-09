@@ -50,7 +50,7 @@ spec:
 
     # Send events to Falcosidekick
     falcosidekick:
-      enabled: false  # deployed as separate HelmRelease
+      enabled: false # deployed as separate HelmRelease
 
     falco:
       json_output: true
@@ -99,6 +99,14 @@ spec:
               comps: [in, =]
               values:
                 - [[cilium-cni], runtime]
+            # CNPG's barman-cloud WAL-archive process (python3, invoked once
+            # per WAL segment) — a routine backup mechanism, not a dropped
+            # binary. Was firing CRITICAL ~1300x/week on falco-qhtfl alone.
+            - name: cnpg_wal_archive
+              fields: [proc.name, proc.cmdline]
+              comps: [=, contains]
+              values:
+                - [python3, "wal-archive"]
           override:
             exceptions: append
 
@@ -112,6 +120,7 @@ spec:
             and container
             and k8s.ns.name in (database)
             and proc.name in (bash, sh, zsh, dash, ash)
+            and not proc.cmdline contains "healthcheck.sh"
           output: >
             Shell spawned in database container
             (user=%user.name pod=%k8s.pod.name ns=%k8s.ns.name
@@ -164,7 +173,7 @@ spec:
           tags: [cryptomining, malware]
 
     podSecurityContext:
-      runAsNonRoot: false  # Falco needs root for eBPF
+      runAsNonRoot: false # Falco needs root for eBPF
     containerSecurityContext:
       privileged: false
       capabilities:
@@ -173,4 +182,4 @@ spec:
           - SYS_PTRACE
           - NET_RAW
           - PERFMON
-          - SYS_RESOURCE  # needed to bump RLIMIT_MEMLOCK for modern eBPF on Talos
+          - SYS_RESOURCE # needed to bump RLIMIT_MEMLOCK for modern eBPF on Talos
