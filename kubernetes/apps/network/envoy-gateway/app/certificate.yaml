@@ -7,6 +7,14 @@ spec:
   dnsNames:
     - "${SECRET_DOMAIN}"
     - "*.${SECRET_DOMAIN}"
+  # Deliberately short-lived (fail-fast renewal testing): forces cert-manager
+  # to reissue via the letsencrypt-production ACME pipeline roughly every
+  # ~4.4 days (renewBefore defaults to 2/3 of duration) instead of every ~60
+  # days for a full 90-day cert. If the DNS-01/ACME pipeline ever breaks,
+  # this surfaces it within days, not weeks. Keep any monitoring of this
+  # cert's expiration calibrated to this short window -- see Gatus's
+  # Authentik SSO endpoint (kubernetes/apps/monitoring/gatus/app/configmap.yaml)
+  # for the mistake of assuming a normal 90-day cert's threshold here.
   duration: 160h
   issuerRef:
     name: letsencrypt-production
