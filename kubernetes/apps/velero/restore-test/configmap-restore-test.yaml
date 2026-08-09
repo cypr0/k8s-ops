@@ -195,6 +195,33 @@ data:
             k8s("PUT", f"/api/v1/namespaces/velero/configmaps/{STATE_CONFIGMAP}", body)
         return target
 
+    def pods_healthy(namespace, timeout_seconds=600, poll=10):
+        """Poll until every pod in the namespace is Running with all
+        containers Ready, or the timeout elapses. Restored pods need a beat
+        to actually start after the Restore reports Completed — a single
+        immediate 'does at least one pod exist' check can't tell a genuinely
+        broken restore from one that just hasn't scheduled yet."""
+        deadline = time.time() + timeout_seconds
+        last_detail = "no pods found"
+        while time.time() < deadline:
+            resp = k8s("GET", f"/api/v1/namespaces/{namespace}/pods") or {}
+            items = resp.get("items", [])
+            if not items:
+                last_detail = "no restored pods"
+            else:
+                not_ready = []
+                for pod in items:
+                    name = pod.get("metadata", {}).get("name", "?")
+                    phase = pod.get("status", {}).get("phase", "Unknown")
+                    conds = {c["type"]: c["status"] for c in pod.get("status", {}).get("conditions", [])}
+                    if phase != "Running" or conds.get("Ready") != "True":
+                        not_ready.append(f"{name}({phase})")
+                if not not_ready:
+                    return True, f"{len(items)} pod(s) Running and Ready"
+                last_detail = f"{len(not_ready)}/{len(items)} pod(s) not ready: {', '.join(not_ready)}"
+            time.sleep(poll)
+        return False, last_detail
+
     def cleanup(restore_name, scratch_namespaces):
         print(f"=== Cleanup: restore={restore_name}, namespaces={scratch_namespaces} ===")
         if restore_name:
@@ -232,7 +259,8 @@ data:
                 "@timestamp": run_ts, "schedule": SCHEDULE_NAME, "namespace": target_ns,
                 "backup": "", "phase": "Skipped", "success": False, "errors": 0, "warnings": 0,
                 "durationSeconds": round(time.time() - run_start, 1), "detail": msg,
-                "failureReason": "no completed backup", "source": "velero-restore-test",
+                "failureReason": "no completed backup", "failureClass": "no_backup",
+                "source": "velero-restore-test",
             })
             sys.exit(1)
 
@@ -250,6 +278,12 @@ data:
                 "excludedResources": EXCLUDED_RESOURCES,
                 "namespaceMapping": {target_ns: scratch_ns},
                 "restorePVs": True,
+                # Velero's 4h default was found to be exactly why paperless's
+                # PVC restore (many small files via kopia) always came back
+                # PartiallyFailed — it was hitting this ceiling every single
+                # run, not failing on its own. Give it real headroom; the
+                # CronJob's activeDeadlineSeconds was raised to match.
+                "itemOperationTimeout": "8h0m0s",
             },
         }
 
@@ -259,6 +293,7 @@ data:
         errors = 0
         warnings = 0
         failure_reason = ""
+        failure_class = "ok"
         try:
             k8s("POST", "/apis/velero.io/v1/namespaces/velero/restores", restore_body)
 
@@ -284,21 +319,21 @@ data:
 
             if phase != "Completed" or errors:
                 success = False
+                failure_class = "restore_timed_out" if "timeout" in failure_reason.lower() else "restore_failed"
             else:
-                # Basic health check: the scratch namespace restored at
-                # least one pod.
-                pods = k8s("GET", f"/api/v1/namespaces/{scratch_ns}/pods") or {}
-                count = len(pods.get("items", []))
-                print(f"  {scratch_ns}: {count} pod(s) restored")
-                success = count > 0
+                healthy, pod_detail = pods_healthy(scratch_ns)
+                print(f"  {scratch_ns}: {pod_detail}")
+                success = healthy
+                detail += f", {pod_detail}"
                 if not success:
-                    detail += f", {scratch_ns} has no restored pods"
+                    failure_class = "unhealthy_pods"
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             detail = f"exception: {e}"
             success = False
+            failure_class = "script_error"
         finally:
             cleanup(restore_name, [scratch_ns])
 
@@ -307,7 +342,9 @@ data:
             "backup": backup_name, "phase": phase, "success": success,
             "errors": errors, "warnings": warnings,
             "durationSeconds": round(time.time() - run_start, 1), "detail": detail,
-            "failureReason": failure_reason, "source": "velero-restore-test",
+            "failureReason": failure_reason,
+            "failureClass": "ok" if success else failure_class,
+            "source": "velero-restore-test",
         })
 
         if success:
