@@ -39,11 +39,20 @@ spec:
   values:
     # Pinned to v1.8.2 (last release on AWS SDK v1) — v1.9+ moved to SDK v2,
     # which sends chunked/trailer-signed PutObject requests
-    # ("x-amz-trailer-signature" BadHeader, even with checksumAlgorithm: "")
-    # that Intercolo's S3-compatible endpoint rejects outright.
+    # ("x-amz-trailer-signature" BadHeader). Per Intercolo's own compat docs
+    # (docs.intercolo.de/en/docs/object_storage/compatibility/): "Chunked
+    # uploads ... and trailing checksums are supported, but SigV4 Chunk
+    # signatures are not [supported]" — confirmed live on 2026-08-09 that
+    # AWS_REQUEST_CHECKSUM_CALCULATION=when_required /
+    # AWS_RESPONSE_CHECKSUM_VALIDATION=when_required do NOT avoid the signed
+    # trailer for this plugin's upload path, so SDK v1 is the only working
+    # option against this endpoint. DO NOT bump past v1.8.2 without testing
+    # a real backup against Intercolo first — see .renovaterc.json5, this
+    # image is excluded from Renovate for that reason (regressed silently
+    # once already, commit ca97746).
     initContainers:
       - name: velero-plugin-for-aws
-        image: velero/velero-plugin-for-aws:v1.14.2
+        image: velero/velero-plugin-for-aws:v1.8.2
         imagePullPolicy: IfNotPresent
         volumeMounts:
           - mountPath: /target

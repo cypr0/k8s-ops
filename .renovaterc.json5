@@ -70,6 +70,11 @@
       addLabels: ["renovate/container"],
     },
     {
+      description: "velero-plugin-for-aws: needs manual verification against Intercolo S3 before any bump (past silent regression broke uploads, see kubernetes/apps/velero/app/helmrelease.yaml)",
+      matchPackageNames: ["velero/velero-plugin-for-aws"],
+      enabled: false,
+    },
+    {
       matchDatasources: ["helm"],
       addLabels: ["renovate/helm"],
     },
