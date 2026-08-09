@@ -131,6 +131,14 @@ spec:
         - ports:
             - port: "993"
               protocol: TCP
+    # OpenRouter LLM API for native AI (PAPERLESS_AI_*, helmrelease.yaml) --
+    # same rule as paperless-ai's own CNP.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
 ---
 # tika: document text extraction service
 apiVersion: cilium.io/v2

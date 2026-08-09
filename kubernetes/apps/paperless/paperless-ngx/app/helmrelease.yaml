@@ -32,6 +32,19 @@ spec:
               tag: 3.0.5
             env:
               PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+              # Native AI (3.0+), running alongside paperless-ai for
+              # comparison (see paperless-ai/ -- kept as-is, not being
+              # replaced yet). Suggestion-based (title/date/tags/
+              # correspondent/type) -- unlike paperless-ai, does NOT cover
+              # custom fields and does NOT auto-apply without review.
+              # Same OpenRouter model/key as paperless-ai for an apples-to-
+              # apples comparison; PAPERLESS_AI_LLM_API_KEY comes from
+              # externalsecret.yaml (envFrom: paperless-secret below).
+              PAPERLESS_AI_ENABLED: "true"
+              PAPERLESS_AI_LLM_BACKEND: openai-like
+              PAPERLESS_AI_LLM_ENDPOINT: https://openrouter.ai/api/v1
+              PAPERLESS_AI_LLM_MODEL: google/gemini-2.5-flash-lite
+              PAPERLESS_AI_LLM_OUTPUT_LANGUAGE: de
               PAPERLESS_CONSUMER_POLLING: 60
               PAPERLESS_CONSUMER_RECURSIVE: "true"
               PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "true"
