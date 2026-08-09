@@ -85,7 +85,10 @@ data:
         try:
             with urllib.request.urlopen(req, context=CTX) as r:
                 resp = json.loads(r.read())
-                errors = [i for i in resp.get("items", []) if "error" in i.get("index", {})]
+                errors = [i["index"] for i in resp.get("items", []) if "error" in i.get("index", {})]
+                if errors:
+                    print(f"  ERROR bulk indexing {len(errors)}/{len(docs)} docs to {index}: "
+                          f"{errors[0].get('_id')}: {errors[0].get('error')}", file=sys.stderr)
                 return len(docs) - len(errors)
         except Exception as e:
             print(f"  ERROR bulk indexing: {e}", file=sys.stderr)
@@ -271,9 +274,14 @@ data:
                 "name":               meta.get("name", ""),
                 "schedule":           labels.get("velero.io/schedule-name", "manual"),
                 "phase":              status.get("phase", "Unknown"),
-                "startTimestamp":     status.get("startTimestamp", ""),
-                "completionTimestamp": status.get("completionTimestamp", ""),
-                "expiration":         status.get("expiration", ""),
+                "startTimestamp":     status.get("startTimestamp") or None,
+                # OpenSearch dynamically maps this field as strict `date`;
+                # backups that never finished (Failed/InProgress) have this
+                # as "" in the CR, which OpenSearch's bulk API rejects
+                # silently (only the item's error count changes, no log) —
+                # must be null, not an empty string, for unfinished backups.
+                "completionTimestamp": status.get("completionTimestamp") or None,
+                "expiration":         status.get("expiration") or None,
                 "errors":             status.get("errors", 0),
                 "warnings":           status.get("warnings", 0),
                 "itemsBackedUp":      progress.get("itemsBackedUp", 0),
