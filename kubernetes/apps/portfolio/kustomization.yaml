@@ -8,4 +8,9 @@ components:
 
 resources:
   - ./namespace.yaml
-  - ./philipp-rosch-site/ks.yaml
+  # philipp-rosch-site: intentionally not deployed yet -- not ready to be
+  # published (also: ghcr.io/cypr0/philipp-rosch-site:latest doesn't exist
+  # yet, so it can't run regardless). Re-add this line once ready to
+  # publish; Flux prunes everything it created (prune: true) rather than
+  # leaving orphaned resources.
+  # - ./philipp-rosch-site/ks.yaml
