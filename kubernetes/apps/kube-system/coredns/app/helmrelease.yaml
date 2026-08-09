@@ -57,6 +57,21 @@ spec:
             configBlock: |-
               10.43.38.197 id.${SECRET_DOMAIN}
               fallthrough
+          # Gatus's Echo (Connectivity Test) endpoint kept timing out: this
+          # cluster has no IPv6 routing, but echo.${SECRET_DOMAIN} (proxied
+          # through Cloudflare) publishes AAAA records, and the dialer hangs
+          # on the unreachable IPv6 address rather than falling back
+          # quickly. Unlike id.${SECRET_DOMAIN} above, this hostname needs
+          # to keep resolving to the REAL public Cloudflare edge (that's the
+          # whole point of a connectivity test) -- so instead of a static
+          # `hosts` rewrite (which would need a hardcoded, rotation-prone
+          # Cloudflare IP), suppress only the AAAA answer here and let the A
+          # query keep forwarding upstream normally for a live, current IPv4
+          # answer.
+          - name: template
+            parameters: ANY AAAA echo.${SECRET_DOMAIN}
+            configBlock: |-
+              rcode NXDOMAIN
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
             configBlock: |-
@@ -94,7 +109,8 @@ spec:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
       capabilities:
-        drop: ["ALL"]
+        drop:
+          - "ALL"
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:

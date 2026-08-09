@@ -47,13 +47,11 @@ data:
         group: Infrastructure
         url: "https://echo.${SECRET_DOMAIN}"
         interval: 5m
-        # echo.cisotop.de publishes AAAA records; this cluster has no IPv6
-        # routing (same root cause already hit and worked around for
-        # api.pushover.net in restore_test.py) -- without forcing ip4, the
-        # dialer hangs on the unreachable IPv6 address until Gatus's client
-        # timeout, permanently failing this check.
-        client:
-          network: "ip4"
+        # echo.${SECRET_DOMAIN} publishes AAAA records and this cluster has
+        # no IPv6 routing -- fixed at the DNS layer (CoreDNS suppresses the
+        # AAAA answer for this one hostname), not here: gatus's
+        # client.network setting is ICMP-only and has no effect on HTTP(S)
+        # checks, confirmed by testing it live before reverting it.
         conditions:
           - "[STATUS] == 200"
           - "[RESPONSE_TIME] < 2000"
