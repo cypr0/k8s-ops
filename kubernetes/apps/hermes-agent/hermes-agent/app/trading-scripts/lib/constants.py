@@ -37,6 +37,13 @@ def _env_int(name: str) -> int:
         raise RuntimeError(f"env var {name}={raw!r} is not a valid integer")
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 CRYPTO_SYMBOLS = ("BTC", "ETH")
 
 # Curated, human-reviewed pool the stock-scan agent job (see
@@ -124,6 +131,19 @@ STOP_LOSS_PCT = _env_decimal("TRADING_STOP_LOSS_PCT")
 PROFIT_TARGET_PCT = _env_decimal("TRADING_PROFIT_TARGET_PCT")
 DAILY_CIRCUIT_BREAKER_PCT = _env_decimal("TRADING_DAILY_CIRCUIT_BREAKER_PCT")
 PROPOSAL_EXPIRY_MINUTES = _env_int("TRADING_PROPOSAL_EXPIRY_MINUTES")
+
+# Opt-in (default off, no 1Password change needed to keep current
+# behaviour): when true, the deterministic crypto opportunity scanner
+# (check_opportunities.py) auto-executes its own scan-sourced BUY proposals
+# instead of waiting for a WhatsApp "yes" -- still fully bounded by every
+# existing deterministic check (circuit breaker, data quality, Kelly-capped
+# position size, available cash). Deliberately does NOT apply to the
+# LLM-judgment stock-scan or manual propose_buy paths -- those keep
+# requiring explicit human confirmation via cli.py's confirm_buy, since
+# letting the LLM's own judgment auto-execute is exactly the risk the
+# original human-in-the-loop design was built to avoid. To enable, add
+# TRADING_AUTOPILOT_ENABLED=true to the hermes-agent-trading 1Password item.
+TRADING_AUTOPILOT_ENABLED = _env_bool("TRADING_AUTOPILOT_ENABLED", default=False)
 
 # Not personally sensitive -- generic technical config, fine to keep in code.
 TIMEZONE = "Europe/Berlin"

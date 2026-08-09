@@ -14,16 +14,24 @@ metadata:
 data:
   config.yaml: |-
     model:
-      # Mistral: strong German/European-language fluency at a low price
-      # ($0.10 / $0.30 per M tokens prompt/completion, verified live against
-      # https://openrouter.ai/api/v1/models). Noticeably better German than
-      # similarly-priced Qwen/DeepSeek models in practice. Bump to
-      # mistralai/mistral-medium-3.1 if quality matters more than cost.
-      default: mistralai/mistral-small-3.2-24b-instruct
+      # Was mistralai/mistral-small-3.2-24b-instruct on OpenRouter's shared
+      # free-tier pool -- found (2026-08-09) to repeatedly hit 429 rate
+      # limits and return garbled/truncated tool-call names under load,
+      # which burned the full agent.max_turns budget on a stuck retry loop
+      # (15-40 min) before falling back to a forced summary -- the LLM then
+      # filled that forced summary with invented excuses ("market closed",
+      # "no API access") instead of reporting the real tool failure. Moved
+      # to the paid mistral-medium-3.1 tier to fix the reliability problem
+      # at the source rather than paper over the symptom.
+      default: mistralai/mistral-medium-3.1
       provider: auto
       base_url: https://openrouter.ai/api/v1
     agent:
-      max_turns: 90
+      # Lowered from 90: bounds worst-case stuck-loop time if a bad
+      # tool-call round still happens, without cutting off legitimate
+      # multi-step research (get_news/get_fundamentals across a few
+      # candidates rarely needs more than ~20-30 turns in practice).
+      max_turns: 45
       gateway_timeout: 1800
       restart_drain_timeout: 60
       tool_use_enforcement: auto

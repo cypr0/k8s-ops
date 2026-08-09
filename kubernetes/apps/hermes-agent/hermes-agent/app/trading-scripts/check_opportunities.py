@@ -11,10 +11,17 @@ market data quality ok: scores the entry via lib.signals.expected_value_score()
 rate). If favorable, creates a Kelly-sized BUY proposal and alerts WhatsApp
 with the reasoning.
 
-IMPORTANT: this only ever creates a *proposal*. Nothing executes without
+By default, this only ever creates a *proposal*: nothing executes without
 the user's explicit confirmation via `cli.py confirm_buy <id>` -- identical
 safety boundary to a manually requested buy. The technical signal is a
 simple, well-known heuristic; it is not a claim of real predictive edge.
+
+If C.TRADING_AUTOPILOT_ENABLED is set (opt-in, see lib/constants.py), this
+script auto-executes its own proposal immediately instead of waiting --
+still gated by every deterministic check above it (circuit breaker, data
+quality, cash). This is the only auto-execution path in the whole system;
+the LLM-driven stock-scan and manual propose_buy always still require a
+human "yes".
 """
 import sys
 
@@ -58,15 +65,29 @@ def main() -> None:
                 proposal_id = db.create_buy_proposal(
                     cur, symbol, amount_eur, price, source="scan"
                 )
-                alerts.append(
-                    f"\U0001F50D Opportunity spotted: {symbol} {score['signal']['reason']}. "
-                    f"Historical win rate {score['win_rate']:.0%} "
-                    f"({score['total_closed_trades']} closed trades so far). "
-                    f"Suggesting EUR {amount_eur:.2f} "
-                    f"(Kelly-sized, {score['position_pct']:.1%} of portfolio).\n"
-                    f"Reply 'yes' to buy, then I'll run:\n"
-                    f"  confirm_buy {proposal_id}"
-                )
+                if C.TRADING_AUTOPILOT_ENABLED:
+                    position_id = db.execute_buy(
+                        cur, {"id": proposal_id, "symbol": symbol, "amount_eur": amount_eur}, price
+                    )
+                    alerts.append(
+                        f"\U0001F916 Autopilot BUY: {symbol} {score['signal']['reason']}. "
+                        f"Historical win rate {score['win_rate']:.0%} "
+                        f"({score['total_closed_trades']} closed trades so far). "
+                        f"Bought EUR {amount_eur:.2f} at ~EUR {price} "
+                        f"(Kelly-sized, {score['position_pct']:.1%} of portfolio). "
+                        f"Position #{position_id} opened -- stop-loss and profit-target "
+                        f"are now being watched automatically."
+                    )
+                else:
+                    alerts.append(
+                        f"\U0001F50D Opportunity spotted: {symbol} {score['signal']['reason']}. "
+                        f"Historical win rate {score['win_rate']:.0%} "
+                        f"({score['total_closed_trades']} closed trades so far). "
+                        f"Suggesting EUR {amount_eur:.2f} "
+                        f"(Kelly-sized, {score['position_pct']:.1%} of portfolio).\n"
+                        f"Reply 'yes' to buy, then I'll run:\n"
+                        f"  confirm_buy {proposal_id}"
+                    )
         db.expire_stale_proposals(conn)
     finally:
         conn.close()
