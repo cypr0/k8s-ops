@@ -17,6 +17,7 @@ configMapGenerator:
   - name: openwebui-tools-src
     files:
       - paperless_full.py
+      - nextcloud_full.py
   - name: openwebui-tool-sync-code
     files:
       - sync_tools.py

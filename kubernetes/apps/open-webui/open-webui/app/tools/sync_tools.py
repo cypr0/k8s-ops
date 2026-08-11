@@ -64,6 +64,13 @@ TOOL_ACCESS_GRANTS: dict[str, list[tuple[str, str]]] = {
     # from; narrow this to a specific group id if/when more users are
     # added and not all of them should get Paperless write access.
     "paperless_full": [("user", "*")],
+    # FULL read/write/DESTRUCTIVE Nextcloud access, authenticated as the
+    # REAL Nextcloud super-admin account (see nextcloud_full.py's module
+    # docstring) -- higher stakes than paperless_full's dedicated API
+    # token. Same single-admin-user reasoning applies for now; revisit
+    # this grant (and consider a less-privileged dedicated account
+    # instead) before adding more Open WebUI users.
+    "nextcloud_full": [("user", "*")],
 }
 
 

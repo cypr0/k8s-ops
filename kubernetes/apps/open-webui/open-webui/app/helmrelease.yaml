@@ -97,6 +97,10 @@ spec:
               # ./tools/paperless_full.py) -- externalsecret-paperless-token.yaml.
               - secretRef:
                   name: open-webui-paperless-secret
+              # NEXTCLOUD_USERNAME/PASSWORD for the nextcloud_full Tool (see
+              # ./tools/nextcloud_full.py) -- externalsecret-nextcloud-token.yaml.
+              - secretRef:
+                  name: open-webui-nextcloud-secret
             probes:
               liveness:
                 enabled: true

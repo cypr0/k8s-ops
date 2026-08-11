@@ -6,6 +6,7 @@ resources:
   - ./ocirepository.yaml
   - ./externalsecret.yaml
   - ./externalsecret-paperless-token.yaml
+  - ./externalsecret-nextcloud-token.yaml
   - ./configmap-searxng.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml

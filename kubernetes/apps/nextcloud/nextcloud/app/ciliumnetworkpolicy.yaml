@@ -43,6 +43,16 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Open WebUI's nextcloud_full Tool (kubernetes/apps/open-webui/open-webui/
+    # app/tools/nextcloud_full.py) reads/writes WebDAV/OCS as the real admin account
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

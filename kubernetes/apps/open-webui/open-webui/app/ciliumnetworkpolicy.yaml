@@ -69,6 +69,17 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Nextcloud WebDAV/OCS API, used by the nextcloud_full Tool (./tools/).
+    # Service is 8080->80; Cilium enforces post-DNAT on the container port,
+    # so this matches on 80 (see nextcloud's own CNP for the same note).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+            app.kubernetes.io/name: nextcloud
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
     # Open Terminal multi-user shell sandbox (same namespace); the backend
     # proxies user terminal requests to it on :8000
     - toEndpoints:
