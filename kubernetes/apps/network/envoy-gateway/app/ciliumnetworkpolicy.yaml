@@ -229,11 +229,11 @@ spec:
         - ports:
             - port: "9000"
               protocol: TCP
-    # Backend: default namespace (echo container listens on :80; service maps
+    # Backend: echo namespace (echo container listens on :80; service maps
     # 80 -> 80. Egress is enforced POST-DNAT against the container port.)
     - toEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": default
+            "k8s:io.kubernetes.pod.namespace": echo
       toPorts:
         - ports:
             - port: "80"
