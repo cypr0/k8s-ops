@@ -40,6 +40,17 @@ spec:
               # Same OpenRouter model/key as paperless-ai for an apples-to-
               # apples comparison; PAPERLESS_AI_LLM_API_KEY comes from
               # externalsecret.yaml (envFrom: paperless-secret below).
+              # NOTE: the "KI-Einstellungen" admin GUI page will keep showing
+              # this as disabled/blank regardless -- confirmed in paperless's
+              # own source (src/paperless/config.py AIConfig): the GUI reads
+              # the database-backed override column directly, e.g.
+              # `self.ai_enabled = app_config.ai_enabled or settings.AI_ENABLED`,
+              # and only ever DISPLAYS app_config.ai_enabled (always False
+              # until someone flips the GUI toggle themselves), never the
+              # resolved effective value. The env var is genuinely applied
+              # (confirmed live: `settings.AI_ENABLED` reads this correctly)
+              # -- this is a paperless-ngx GUI limitation, not a sign the
+              # config isn't working.
               PAPERLESS_AI_ENABLED: "true"
               PAPERLESS_AI_LLM_BACKEND: openai-like
               PAPERLESS_AI_LLM_ENDPOINT: https://openrouter.ai/api/v1
@@ -54,7 +65,39 @@ spec:
               PAPERLESS_EXPORT_DIR: /library/export
               PAPERLESS_LOGOUT_REDIRECT_URL: https://id.${SECRET_DOMAIN}/application/o/paperless-ngx/end-session/
               PAPERLESS_MEDIA_ROOT: /library/media
+              # Tuned for a Brother ADS-4700W (duplex ADF business document
+              # scanner, not a photo/book scanner) -- source input is already
+              # fairly clean and mostly pre-aligned by the ADF's own hardware,
+              # but these are cheap safety nets, not aggressive corrections.
+              # Values match paperless-ngx's own documented defaults
+              # (docs/configuration.md) -- set explicitly here (rather than
+              # left implicit) so the intended behaviour is version-controlled
+              # and won't silently change if a future paperless-ngx release
+              # changes its defaults. Same GUI caveat as PAPERLESS_AI_ENABLED
+              # above applies here too (src/paperless/config.py OcrConfig) --
+              # the "OCR-Einstellungen" admin page will keep showing blank
+              # fields even though these are genuinely in effect.
               PAPERLESS_OCR_LANGUAGE: deu+eng+spa
+              # auto: skip re-OCR only if the file already has a real text
+              # layer (irrelevant for this scanner's plain image-PDF output,
+              # but harmless and correct if that ever changes).
+              PAPERLESS_OCR_MODE: auto
+              PAPERLESS_OCR_OUTPUT_TYPE: pdfa
+              # unpaper cleanup for OCR accuracy only -- "clean", not
+              # "clean-final", so the archived visual copy stays an exact
+              # match of the physical original (relevant for tax/legal docs).
+              PAPERLESS_OCR_CLEAN: clean
+              PAPERLESS_OCR_DESKEW: "true"
+              PAPERLESS_OCR_ROTATE_PAGES: "true"
+              PAPERLESS_OCR_ROTATE_PAGES_THRESHOLD: "12"
+              # Fallback DPI only, used when a scan's own file metadata
+              # doesn't specify one -- matches this scanner's typical
+              # scan-to-folder text-document resolution.
+              PAPERLESS_OCR_IMAGE_DPI: "300"
+              # Lossless PDF size optimization (ocrmypdf/qpdf) -- meaningful
+              # storage savings over years of accumulated scans, no quality
+              # impact at level 1.
+              PAPERLESS_OCR_USER_ARGS: '{"optimize": 1}'
               PAPERLESS_PORT: &port 80
               # PAPERLESS_SOCIALACCOUNT_PROVIDERS is built in externalsecret.yaml
               # (client_id/secret come from 1Password) and injected via
