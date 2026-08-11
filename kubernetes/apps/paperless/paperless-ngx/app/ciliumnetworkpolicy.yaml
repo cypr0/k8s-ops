@@ -42,6 +42,16 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Open WebUI's paperless_full Tool (kubernetes/apps/open-webui/open-webui/
+    # app/tools/paperless_full.py) reads/writes the REST API
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
     # Gatus health check
     - fromEndpoints:
         - matchLabels:

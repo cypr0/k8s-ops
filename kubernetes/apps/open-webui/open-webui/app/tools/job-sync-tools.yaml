@@ -1,0 +1,126 @@
+---
+# Post-reconcile Job that imports the Git-managed Open WebUI Tool(s) into
+# the Open WebUI database. Tools (like Functions) live only in the DB --
+# there is no file mount or env autoload -- so this Job is the GitOps
+# bridge. See sync_tools.py's module docstring for the full rationale.
+#
+# kustomize.toolkit.fluxcd.io/force: "enabled" makes Flux delete-and-recreate
+# the Job whenever its spec changes -- same pattern as
+# kubernetes/apps/paperless/paperless-ngx/config/cronjob-stats-exporter.yaml.
+# Because the tool source is mounted from configMapGenerator (hashed name,
+# see kustomization.yaml in this dir), any change to a tool .py or to
+# sync_tools.py itself changes the Job spec, so a commit to either
+# automatically re-runs the sync on the next Flux reconcile.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sync-openwebui-tools
+  namespace: open-webui
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
+spec:
+  # Deliberately NO ttlSecondsAfterFinished: with a TTL the completed Job
+  # is garbage-collected, the next Flux reconcile finds it absent and
+  # recreates it, and the sync degenerates into a timed re-run loop every
+  # reconcile interval instead of running on change. Keeping the finished
+  # Job also keeps its logs readable. Re-runs come from the force
+  # annotation when the configMapGenerator hash changes, which is the
+  # intended trigger.
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-webui
+        app.kubernetes.io/component: tool-sync
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sync
+          # Must be the Open WebUI image: the sync script writes the tool
+          # row directly into the DB using open_webui's own SQLAlchemy
+          # models and calls its load_tool_module_by_id()/get_tool_specs()
+          # helpers (this instance is OIDC-only, so the admin HTTP API's
+          # password/API-key auth paths don't work here). Keep this tag in
+          # sync with the open-webui HelmRelease
+          # (kubernetes/apps/open-webui/open-webui/app/helmrelease.yaml).
+          image: ghcr.io/open-webui/open-webui:v0.11.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          env:
+            # Sync every *.py mounted here. Tool id = filename stem;
+            # display name from the 'title:' frontmatter.
+            - name: TOOL_DIR
+              value: "/tool-src"
+            - name: TOOL_OWNER_EMAIL
+              value: "mail@cisotop.de"
+            - name: LOG_LEVEL
+              value: "INFO"
+            # Home for any transient files the OWUI import writes.
+            - name: HOME
+              value: "/tmp"
+            # sync_tools.py imports open_webui.utils.tools (for
+            # get_tool_specs), which pulls in open_webui.config at module
+            # load time. That module unconditionally mkdir()s
+            # UPLOAD_DIR/CACHE_DIR under DATA_DIR and copies static assets
+            # into STATIC_DIR -- both read-only under this Job's hardened
+            # SecurityContext otherwise. Point both at the writable /tmp
+            # emptyDir instead of the real (PVC-backed, non-writable-here)
+            # app data dir; this Job never needs to persist uploads/
+            # static, so redirecting them is harmless.
+            - name: DATA_DIR
+              value: "/tmp/data"
+            - name: STATIC_DIR
+              value: "/tmp/data/static"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          # DATABASE_URL and WEBUI_SECRET_KEY both live in the single
+          # open-webui-secret (unlike some other Open WebUI deployments
+          # that split these across two secrets) -- see
+          # ../externalsecret.yaml. WEBUI_SECRET_KEY is required because
+          # Open WebUI hard-fails app startup/imports without it, so this
+          # Job needs the same secret the app pod gets from its
+          # HelmRelease.
+          envFrom:
+            - secretRef:
+                name: open-webui-secret
+          command:
+            - "sh"
+            - "-c"
+          args:
+            - |
+              set -eu
+              cd /app/backend
+              export PYTHONPATH=/app/backend
+              echo "==> Syncing Open WebUI tools (direct DB)..."
+              exec python /code/sync_tools.py
+          volumeMounts:
+            - name: code
+              mountPath: /code
+              readOnly: true
+            - name: tool-src
+              mountPath: /tool-src
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: code
+          configMap:
+            name: openwebui-tool-sync-code
+        - name: tool-src
+          configMap:
+            name: openwebui-tools-src
+        - name: tmp
+          emptyDir: {}

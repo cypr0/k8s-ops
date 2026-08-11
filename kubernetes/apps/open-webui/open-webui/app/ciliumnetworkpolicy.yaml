@@ -60,6 +60,15 @@ spec:
         - ports:
             - port: "9998"
               protocol: TCP
+    # Paperless-ngx REST API, used by the paperless_full Tool (./tools/)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
     # Open Terminal multi-user shell sandbox (same namespace); the backend
     # proxies user terminal requests to it on :8000
     - toEndpoints:

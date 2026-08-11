@@ -93,6 +93,10 @@ spec:
             envFrom:
               - secretRef:
                   name: open-webui-secret
+              # PAPERLESS_API_TOKEN for the paperless_full Tool (see
+              # ./tools/paperless_full.py) -- externalsecret-paperless-token.yaml.
+              - secretRef:
+                  name: open-webui-paperless-secret
             probes:
               liveness:
                 enabled: true

@@ -1,0 +1,25 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - job-sync-tools.yaml
+
+# The Tool source and the sync script are shipped as ConfigMaps via
+# configMapGenerator so they get a content hash suffix. kustomize rewrites
+# the configMap references in the Job's volumes to the hashed names, so ANY
+# change to a tool .py or the sync script changes the Job spec -- combined
+# with the Job's kustomize.toolkit.fluxcd.io/force annotation, that makes
+# Flux delete-and-recreate the Job, re-running the sync automatically on
+# every functional change.
+configMapGenerator:
+  # All Git-managed OWUI tools, mounted into one dir the sync Job iterates.
+  - name: openwebui-tools-src
+    files:
+      - paperless_full.py
+  - name: openwebui-tool-sync-code
+    files:
+      - sync_tools.py
+
+generatorOptions:
+  disableNameSuffixHash: false
