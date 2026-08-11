@@ -56,6 +56,17 @@ spec:
               PAPERLESS_AI_LLM_ENDPOINT: https://openrouter.ai/api/v1
               PAPERLESS_AI_LLM_MODEL: google/gemini-2.5-flash-lite
               PAPERLESS_AI_LLM_OUTPUT_LANGUAGE: de
+              # Document chat (RAG) is a SEPARATE feature from suggestions
+              # and needs its own embedding backend -- without this, chat
+              # fails with a raw connection error (confirmed live: "upstream
+              # connect error ... remote connection failure" in the chat UI)
+              # since there's nowhere configured to generate embeddings at
+              # all. OpenRouter's embeddings-endpoint support is undocumented
+              # for paperless-ngx, so using the local "huggingface" backend
+              # instead -- runs in-process (sentence-transformers), no
+              # external API dependency or extra egress rule needed.
+              PAPERLESS_AI_LLM_EMBEDDING_BACKEND: huggingface
+              PAPERLESS_AI_LLM_EMBEDDING_MODEL: sentence-transformers/all-MiniLM-L6-v2
               PAPERLESS_CONSUMER_POLLING: 60
               PAPERLESS_CONSUMER_RECURSIVE: "true"
               PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "true"
