@@ -32,14 +32,15 @@ spec:
               tag: 3.0.5
             env:
               PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
-              # Native AI (3.0+), running alongside paperless-ai for
-              # comparison (see paperless-ai/ -- kept as-is, not being
-              # replaced yet). Suggestion-based (title/date/tags/
-              # correspondent/type) -- unlike paperless-ai, does NOT cover
-              # custom fields and does NOT auto-apply without review.
-              # Same OpenRouter model/key as paperless-ai for an apples-to-
-              # apples comparison; PAPERLESS_AI_LLM_API_KEY comes from
-              # externalsecret.yaml (envFrom: paperless-secret below).
+              # Native AI (3.0+). Was trialled alongside paperless-ai for
+              # comparison; paperless-ai has since been decommissioned in
+              # favor of this. Suggestion-based (title/date/tags/
+              # correspondent/type) -- does NOT cover custom fields and does
+              # NOT auto-apply without review, unlike paperless-ai's old
+              # unattended pipeline (accepted trade-off). Same OpenRouter
+              # model/key paperless-ai used to use; PAPERLESS_AI_LLM_API_KEY
+              # comes from externalsecret.yaml (envFrom: paperless-secret
+              # below).
               # NOTE: the "KI-Einstellungen" admin GUI page will keep showing
               # this as disabled/blank regardless -- confirmed in paperless's
               # own source (src/paperless/config.py AIConfig): the GUI reads

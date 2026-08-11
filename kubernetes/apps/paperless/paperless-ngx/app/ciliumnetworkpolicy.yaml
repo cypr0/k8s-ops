@@ -24,15 +24,6 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
             app.kubernetes.io/name: prometheus
-    # paperless-ai reads the REST API (same namespace)
-    - fromEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": paperless
-            app.kubernetes.io/name: paperless-ai
-      toPorts:
-        - ports:
-            - port: "80"
-              protocol: TCP
     # paperless-stats-exporter reads statistics/status/tasks (same namespace)
     - fromEndpoints:
         - matchLabels:
@@ -42,8 +33,7 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
-    # openclaw's paperless-mcp sidecar reads the REST API (reuses the same
-    # API token as paperless-ai)
+    # openclaw's paperless-mcp sidecar reads the REST API
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": openclaw
@@ -140,8 +130,7 @@ spec:
         - ports:
             - port: "993"
               protocol: TCP
-    # OpenRouter LLM API for native AI (PAPERLESS_AI_*, helmrelease.yaml) --
-    # same rule as paperless-ai's own CNP.
+    # OpenRouter LLM API for native AI (PAPERLESS_AI_*, helmrelease.yaml)
     - toEntities:
         - world
       toPorts:

@@ -104,15 +104,13 @@ spec:
         - ports:
             - port: "8090"
               protocol: TCP
-    # Paperless namespace health checks (paperless-ngx, paperless-ai)
+    # Paperless namespace health check (paperless-ngx)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": paperless
       toPorts:
         - ports:
             - port: "80"
-              protocol: TCP
-            - port: "3000"
               protocol: TCP
     # Security namespace health checks (onepassword-connect)
     - toEndpoints:

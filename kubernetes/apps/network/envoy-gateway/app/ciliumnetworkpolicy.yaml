@@ -246,16 +246,13 @@ spec:
         - ports:
             - port: "9292"
               protocol: TCP
-    # Backend: paperless namespace (paperless-ngx :80, paperless-ai :3000;
-    # both served via envoy-internal)
+    # Backend: paperless namespace (paperless-ngx :80, served via envoy-internal)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": paperless
       toPorts:
         - ports:
             - port: "80"
-              protocol: TCP
-            - port: "3000"
               protocol: TCP
     # Backend: open-webui namespace (open-webui :8090, served via envoy-internal)
     - toEndpoints:

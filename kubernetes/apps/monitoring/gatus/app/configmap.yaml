@@ -180,12 +180,3 @@ data:
           - "[STATUS] == any(200, 302, 401, 403)"
         alerts:
           - type: pushover
-
-      - name: Paperless-AI
-        group: Apps
-        url: "http://paperless-ai.paperless.svc.cluster.local:3000/"
-        interval: 1m
-        conditions:
-          - "[STATUS] == any(200, 302, 401, 403)"
-        alerts:
-          - type: pushover
