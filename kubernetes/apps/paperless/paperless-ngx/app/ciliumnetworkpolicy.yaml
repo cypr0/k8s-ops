@@ -157,6 +157,18 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # hermes-agent's webhook platform: the Workflow "Webhook" action
+    # (Trigger: Document Added) notifies the agent about newly-consumed
+    # documents so it can extract structured data -- see
+    # kubernetes/apps/hermes-agent/hermes-agent/.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8644"
+              protocol: TCP
 ---
 # tika: document text extraction service
 apiVersion: cilium.io/v2
