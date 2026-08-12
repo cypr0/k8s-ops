@@ -94,11 +94,11 @@ spec:
         inherit: true
         passwordSecret:
           name: nextcloud-db-role
-          # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned
-          # -- see kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml)
-          # were removed from here on 2026-08-12. Removing a role from this list
-          # only makes CNPG stop MANAGING it -- it does NOT drop the role or its
-          # data (that needs `ensure: absent`, not just deletion from this
+          # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned --
+          # see kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml)
+          # were removed from this roles list on 2026-08-12. Removing a role from
+          # here only makes CNPG stop MANAGING it -- it does NOT drop the role or
+          # its data (that needs `ensure: absent`, not just deletion from this
           # list) -- so the "trading" database/roles/data are still live in
           # Postgres, just unmanaged by IaC now, in case they're still useful
           # later.
