@@ -1,0 +1,24 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mcp-servers
+resources:
+  - ./externalsecret.yaml
+  - ./deployment.yaml
+  - ./service.yaml
+  - ./ciliumnetworkpolicy.yaml
+
+# The Tool source and the bridge script are shipped as a ConfigMap via
+# configMapGenerator so it gets a content hash suffix -- any change to
+# either file changes the ConfigMap name, which changes the Deployment's
+# volume reference, which triggers a real rollout (kustomize's standard
+# "config change forces rollout" behavior -- no extra force annotation or
+# manual restart needed, unlike the Job-based OWUI tool-sync pattern).
+configMapGenerator:
+  - name: nextcloud-mcp-src
+    files:
+      - nextcloud_full.py
+      - owui_tool_mcp_bridge.py
+
+generatorOptions:
+  disableNameSuffixHash: false

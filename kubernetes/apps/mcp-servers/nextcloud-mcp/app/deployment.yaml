@@ -1,0 +1,129 @@
+---
+# Standalone MCP (Model Context Protocol) server exposing the exact same
+# Nextcloud Client API surface as the nextcloud_full Open WebUI Tool
+# (kubernetes/apps/open-webui/open-webui/app/tools/nextcloud_full.py) --
+# see owui_tool_mcp_bridge.py's module docstring for how the SAME Tools
+# class doubles as both. Built for hermes-agent's remote HTTP MCP client
+# support (kubernetes/apps/hermes-agent/hermes-agent/app/configmap.yaml's
+# mcp_servers section).
+#
+# No prebuilt image exists for this (greenfield app, no CI/registry set up
+# for it) -- runs on a stock python:3.13-slim image instead, with an init
+# container that pip-installs the small MCP SDK + httpx dependency set to
+# a shared emptyDir. Mirrors the same "generic base image + ConfigMap
+# script + init-container pip install" pattern hermes-agent's own
+# tools-install/bootstrap-trading init containers and the Open WebUI
+# tool-sync Job already use elsewhere in this repo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextcloud-mcp
+  labels:
+    app.kubernetes.io/name: nextcloud-mcp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nextcloud-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nextcloud-mcp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: install-deps
+          image: python:3.13-slim
+          command:
+            - "sh"
+            - "-c"
+          args:
+            - |
+              set -eu
+              pip install --no-cache-dir --target=/pylibs mcp httpx pydantic
+          env:
+            - name: HOME
+              value: /tmp
+          volumeMounts:
+            - name: pylibs
+              mountPath: /pylibs
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+      containers:
+        - name: mcp-server
+          image: python:3.13-slim
+          command:
+            - "python3"
+            - "/app/owui_tool_mcp_bridge.py"
+          env:
+            - name: TOOL_MODULE_PATH
+              value: /app/nextcloud_full.py
+            - name: MCP_SERVER_NAME
+              value: nextcloud
+            - name: MCP_PORT
+              value: "8000"
+            - name: PYTHONPATH
+              value: /pylibs
+            - name: HOME
+              value: /tmp
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          envFrom:
+            - secretRef:
+                name: nextcloud-mcp-secret
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          volumeMounts:
+            - name: pylibs
+              mountPath: /pylibs
+            - name: app-src
+              mountPath: /app
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: pylibs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: app-src
+          configMap:
+            name: nextcloud-mcp-src

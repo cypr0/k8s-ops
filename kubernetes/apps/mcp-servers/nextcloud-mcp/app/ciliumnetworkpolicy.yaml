@@ -1,0 +1,54 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: nextcloud-mcp
+  namespace: mcp-servers
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: nextcloud-mcp
+  ingress:
+    # hermes-agent, as an MCP client (see hermes-agent's configmap.yaml
+    # mcp_servers section)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Nextcloud WebDAV/OCS API. Service is 8080->80; Cilium enforces
+    # post-DNAT on the container port, so this matches on 80 (see
+    # nextcloud's own CNP for the same note).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+            app.kubernetes.io/name: nextcloud
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+    # PyPI, for the install-deps init container (pip install mcp/httpx/pydantic
+    # on every pod start -- same "ephemeral emptyDir dependencies re-fetched
+    # on restart" tradeoff hermes-agent's own tools-install init container
+    # already makes)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

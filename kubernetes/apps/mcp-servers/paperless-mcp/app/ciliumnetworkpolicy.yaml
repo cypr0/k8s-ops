@@ -1,0 +1,52 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: paperless-mcp
+  namespace: mcp-servers
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: paperless-mcp
+  ingress:
+    # hermes-agent, as an MCP client (see hermes-agent's configmap.yaml
+    # mcp_servers section)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Paperless-ngx REST API
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+    # PyPI, for the install-deps init container (pip install mcp/httpx/pydantic
+    # on every pod start -- same "ephemeral emptyDir dependencies re-fetched
+    # on restart" tradeoff hermes-agent's own tools-install init container
+    # already makes)
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

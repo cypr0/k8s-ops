@@ -61,6 +61,16 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # paperless-mcp: standalone MCP server exposing this API to hermes-agent
+    # (kubernetes/apps/mcp-servers/paperless-mcp/)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mcp-servers
+            app.kubernetes.io/name: paperless-mcp
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
   egress:
     # DNS resolution (matchPattern required so Cilium learns resolved IPs
     # for the toFQDNs rule below - see velero/opensearch policies for same pattern)
