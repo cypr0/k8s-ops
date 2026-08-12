@@ -122,8 +122,13 @@ spec:
               # extras exactly. sounddevice (mic capture for interactive CLI
               # push-to-talk) deliberately omitted -- this pod has no audio
               # device, voice messages arrive as files via the WhatsApp
-              # bridge instead.
-              uv pip install --target=/opt/data/tools/pip \
+              # bridge instead. --no-cache: uv's default cache dir isn't on
+              # a writable path under this container's readOnlyRootFilesystem
+              # (confirmed: "Failed to initialize cache at /.cache/uv ...
+              # Read-only file system"); this container only ever runs this
+              # install once per pod start anyway, so a warm cache buys
+              # nothing.
+              uv pip install --no-cache --target=/opt/data/tools/pip \
                 edge-tts==7.2.7 \
                 faster-whisper==1.2.1
           volumeMounts:
