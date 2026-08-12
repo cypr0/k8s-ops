@@ -49,10 +49,22 @@ spec:
               protocol: TCP
     # paperless-mcp/nextcloud-mcp: standalone MCP servers this agent
     # connects to as a remote HTTP MCP client (see config.yaml's
-    # mcp_servers section and kubernetes/apps/mcp-servers/)
+    # mcp_servers section and kubernetes/apps/hermes-agent/{paperless-mcp,
+    # nextcloud-mcp}/) -- same namespace as this agent, but Cilium policy
+    # is still label-scoped per endpointSelector, not namespace-scoped, so
+    # this needs an explicit rule same as any other peer.
     - toEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": mcp-servers
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: paperless-mcp
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: nextcloud-mcp
       toPorts:
         - ports:
             - port: "8000"

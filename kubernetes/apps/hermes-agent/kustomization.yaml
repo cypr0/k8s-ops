@@ -9,3 +9,5 @@ components:
 resources:
   - ./namespace.yaml
   - ./hermes-agent/ks.yaml
+  - ./paperless-mcp/ks.yaml
+  - ./nextcloud-mcp/ks.yaml

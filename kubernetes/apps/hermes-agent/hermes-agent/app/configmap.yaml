@@ -60,13 +60,14 @@ data:
       tirith_fail_open: false
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
     # Nextcloud API coverage the paperless_full/nextcloud_full Open WebUI
-    # Tools have -- see kubernetes/apps/mcp-servers/. Both run as real
+    # Tools have -- see kubernetes/apps/hermes-agent/{paperless-mcp,
+    # nextcloud-mcp}/. Both run as real
     # admin/full-access credentials on their own end (see each server's
     # nextcloud_full.py/paperless_full.py module docstring for the exact
     # scope/tradeoffs), so treat every tool call through them with the
     # same care as a direct API call would deserve.
     mcp_servers:
       paperless:
-        url: "http://paperless-mcp.mcp-servers.svc.cluster.local:8000/mcp"
+        url: "http://paperless-mcp.hermes-agent.svc.cluster.local:8000/mcp"
       nextcloud:
-        url: "http://nextcloud-mcp.mcp-servers.svc.cluster.local:8000/mcp"
+        url: "http://nextcloud-mcp.hermes-agent.svc.cluster.local:8000/mcp"

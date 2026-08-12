@@ -11,7 +11,7 @@ pydantic underneath (their Valves' `os.getenv(...)` defaults work exactly
 the same way outside Open WebUI as inside it).
 
 This same bridge script is duplicated (identically) in
-kubernetes/apps/mcp-servers/{paperless-mcp,nextcloud-mcp}/app/ -- kustomize's
+kubernetes/apps/hermes-agent/{paperless-mcp,nextcloud-mcp}/app/ -- kustomize's
 configMapGenerator refuses file paths that escape its own kustomization
 directory, so a single shared copy isn't possible; keep both in sync if
 this file changes.

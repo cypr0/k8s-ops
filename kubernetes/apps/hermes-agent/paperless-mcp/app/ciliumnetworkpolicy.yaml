@@ -3,7 +3,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: paperless-mcp
-  namespace: mcp-servers
+  namespace: hermes-agent
 spec:
   endpointSelector:
     matchLabels:

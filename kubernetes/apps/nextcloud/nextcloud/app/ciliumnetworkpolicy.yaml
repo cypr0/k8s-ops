@@ -54,10 +54,10 @@ spec:
             - port: "80"
               protocol: TCP
     # nextcloud-mcp: standalone MCP server exposing this API to hermes-agent
-    # (kubernetes/apps/mcp-servers/nextcloud-mcp/), also as the real admin account
+    # (kubernetes/apps/hermes-agent/nextcloud-mcp/), also as the real admin account
     - fromEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": mcp-servers
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
             app.kubernetes.io/name: nextcloud-mcp
       toPorts:
         - ports:

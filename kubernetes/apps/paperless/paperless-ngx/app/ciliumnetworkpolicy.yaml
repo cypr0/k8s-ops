@@ -62,10 +62,10 @@ spec:
             - port: "80"
               protocol: TCP
     # paperless-mcp: standalone MCP server exposing this API to hermes-agent
-    # (kubernetes/apps/mcp-servers/paperless-mcp/)
+    # (kubernetes/apps/hermes-agent/paperless-mcp/)
     - fromEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": mcp-servers
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
             app.kubernetes.io/name: paperless-mcp
       toPorts:
         - ports:

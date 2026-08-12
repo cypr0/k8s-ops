@@ -15,13 +15,13 @@ spec:
     - name: paperless
       namespace: paperless
   interval: 1h
-  path: ./kubernetes/apps/mcp-servers/paperless-mcp/app
+  path: ./kubernetes/apps/hermes-agent/paperless-mcp/app
   prune: true
   retryInterval: 2m
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: mcp-servers
+  targetNamespace: hermes-agent
   timeout: 5m
   wait: true
