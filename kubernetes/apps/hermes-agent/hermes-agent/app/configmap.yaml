@@ -58,6 +58,12 @@ data:
       # lets the action through). This agent has shell + WhatsApp + a
       # read-only k8s view, so flip to fail-closed instead.
       tirith_fail_open: false
+    # Self-hosted Firecrawl (kubernetes/apps/hermes-agent/firecrawl/) as the
+    # web-search/scrape/extract backend -- FIRECRAWL_API_URL (deployment.yaml)
+    # points at it; no API key needed since USE_DB_AUTHENTICATION=false there
+    # and it's only reachable from this namespace (see its CiliumNetworkPolicy).
+    web:
+      backend: firecrawl
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
     # Nextcloud API coverage the paperless_full/nextcloud_full Open WebUI
     # Tools have -- see kubernetes/apps/hermes-agent/{paperless-mcp,

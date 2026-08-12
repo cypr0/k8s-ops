@@ -157,6 +157,12 @@ spec:
               value: "2500"
             - name: GATEWAY_ALLOW_ALL_USERS
               value: "false"
+            # Self-hosted Firecrawl web-search/scrape/extract backend --
+            # see config.yaml's web.backend and kubernetes/apps/hermes-agent/
+            # firecrawl/. No API key: USE_DB_AUTHENTICATION=false there,
+            # gated by network policy instead (only this namespace can reach it).
+            - name: FIRECRAWL_API_URL
+              value: "http://firecrawl-api.hermes-agent.svc.cluster.local:3002"
             - name: WHATSAPP_ENABLED
               value: "true"
             # self-chat: Hermes uses the owner's own linked WhatsApp session
