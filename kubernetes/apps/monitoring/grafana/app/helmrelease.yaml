@@ -131,6 +131,15 @@ spec:
     datasources:
       datasources.yaml:
         apiVersion: 1
+        # One-time directive: Grafana's datasource provisioner is add/update-
+        # only from the `datasources:` list below -- removing TradingDB from
+        # it (2026-08-12, trading bot deprovisioning) does NOT delete the
+        # already-provisioned datasource on its own; `deleteDatasources` is
+        # the explicit mechanism for that. Remove this block again once
+        # confirmed gone (kubectl exec ... grafana -- curl .../api/datasources).
+        deleteDatasources:
+          - name: TradingDB
+            orgId: 1
         datasources:
           - name: Prometheus
             type: prometheus
