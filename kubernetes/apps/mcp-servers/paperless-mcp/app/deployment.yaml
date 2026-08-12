@@ -48,7 +48,13 @@ spec:
           args:
             - |
               set -eu
-              pip install --no-cache-dir --target=/pylibs mcp httpx pydantic
+              # Pinned <2: the official "mcp" SDK's 2.0.0 release (2026-08)
+              # restructured its module layout and dropped
+              # mcp.server.fastmcp.FastMCP from where owui_tool_mcp_bridge.py
+              # imports it (confirmed live: ModuleNotFoundError on 2.0.0,
+              # works fine on 1.9.4) -- pin until the bridge script is
+              # updated for whatever 2.x's replacement API looks like.
+              pip install --no-cache-dir --target=/pylibs "mcp>=1.6,<2" httpx pydantic
           env:
             - name: HOME
               value: /tmp
