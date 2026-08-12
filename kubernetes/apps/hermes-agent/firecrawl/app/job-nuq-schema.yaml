@@ -1,10 +1,12 @@
 ---
 # Applies the "nuq" job-queue schema (pgcrypto extension, nuq.* tables/
-# indexes) to the dedicated firecrawl-postgres cluster. Adapted from
-# upstream's apps/nuq-postgres/nuq.sql -- deliberately DROPS the pg_cron
-# extension, the ALTER SYSTEM server-tuning statements (sized for a much
-# bigger deployment than this), and every cron.schedule(...) call, since
-# this cluster has no pg_cron (see cluster.yaml's docstring). The
+# indexes) to the "firecrawl" database on the shared CNPG cluster (see
+# kubernetes/apps/database/cloudnative-pg/databases/database-firecrawl.yaml).
+# Adapted from upstream's apps/nuq-postgres/nuq.sql -- deliberately DROPS
+# the pg_cron extension, the ALTER SYSTEM server-tuning statements (sized
+# for a much bigger deployment than this, and touching server-wide settings
+# on the SHARED cluster wasn't worth it just for Firecrawl), and every
+# cron.schedule(...) call, since pg_cron isn't installed here at all. The
 # functionally-important scheduled maintenance those cron jobs did is
 # reimplemented as plain k8s CronJobs instead -- see
 # cronjob-nuq-maintenance.yaml.
@@ -37,7 +39,7 @@ spec:
           image: postgres:18-alpine
           env:
             - name: PGHOST
-              value: firecrawl-postgres-rw
+              value: postgres-rw.database.svc.cluster.local
             - name: PGDATABASE
               value: firecrawl
             - name: PGUSER
@@ -45,8 +47,8 @@ spec:
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: firecrawl-db-role
-                  key: password
+                  name: firecrawl-secret
+                  key: PGPASSWORD
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

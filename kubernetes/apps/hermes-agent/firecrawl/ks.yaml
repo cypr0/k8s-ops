@@ -9,6 +9,11 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
+  dependsOn:
+    - name: cloudnative-pg-databases
+      namespace: database
+    - name: external-secrets-stores
+      namespace: security
   interval: 1h
   path: ./kubernetes/apps/hermes-agent/firecrawl/app
   prune: true

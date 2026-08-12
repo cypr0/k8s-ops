@@ -2,8 +2,8 @@
 # Replaces the functionally-important half of upstream's pg_cron jobs (see
 # job-nuq-schema.yaml for why pg_cron itself isn't available here). Skips:
 # the pg_notify calls (nothing listens on that channel -- we don't run
-# rabbitmq, see cluster.yaml/ks.yaml docstrings for the whole
-# rabbitmq-less architecture this deployment uses), the REINDEX CONCURRENTLY
+# rabbitmq, see helmrelease.yaml's docstring for the whole rabbitmq-less
+# architecture this deployment uses), the REINDEX CONCURRENTLY
 # maintenance crons (not needed at this table size), and
 # cron.job_run_details pruning (n/a without pg_cron).
 #
@@ -39,7 +39,7 @@ spec:
               image: postgres:18-alpine
               env:
                 - name: PGHOST
-                  value: firecrawl-postgres-rw
+                  value: postgres-rw.database.svc.cluster.local
                 - name: PGDATABASE
                   value: firecrawl
                 - name: PGUSER
@@ -47,8 +47,8 @@ spec:
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: firecrawl-db-role
-                      key: password
+                      name: firecrawl-secret
+                      key: PGPASSWORD
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -129,7 +129,7 @@ spec:
               image: postgres:18-alpine
               env:
                 - name: PGHOST
-                  value: firecrawl-postgres-rw
+                  value: postgres-rw.database.svc.cluster.local
                 - name: PGDATABASE
                   value: firecrawl
                 - name: PGUSER
@@ -137,8 +137,8 @@ spec:
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: firecrawl-db-role
-                      key: password
+                      name: firecrawl-secret
+                      key: PGPASSWORD
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true

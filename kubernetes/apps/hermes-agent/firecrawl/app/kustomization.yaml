@@ -4,8 +4,6 @@ kind: Kustomization
 namespace: hermes-agent
 
 resources:
-  - ./cluster.yaml
-  - ./externalsecret-postgres-role.yaml
   - ./externalsecret.yaml
   - ./job-nuq-schema.yaml
   - ./cronjob-nuq-maintenance.yaml

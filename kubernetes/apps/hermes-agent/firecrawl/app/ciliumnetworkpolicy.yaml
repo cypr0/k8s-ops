@@ -47,26 +47,18 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": hermes-agent
             app.kubernetes.io/instance: firecrawl
-    # Dragonfly (Redis-compatible), shared with every other app on this
-    # cluster that needs Redis. Dragonfly's own CNP already allows ingress
-    # from any cluster pod (kubernetes/apps/database/dragonfly/cluster/
+    # Dragonfly (Redis-compatible) and the shared CNPG Postgres cluster,
+    # both in the "database" namespace, shared with every other app on this
+    # cluster. Their own CNPs already allow ingress from any cluster pod
+    # (kubernetes/apps/database/{dragonfly,cloudnative-pg}/cluster/
     # ciliumnetworkpolicy.yaml), so this egress rule is what actually gates it.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": database
-            app.kubernetes.io/name: dragonfly
       toPorts:
         - ports:
             - port: "6379"
               protocol: TCP
-    # Dedicated firecrawl-postgres CNPG cluster (cluster.yaml) -- same
-    # namespace, matched by CNPG's own cluster label.
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": hermes-agent
-            cnpg.io/cluster: firecrawl-postgres
-      toPorts:
-        - ports:
             - port: "5432"
               protocol: TCP
     # Fetching the actual pages being scraped/searched is inherently
@@ -82,7 +74,7 @@ spec:
 ---
 # The schema-init Job and the two maintenance CronJobs aren't part of the
 # firecrawl HelmRelease release/instance, so they need their own egress rule
-# to reach firecrawl-postgres.
+# to reach the shared Postgres cluster.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -107,61 +99,8 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": hermes-agent
-            cnpg.io/cluster: firecrawl-postgres
-      toPorts:
-        - ports:
-            - port: "5432"
-              protocol: TCP
----
-# Mirrors kubernetes/apps/database/cloudnative-pg/cluster/ciliumnetworkpolicy.yaml's
-# established pattern for the shared cluster (cluster-wide postgres access,
-# operator health checks, kubelet probes, Prometheus scraping) -- scaled
-# down for a single instance (no cross-instance replication rule needed).
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: firecrawl-postgres
-  namespace: hermes-agent
-spec:
-  endpointSelector:
-    matchLabels:
-      cnpg.io/cluster: firecrawl-postgres
-  ingress:
-    # CNPG operator: health checks and cluster management via Patroni REST API
-    - fromEndpoints:
-        - matchLabels:
             "k8s:io.kubernetes.pod.namespace": database
-            app.kubernetes.io/name: cloudnative-pg
-      toPorts:
-        - ports:
-            - port: "8000"
-              protocol: TCP
-    # Kubelet readiness/liveness probes (host network)
-    - fromEntities:
-        - host
-      toPorts:
-        - ports:
-            - port: "8000"
-              protocol: TCP
-    # Postgres access from any pod in the cluster (matches the shared
-    # cluster's own policy -- the real gate is each consumer's own egress)
-    - fromEntities:
-        - cluster
       toPorts:
         - ports:
             - port: "5432"
               protocol: TCP
-    # Prometheus scraping of the CNPG metrics exporter
-    - fromEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": monitoring
-            app.kubernetes.io/name: prometheus
-      toPorts:
-        - ports:
-            - port: "9187"
-              protocol: TCP
-  egress:
-    - toEntities:
-        - cluster
-        - world
