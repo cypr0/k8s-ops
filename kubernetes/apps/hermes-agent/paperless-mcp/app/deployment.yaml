@@ -12,7 +12,7 @@
 # container that pip-installs the small MCP SDK + httpx dependency set to
 # a shared emptyDir. Mirrors the same "generic base image + ConfigMap
 # script + init-container pip install" pattern hermes-agent's own
-# tools-install/bootstrap-trading init containers and the Open WebUI
+# tools-install init container and the Open WebUI
 # tool-sync Job already use elsewhere in this repo.
 apiVersion: apps/v1
 kind: Deployment

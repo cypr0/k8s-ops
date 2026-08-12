@@ -105,7 +105,7 @@ spec:
           args:
             - |
               set -eu
-              mkdir -p /opt/data/tools/bin /opt/data/tools/pip
+              mkdir -p /opt/data/tools/bin
               # kubectl v1.36.2, linux/amd64 -- checksum from
               # https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl.sha256
               # Bump both the version and this checksum together on upgrade.
@@ -113,145 +113,11 @@ spec:
                 https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl
               echo "1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82  /tmp/kubectl" | sha256sum -c -
               install -m 0755 /tmp/kubectl /opt/data/tools/bin/kubectl
-              # Trading bot dependencies. `ensurepip` does NOT work here --
-              # confirmed live: this image's ensurepip has no bundled wheel
-              # file at all (no ensurepip/_bundled/), it builds one into a
-              # tmpdir and then tries to install pip into the venv's own
-              # site-packages, which fails under readOnlyRootFilesystem
-              # ("Read-only file system: .../site-packages"). The official
-              # PyPA get-pip.py bootstrapper avoids this entirely -- it
-              # bundles pip internally and installs straight to --target
-              # without touching the venv itself (confirmed live: installs
-              # and imports cleanly). psycopg2-binary has a
-              # cp313-manylinux2014_x86_64 wheel, no compiler needed -- the
-              # image has no libpq/pg_config, so plain psycopg2 would fail.
-              curl -fsSL -o /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py
-              /opt/hermes/.venv/bin/python3 /tmp/get-pip.py --no-cache-dir \
-                --target=/opt/data/tools/pip \
-                psycopg2-binary==2.9.12 \
-                requests==2.32.3
           volumeMounts:
             - name: data
               mountPath: /opt/data
             - name: tmp
               mountPath: /tmp
-          securityContext: *initSecurityContext
-        # Lays down the trading bot scripts (real .py files, see
-        # trading-scripts/ + the configMapGenerator in kustomization.yaml),
-        # runs the idempotent Postgres migration, registers the cron jobs
-        # exactly once each (state persists at /opt/data/cron/jobs.json on
-        # the PVC), and keeps the SOUL.md briefing in sync (replace-between-
-        # markers, not "append once and never touch again" -- so editing
-        # soul_briefing.md and redeploying actually takes effect). Runs
-        # after tools-install (needs its pip packages) and bootstrap-config
-        # (needs config.yaml/HERMES_HOME already seeded).
-        - name: bootstrap-trading
-          image: *image
-          command:
-            - /bin/sh
-            - -ec
-          args:
-            - |
-              set -eu
-              mkdir -p /opt/data/scripts/trading/lib
-              cp /trading-src/lib_init.py         /opt/data/scripts/trading/lib/__init__.py
-              cp /trading-src/lib_constants.py    /opt/data/scripts/trading/lib/constants.py
-              cp /trading-src/lib_db.py           /opt/data/scripts/trading/lib/db.py
-              cp /trading-src/lib_kraken.py        /opt/data/scripts/trading/lib/kraken.py
-              cp /trading-src/lib_binance.py       /opt/data/scripts/trading/lib/binance.py
-              cp /trading-src/lib_finnhub.py       /opt/data/scripts/trading/lib/finnhub.py
-              cp /trading-src/lib_fx.py            /opt/data/scripts/trading/lib/fx.py
-              cp /trading-src/lib_prices.py        /opt/data/scripts/trading/lib/prices.py
-              cp /trading-src/lib_market_hours.py  /opt/data/scripts/trading/lib/market_hours.py
-              cp /trading-src/lib_stats.py         /opt/data/scripts/trading/lib/stats.py
-              cp /trading-src/lib_signals.py       /opt/data/scripts/trading/lib/signals.py
-              cp /trading-src/check_positions.py     /opt/data/scripts/trading/check_positions.py
-              cp /trading-src/check_data_quality.py  /opt/data/scripts/trading/check_data_quality.py
-              cp /trading-src/check_opportunities.py /opt/data/scripts/trading/check_opportunities.py
-              cp /trading-src/cli.py                 /opt/data/scripts/trading/cli.py
-
-              /opt/hermes/.venv/bin/python3 -c "
-              import sys
-              sys.path.insert(0, '/opt/data/scripts/trading')
-              from lib import db
-              db.migrate()
-              print('trading DB migration OK')
-              "
-
-              if ! grep -q '"name": "trading-check-positions"' /opt/data/cron/jobs.json 2>/dev/null; then
-                /opt/hermes/.venv/bin/hermes cron create "every 5m" \
-                  --name trading-check-positions \
-                  --script trading/check_positions.py \
-                  --no-agent \
-                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
-              fi
-              if ! grep -q '"name": "trading-check-data-quality"' /opt/data/cron/jobs.json 2>/dev/null; then
-                /opt/hermes/.venv/bin/hermes cron create "every 4h" \
-                  --name trading-check-data-quality \
-                  --script trading/check_data_quality.py \
-                  --no-agent \
-                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
-              fi
-              if ! grep -q '"name": "trading-check-opportunities"' /opt/data/cron/jobs.json 2>/dev/null; then
-                /opt/hermes/.venv/bin/hermes cron create "every 30m" \
-                  --name trading-check-opportunities \
-                  --script trading/check_opportunities.py \
-                  --no-agent \
-                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
-              fi
-              # Agent-mode (LLM-driven), unlike the three --no-agent jobs
-              # above: reviews the stock pool via news/fundamentals and
-              # decides itself whether a candidate is compelling enough to
-              # propose_buy -- see soul_briefing.md's "Stock scan" section
-              # for its exact instructions and the same confirm_buy
-              # restriction as every other proposal path.
-              if ! grep -q '"name": "trading-stock-scan"' /opt/data/cron/jobs.json 2>/dev/null; then
-                /opt/hermes/.venv/bin/hermes cron create "every 6h" \
-                  "Run the stock scan described in your trading-bot briefing (SOUL.md): review the stock pool for buy candidates via get_news/get_fundamentals and propose_buy anything genuinely compelling." \
-                  --name trading-stock-scan \
-                  --deliver "whatsapp:$${TRADING_WHATSAPP_NUMBER}"
-              fi
-
-              # One-time migration: the very first briefing format used a
-              # single "<!-- TRADING-BOT-BRIEFING v1 -->" marker with no
-              # closing tag (replaced by the START/END pair below), so it
-              # was never cleaned up by the delete-and-reappend step that
-              # follows -- both blocks ended up permanently duplicated in
-              # SOUL.md. Becomes a no-op forever once the v1 marker is gone.
-              if [ -f /opt/data/SOUL.md ] && grep -q 'TRADING-BOT-BRIEFING v1' /opt/data/SOUL.md; then
-                if grep -q 'TRADING-BOT-BRIEFING START' /opt/data/SOUL.md; then
-                  sed -i '/<!-- TRADING-BOT-BRIEFING v1 -->/,/<!-- TRADING-BOT-BRIEFING START -->/{/<!-- TRADING-BOT-BRIEFING START -->/!d}' /opt/data/SOUL.md
-                else
-                  sed -i '/<!-- TRADING-BOT-BRIEFING v1 -->/,$d' /opt/data/SOUL.md
-                fi
-              fi
-              if [ -f /opt/data/SOUL.md ] && grep -q 'TRADING-BOT-BRIEFING START' /opt/data/SOUL.md; then
-                sed -i '/<!-- TRADING-BOT-BRIEFING START -->/,/<!-- TRADING-BOT-BRIEFING END -->/d' /opt/data/SOUL.md
-              fi
-              cat /trading-src/soul_briefing.md >> /opt/data/SOUL.md
-          env:
-            - name: HERMES_HOME
-              value: *home
-            - name: PYTHONPATH
-              value: "/opt/data/tools/pip"
-            # Same secret the main container's WHATSAPP_ALLOWED_USERS uses --
-            # needed here to build the --deliver "whatsapp:<number>" string.
-            - name: TRADING_WHATSAPP_NUMBER
-              valueFrom:
-                secretKeyRef:
-                  name: cluster-secrets
-                  key: SECRET_HERMES_WHATSAPP_USER
-          envFrom:
-            - secretRef:
-                name: hermes-agent-postgres-credentials
-          volumeMounts:
-            - name: data
-              mountPath: /opt/data
-            - name: tmp
-              mountPath: /tmp
-            - name: trading-scripts
-              mountPath: /trading-src
-              readOnly: true
           securityContext: *initSecurityContext
       containers:
         - name: hermes-agent
@@ -274,16 +140,7 @@ spec:
             # `kubectl exec ... -- hermes whatsapp` with "executable file
             # not found in $PATH".
             - name: PATH
-              value: "/opt/data/tools/bin:/opt/data/tools/pip/bin:/opt/hermes/bin:/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            # Deliberately NOT setting PYTHONPATH here (unlike PATH above):
-            # it would apply to the long-running `hermes gateway run`
-            # process itself, not just our own scripts -- risking our pinned
-            # psycopg2-binary/requests shadowing Hermes' own internal
-            # dependency versions (confirmed live: pip flagged a version
-            # conflict between our requests==2.32.3 and Hermes' own pinned
-            # requests==2.33.0). Each trading script instead does
-            # `sys.path.insert(0, "/opt/data/tools/pip")` itself, scoped to
-            # only that one-off subprocess.
+              value: "/opt/data/tools/bin:/opt/hermes/bin:/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             - name: WEB_TOOLS_DEBUG
               value: "false"
             - name: VISION_TOOLS_DEBUG
@@ -342,8 +199,6 @@ spec:
           envFrom:
             - secretRef:
                 name: hermes-agent-secrets
-            - secretRef:
-                name: hermes-agent-postgres-credentials
           resources:
             requests:
               cpu: 500m
@@ -379,9 +234,6 @@ spec:
         - name: bootstrap
           configMap:
             name: hermes-agent-config
-        - name: trading-scripts
-          configMap:
-            name: hermes-agent-trading-scripts
         - name: tmp
           emptyDir: {}
         # Browser tool uses shared memory for headless rendering.

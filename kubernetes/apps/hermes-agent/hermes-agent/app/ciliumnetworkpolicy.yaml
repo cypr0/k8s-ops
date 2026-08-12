@@ -38,15 +38,6 @@ spec:
     # tool): read-only Kubernetes API access (RBAC-gated, see rbac.yaml)
     - toEntities:
         - kube-apiserver
-    # Trading bot: Postgres "trading" DB in the shared CNPG cluster (see
-    # externalsecret-postgres.yaml). Mirrors nextcloud's identical rule.
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": database
-      toPorts:
-        - ports:
-            - port: "5432"
-              protocol: TCP
     # paperless-mcp/nextcloud-mcp: standalone MCP servers this agent
     # connects to as a remote HTTP MCP client (see config.yaml's
     # mcp_servers section and kubernetes/apps/hermes-agent/{paperless-mcp,

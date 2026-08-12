@@ -31,14 +31,6 @@ spec:
     # Kubernetes API (crd-to-opensearch reads Trivy/Kubescape CRDs)
     - toEntities:
         - kube-apiserver
-    # Trading bot Postgres (trading-to-opensearch, read-only role)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": database
-      toPorts:
-        - ports:
-            - port: "5432"
-              protocol: TCP
     # OpenSearch REST API
     - toEndpoints:
         - matchLabels:
@@ -67,15 +59,6 @@ spec:
     # this Job needed to actually rerun.
     - toFQDNs:
         - matchName: "dl-cdn.alpinelinux.org"
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP
-    # PyPI (trading-to-opensearch compiles psycopg2 from source at
-    # container start -- no musl wheel exists, see cronjob-trading-exporter.yaml)
-    - toFQDNs:
-        - matchName: "pypi.org"
-        - matchName: "files.pythonhosted.org"
       toPorts:
         - ports:
             - port: "443"

@@ -94,28 +94,14 @@ spec:
         inherit: true
         passwordSecret:
           name: nextcloud-db-role
-      - name: tradingusr
-        ensure: present
-        login: true
-        superuser: false
-        createdb: false
-        createrole: false
-        inherit: true
-        passwordSecret:
-          name: trading-db-role
-      # Read-only role for the Grafana datasource and the OpenSearch stats
-      # exporter -- CNPG's managed roles only support attributes, not
-      # grants, so actual SELECT-only access is granted explicitly by
-      # tradingusr (the schema owner) inside lib/db.py's migration.
-      - name: tradingreadonly
-        ensure: present
-        login: true
-        superuser: false
-        createdb: false
-        createrole: false
-        inherit: true
-        passwordSecret:
-          name: trading-readonly-db-role
+          # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned
+          # -- see kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml)
+          # were removed from here on 2026-08-12. Removing a role from this list
+          # only makes CNPG stop MANAGING it -- it does NOT drop the role or its
+          # data (that needs `ensure: absent`, not just deletion from this
+          # list) -- so the "trading" database/roles/data are still live in
+          # Postgres, just unmanaged by IaC now, in case they're still useful
+          # later.
 
   monitoring:
     enablePodMonitor: true

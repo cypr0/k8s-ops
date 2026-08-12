@@ -9,8 +9,6 @@ resources:
   - ./crd-exporter-rbac.yaml
   - ./configmap-exporter.yaml
   - ./cronjob-exporter.yaml
-  - ./configmap-trading-exporter.yaml
-  - ./cronjob-trading-exporter.yaml
   - ./configmap-dashboard.yaml
   - ./job-dashboard.yaml
   - ./configmap-proxmox-pipeline.yaml

@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: hermes-agent
 resources:
   - ./externalsecret.yaml
-  - ./externalsecret-postgres.yaml
   - ./serviceaccount.yaml
   - ./pvc.yaml
   - ./configmap.yaml
@@ -15,29 +14,12 @@ resources:
 # on ultraworkers/hermes-agent-helm-chart (young, unofficial, and both its
 # default image tag and its ExternalSecret apiVersion were wrong on first
 # real deploy). See deployment.yaml for details.
-
-# Trading bot scripts as real, reviewable .py files (not inlined YAML) --
-# generated into a ConfigMap. disableNameSuffixHash keeps the name stable
-# (bootstrap-trading's grep-based idempotency check and the Deployment's
-# volume reference don't need to track a content-hash suffix).
-configMapGenerator:
-  - name: hermes-agent-trading-scripts
-    files:
-      - lib_init.py=trading-scripts/lib/__init__.py
-      - lib_constants.py=trading-scripts/lib/constants.py
-      - lib_db.py=trading-scripts/lib/db.py
-      - lib_kraken.py=trading-scripts/lib/kraken.py
-      - lib_binance.py=trading-scripts/lib/binance.py
-      - lib_finnhub.py=trading-scripts/lib/finnhub.py
-      - lib_fx.py=trading-scripts/lib/fx.py
-      - lib_prices.py=trading-scripts/lib/prices.py
-      - lib_market_hours.py=trading-scripts/lib/market_hours.py
-      - lib_stats.py=trading-scripts/lib/stats.py
-      - lib_signals.py=trading-scripts/lib/signals.py
-      - check_positions.py=trading-scripts/check_positions.py
-      - check_data_quality.py=trading-scripts/check_data_quality.py
-      - check_opportunities.py=trading-scripts/check_opportunities.py
-      - cli.py=trading-scripts/cli.py
-      - soul_briefing.md=trading-scripts/soul_briefing.md
-    options:
-      disableNameSuffixHash: true
+#
+# The trading bot (BTC/ETH paper-trading simulation) that used to live here
+# -- scripts, cron jobs, its own Postgres DB, and the OpenSearch/Grafana
+# dashboards feeding off it -- was deprovisioned (2026-08-12): didn't work
+# well enough to be worth keeping running, and the project will be
+# revisited with a different approach later. The "trading" Postgres
+# database/roles were deliberately left in place (not dropped) rather than
+# declared with ensure: absent, in case that history is still useful --
+# see kubernetes/apps/database/cloudnative-pg/cluster/cluster.yaml.

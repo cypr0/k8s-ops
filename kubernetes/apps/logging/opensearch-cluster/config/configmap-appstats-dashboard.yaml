@@ -95,9 +95,6 @@ data:
         ("nextcloud-stats-idx", "nextcloud-stats-*"),
         ("paperless-stats-idx", "paperless-stats-*"),
         ("paperless-tasks-idx", "paperless-tasks-*"),
-        ("hermes-trading-stats-idx", "hermes-agent-stats-*"),
-        ("hermes-trading-portfolio-idx", "hermes-agent-portfolio"),
-        ("hermes-trading-trades-idx", "hermes-agent-trades"),
     ]:
         r, s = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
                    {"attributes": {"title": pattern, "timeFieldName": "@timestamp", "fields": "[]"}})
@@ -202,55 +199,5 @@ data:
                   plp, refs_pl)
     print("Dashboard Paperless Stats: " + str(s))
 
-    # ════════════════════════════════════════════════════════════════════════
-    # DASHBOARD 3 — Hermes Trading Bot: BTC/ETH paper-trading simulation
-    # ════════════════════════════════════════════════════════════════════════
-    HSI = "hermes-trading-stats-idx"
-    HPI = "hermes-trading-portfolio-idx"
-    HTI = "hermes-trading-trades-idx"
-
-    ht_vizs = [
-        mkv("ht-s1-value",     "\U0001F4B0 Current Total Value (EUR)", "metric", METRIC_P, [max_metric("total_value_eur")], HSI),
-        mkv("ht-s2-cash",      "\U0001F4B5 Cash (EUR)",                "metric", METRIC_P, [max_metric("cash_eur")], HSI),
-        mkv("ht-s3-positions", "\U0001F4CA Open Positions",            "metric", METRIC_P, [max_metric("num_open_positions")], HSI),
-        mkv("ht-s4-wins",      "\U0001F7E2 Wins",                      "metric", METRIC_P, [max_metric("wins")], HSI),
-        mkv("ht-s5-losses",    "\U0001F534 Losses",                    "metric", METRIC_P, [max_metric("losses")], HSI),
-
-        mkv("ht-s6-value-trend", "Portfolio Value Over Time", "line", line_p(),
-            [avg_metric("total_value_eur","1"), dh()], HPI),
-
-        mkv("ht-s7-cash-trend", "Cash Over Time", "line", line_p(),
-            [avg_metric("cash_eur","1"), dh()], HPI),
-
-        mkv("ht-s8-trades-symbol", "Trades by Symbol", "pie", pie_p(),
-            c() + [t("symbol.keyword", 5)], HTI),
-
-        mkv("ht-s9-trades-type", "Trades by Type", "horizontal_bar", hbar_p(),
-            c() + [t("trade_type.keyword", 10)], HTI),
-    ]
-    print("\nCreating Hermes trading bot visualizations...")
-    for viz in ht_vizs:
-        r, s = osd("POST", "/api/saved_objects/visualization/" + viz["id"] + "?overwrite=true",
-                   {"attributes": viz["attributes"], "references": viz["references"]})
-        print("  " + viz["attributes"]["title"] + ": " + ("OK" if s < 300 else "ERR " + str(s)))
-
-    htp = [
-        {"id":"ht-s1-value",        "x":0,  "y":0,  "w":9,  "h":9},
-        {"id":"ht-s2-cash",         "x":9,  "y":0,  "w":9,  "h":9},
-        {"id":"ht-s3-positions",    "x":18, "y":0,  "w":9,  "h":9},
-        {"id":"ht-s4-wins",         "x":27, "y":0,  "w":9,  "h":9},
-        {"id":"ht-s5-losses",       "x":36, "y":0,  "w":9,  "h":9},
-        {"id":"ht-s6-value-trend",  "x":0,  "y":9,  "w":48, "h":12},
-        {"id":"ht-s7-cash-trend",   "x":0,  "y":21, "w":48, "h":12},
-        {"id":"ht-s8-trades-symbol","x":0,  "y":33, "w":18, "h":14},
-        {"id":"ht-s9-trades-type",  "x":18, "y":33, "w":30, "h":14},
-    ]
-    refs_ht = [{"name":"panel_"+str(i+1),"type":"visualization","id":p["id"]} for i,p in enumerate(htp)]
-    r, s = mkdash("hermes-trading", "Hermes — Trading Bot",
-                  "BTC/ETH paper-trading simulation: portfolio value and cash over time, open positions, win/loss record, trade breakdown. Individual trades/snapshots are browsable via Discover on the hermes-agent-trades / hermes-agent-portfolio index patterns.",
-                  htp, refs_ht)
-    print("Dashboard Hermes Trading Bot: " + str(s))
-
     print("\n  <OSD>/app/dashboards#/view/nextcloud-stats")
     print("  <OSD>/app/dashboards#/view/paperless-stats")
-    print("  <OSD>/app/dashboards#/view/hermes-trading")
