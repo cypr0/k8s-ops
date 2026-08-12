@@ -33,16 +33,6 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
-    # openclaw's nextcloud-mcp sidecar: WebDAV/OCS API, restricted to the
-    # dedicated openclaw-reader account (see post-install-job.yaml)
-    - fromEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": openclaw
-            app.kubernetes.io/name: openclaw
-      toPorts:
-        - ports:
-            - port: "80"
-              protocol: TCP
     # Open WebUI's nextcloud_full Tool (kubernetes/apps/open-webui/open-webui/
     # app/tools/nextcloud_full.py) reads/writes WebDAV/OCS as the real admin account
     - fromEndpoints:
