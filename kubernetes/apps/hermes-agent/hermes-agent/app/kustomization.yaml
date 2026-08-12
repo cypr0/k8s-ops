@@ -8,6 +8,7 @@ resources:
   - ./pvc.yaml
   - ./configmap.yaml
   - ./deployment.yaml
+  - ./service.yaml
   - ./rbac.yaml
   - ./ciliumnetworkpolicy.yaml
 # No chart, no GitRepository/HelmRelease: hand-rolled instead of depending
@@ -19,7 +20,6 @@ resources:
 # -- scripts, cron jobs, its own Postgres DB, and the OpenSearch/Grafana
 # dashboards feeding off it -- was deprovisioned (2026-08-12): didn't work
 # well enough to be worth keeping running, and the project will be
-# revisited with a different approach later. The "trading" Postgres
-# database/roles were deliberately left in place (not dropped) rather than
-# declared with ensure: absent, in case that history is still useful --
-# see kubernetes/apps/database/cloudnative-pg/cluster/cluster.yaml.
+# revisited with a different approach later. Its Postgres database/roles
+# were fully dropped the same day, see kubernetes/apps/database/
+# cloudnative-pg/cluster/cluster.yaml's managed.roles comment.

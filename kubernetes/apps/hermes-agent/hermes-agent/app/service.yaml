@@ -1,0 +1,21 @@
+---
+# ClusterIP only, deliberately no HTTPRoute/Ingress: the webhook platform
+# (config.yaml's platforms.webhook) is for IN-CLUSTER callers only -- right
+# now just paperless-ngx's Workflow "Webhook" action notifying this agent
+# about newly-consumed documents (see paperless's own webhook workflow +
+# this app's ciliumnetworkpolicy.yaml for the matching CNP rule). No
+# external exposure was requested or is needed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hermes-agent
+  labels:
+    app.kubernetes.io/name: hermes-agent
+spec:
+  selector:
+    app.kubernetes.io/name: hermes-agent
+  ports:
+    - name: webhook
+      port: 8644
+      targetPort: 8644
+      protocol: TCP

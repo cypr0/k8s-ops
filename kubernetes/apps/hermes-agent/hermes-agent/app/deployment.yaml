@@ -225,11 +225,37 @@ spec:
                 secretKeyRef:
                   name: cluster-secrets
                   key: SECRET_HERMES_WHATSAPP_USER
-            # Every other channel stays off in this first pass.
+            # Telegram: activated for the document-pipeline/contract-
+            # monitoring/finance-overview reminders (config.yaml's
+            # platforms.webhook route + future crons deliver here). Same
+            # self-chat pattern as WhatsApp -- one owner, own bot, no
+            # separate allowed-user list needed. TELEGRAM_CHAT_ID is
+            # purely-numeric like the WhatsApp phone number above, so it
+            # gets the same secretKeyRef treatment (see that comment for
+            # why: Flux ${VAR} substitution can turn an all-digit string
+            # into an unquoted YAML number and fail apiserver validation).
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-agent-secrets
+                  key: TELEGRAM_BOT_TOKEN
             - name: TELEGRAM_ALLOWED_USERS
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-agent-secrets
+                  key: TELEGRAM_CHAT_ID
             - name: TELEGRAM_HOME_CHANNEL
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-agent-secrets
+                  key: TELEGRAM_CHAT_ID
+            # In-cluster webhook platform (config.yaml's platforms.webhook) --
+            # see that config's own comment for the full picture.
+            - name: WEBHOOK_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-agent-secrets
+                  key: WEBHOOK_SHARED_SECRET
             - name: DISCORD_ALLOWED_USERS
               value: ""
             - name: DISCORD_HOME_CHANNEL

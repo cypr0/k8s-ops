@@ -85,6 +85,50 @@ data:
       local:
         model: "base"
         language: ""
+    # In-cluster-only webhook receiver (service.yaml exposes port 8644,
+    # ciliumnetworkpolicy.yaml restricts ingress to paperless-ngx's pod).
+    # `routes` has no env-var equivalent (only enabled/host/port/secret do)
+    # so the whole platforms.webhook block lives here rather than split
+    # across config.yaml + deployment.yaml like WhatsApp/Telegram are.
+    # secret uses ${VAR} substitution (confirmed supported by hermes-agent's
+    # own config loader) so the actual value stays in the ExternalSecret,
+    # not committed here. Paperless's own Workflow "Webhook" action (see
+    # kubernetes/apps/paperless/paperless-ngx/) must send the SAME secret
+    # value as a plain `X-Gitlab-Token` header -- that comparison mode
+    # (vs. a computed HMAC signature) is the only one a static, non-
+    # computed header value can satisfy.
+    platforms:
+      webhook:
+        enabled: true
+        extra:
+          host: "0.0.0.0"
+          port: 8644
+          routes:
+            paperless-document-added:
+              secret: "${WEBHOOK_SHARED_SECRET}"
+              deliver: telegram
+              deliver_only: false
+              prompt: |
+                Ein neues Dokument wurde in Paperless-ngx hinzugefügt (Dokument-ID {document_id}).
+
+                Nutze die paperless-mcp-Tools:
+                1. get_document(document_id={document_id}) für Volltext + Metadaten.
+                2. list_custom_fields(), um die aktuellen IDs der Felder
+                   "Rechnungsbetrag" (existiert bereits, NICHT neu anlegen),
+                   "faelligkeitsdatum", "vertragsende" und "kuendigungsfrist_datum"
+                   nachzuschlagen -- IDs nicht raten, immer frisch nachschlagen.
+                3. Extrahiere, falls jeweils zutreffend (sonst weglassen, nicht raten):
+                   - Rechnungsbetrag: Rechnungsbetrag als Zahl (nur bei Rechnungen)
+                   - faelligkeitsdatum: Fälligkeitsdatum, Format YYYY-MM-DD (nur bei Rechnungen)
+                   - vertragsende: Vertragsende, Format YYYY-MM-DD (nur bei Verträgen/Abos)
+                   - kuendigungsfrist_datum: spätestes Datum für eine fristgerechte
+                     Kündigung, berechnet aus der im Dokument genannten Kündigungsfrist
+                     und vertragsende (nur bei Verträgen/Abos mit erkennbarer Frist)
+                4. Schreibe die zutreffenden Felder per update_document(document_id=...,
+                   custom_fields=[...]) zurück -- nur die neu erkannten Werte, andere
+                   bereits gesetzte Custom Fields nicht überschreiben.
+                5. Antworte am Ende NUR mit maximal 2 kurzen Sätzen, was du erkannt und
+                   eingetragen hast (oder dass nichts Relevantes gefunden wurde).
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
     # Nextcloud API coverage the paperless_full/nextcloud_full Open WebUI
     # Tools have -- see kubernetes/apps/hermes-agent/{paperless-mcp,

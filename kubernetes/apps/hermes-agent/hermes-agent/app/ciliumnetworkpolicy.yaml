@@ -1,9 +1,8 @@
 ---
-# hermes-agent: WhatsApp-only AI agent (no web UI/ingress in this minimal-safe
-# first deployment -- see deployment.yaml). No Service is exposed, so this
-# policy is egress-only in practice; Ingress is still declared with zero
-# rules for explicit default-deny (defense in depth if a Service ever gets
-# added later without someone remembering to revisit this file).
+# hermes-agent: WhatsApp-first AI agent, now also reachable in-cluster on
+# the webhook platform's port (service.yaml) -- see the ingress rule below.
+# Still no HTTPRoute/Ingress: nothing outside the cluster can reach this
+# agent.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -13,7 +12,22 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: hermes-agent
-  ingress: []
+  ingress:
+    # paperless-ngx's Workflow "Webhook" action (Trigger: Document Added)
+    # calls this agent's webhook platform (config.yaml's platforms.webhook)
+    # to kick off document extraction -- see kubernetes/apps/paperless/
+    # paperless-ngx/ for the Workflow itself. HMAC/shared-secret auth
+    # happens at the application layer (route's `secret:`), this is
+    # defense-in-depth network scoping on top, not the only gate.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless
+            app.kubernetes.io/controller: main
+      toPorts:
+        - ports:
+            - port: "8644"
+              protocol: TCP
   egress:
     # DNS resolution
     - toEndpoints:
