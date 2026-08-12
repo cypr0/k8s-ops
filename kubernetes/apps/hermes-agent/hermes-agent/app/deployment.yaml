@@ -163,6 +163,19 @@ spec:
             # gated by network policy instead (only this namespace can reach it).
             - name: FIRECRAWL_API_URL
               value: "http://firecrawl-api.hermes-agent.svc.cluster.local:3002"
+            # Browser toolset (already enabled by default, see config.yaml's
+            # browser: section) -- agent-browser and a matching Chrome for
+            # Testing binary both already ship inside the image
+            # (/opt/hermes/.playwright/chromium_headless_shell-*/), but
+            # agent-browser's own auto-detection doesn't look there, so it
+            # needs pointing at it explicitly. Confirmed working via
+            # `agent-browser open`/`snapshot` in this exact container. The
+            # "-1228" build number is this image's pinned Playwright
+            # revision -- re-check the actual path (`find /opt/hermes/
+            # .playwright`) after any *image* version bump, it can change
+            # even though this file didn't.
+            - name: AGENT_BROWSER_EXECUTABLE_PATH
+              value: "/opt/hermes/.playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
             - name: WHATSAPP_ENABLED
               value: "true"
             # self-chat: Hermes uses the owner's own linked WhatsApp session

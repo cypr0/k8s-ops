@@ -26,13 +26,18 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # OpenRouter (LLM API) + outbound WhatsApp connection, both over the
-    # public internet on 443. Mirrors openclaw's identical world:443 rule.
+    # OpenRouter (LLM API) + outbound WhatsApp connection over 443, plus the
+    # browser toolset's headless Chrome navigating to arbitrary sites --
+    # port 80 added for plain-HTTP pages and http->https redirect chains
+    # (allow_private_urls: false in config.yaml already blocks SSRF into
+    # cluster-internal services via this same rule).
     - toEntities:
         - world
       toPorts:
         - ports:
             - port: "443"
+              protocol: TCP
+            - port: "80"
               protocol: TCP
     # kubectl (installed by tools-install, invoked via the agent's terminal
     # tool): read-only Kubernetes API access (RBAC-gated, see rbac.yaml)
