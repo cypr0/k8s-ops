@@ -64,6 +64,27 @@ data:
     # and it's only reachable from this namespace (see its CiliumNetworkPolicy).
     web:
       backend: firecrawl
+    # Local, no-API-key voice loop: Edge TTS (Microsoft's free network TTS,
+    # german voice since this agent's owner writes in German over WhatsApp)
+    # for the "tts" toolset's replies, faster-whisper (CPU, no GPU in this
+    # cluster) for transcribing incoming WhatsApp voice notes before the LLM
+    # ever sees them. Both packages are installed onto the shared volume by
+    # the tools-install init container (deployment.yaml) rather than baked
+    # into the image. "base" model: reasonable speed/accuracy default for
+    # CPU-only inference -- revisit if transcription proves too slow/coarse.
+    tts:
+      provider: "edge"
+      speed: 1.0
+      edge:
+        voice: "de-DE-KatjaNeural"
+        speed: 1.0
+    stt:
+      enabled: true
+      provider: "local"
+      language: "de"
+      local:
+        model: "base"
+        language: ""
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
     # Nextcloud API coverage the paperless_full/nextcloud_full Open WebUI
     # Tools have -- see kubernetes/apps/hermes-agent/{paperless-mcp,

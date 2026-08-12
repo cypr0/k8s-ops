@@ -94,9 +94,7 @@ spec:
         # kubectl is what gives the agent's "terminal" tool a way to
         # actually use the read-only RBAC granted in rbac.yaml (RBAC alone
         # is just permission, not an interface). Add further tools the same
-        # way, one reviewable diff at a time -- pip install --target=
-        # /opt/data/tools/pip works too, if the image ships python3/pip
-        # (unverified, the image is primarily Node-based).
+        # way, one reviewable diff at a time.
         - name: tools-install
           image: *image
           command:
@@ -113,6 +111,21 @@ spec:
                 https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl
               echo "1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82  /tmp/kubectl" | sha256sum -c -
               install -m 0755 /tmp/kubectl /opt/data/tools/bin/kubectl
+              # edge-tts (TTS) + faster-whisper (local STT): confirmed present
+              # in hermes-agent's own pyproject.toml as the "edge-tts"/"voice"
+              # extras, but not installed into the image's baked-in venv --
+              # `uv pip install --target=` lands pure files on the shared
+              # volume (confirmed working, unlike a venv/site-packages install
+              # which lives on the main container's own, unshared rootfs and
+              # would be wiped every pod restart); main container adds this
+              # to PYTHONPATH. Versions pinned to match pyproject.toml's
+              # extras exactly. sounddevice (mic capture for interactive CLI
+              # push-to-talk) deliberately omitted -- this pod has no audio
+              # device, voice messages arrive as files via the WhatsApp
+              # bridge instead.
+              uv pip install --target=/opt/data/tools/pip \
+                edge-tts==7.2.7 \
+                faster-whisper==1.2.1
           volumeMounts:
             - name: data
               mountPath: /opt/data
@@ -141,6 +154,13 @@ spec:
             # not found in $PATH".
             - name: PATH
               value: "/opt/data/tools/bin:/opt/hermes/bin:/opt/hermes/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            # edge-tts/faster-whisper, installed by tools-install onto the
+            # shared volume (see that init container's comment) rather than
+            # into the venv itself. python -- unlike a PATH-found executable
+            # -- does NOT automatically extend its own search path from
+            # sys.prefix, so this needs to be explicit.
+            - name: PYTHONPATH
+              value: "/opt/data/tools/pip"
             - name: WEB_TOOLS_DEBUG
               value: "false"
             - name: VISION_TOOLS_DEBUG
