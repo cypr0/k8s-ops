@@ -69,17 +69,22 @@ spec:
 
               CREATE SCHEMA IF NOT EXISTS nuq;
 
-              DO $$ BEGIN
+              -- kubelet's own $(VAR) expansion runs over command/args unconditionally
+              -- and collapses ANY "$$" to a literal "$" before exec (confirmed: the
+              -- stored Job spec in etcd still shows "$$", but the running container's
+              -- actual argv had "DO $ BEGIN", causing a psql syntax error) -- so a
+              -- named dollar-quote tag is used here instead of Postgres' plain $$.
+              DO $nuq$ BEGIN
                 CREATE TYPE nuq.job_status AS ENUM ('queued', 'active', 'completed', 'failed');
               EXCEPTION
                 WHEN duplicate_object THEN null;
-              END $$;
+              END $nuq$;
 
-              DO $$ BEGIN
+              DO $nuq$ BEGIN
                 CREATE TYPE nuq.group_status AS ENUM ('active', 'completed', 'cancelled');
               EXCEPTION
                 WHEN duplicate_object THEN null;
-              END $$;
+              END $nuq$;
 
               CREATE TABLE IF NOT EXISTS nuq.queue_scrape (
                 id uuid NOT NULL DEFAULT gen_random_uuid(),
