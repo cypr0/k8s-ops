@@ -1,0 +1,167 @@
+---
+# Firecrawl is fully internal: no HTTPRoute, USE_DB_AUTHENTICATION=false on
+# the API itself, so network isolation via CNP is the actual access control
+# here -- only hermes-agent may reach the api service on :3002.
+#
+# One combined policy for all four app-template controllers (api/worker/
+# nuq-worker/playwright-service), matched by the shared
+# app.kubernetes.io/instance: firecrawl label bjw-s's chart puts on every
+# pod it creates -- simpler than reasoning about per-controller label
+# differences, and there's no cross-tenant risk in letting firecrawl's own
+# components talk to each other freely (verified against the live pods'
+# actual labels after first deploy; adjust here if that ever changes).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: firecrawl
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: firecrawl
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "3002"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/instance: firecrawl
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/instance: firecrawl
+    # Dragonfly (Redis-compatible), shared with every other app on this
+    # cluster that needs Redis. Dragonfly's own CNP already allows ingress
+    # from any cluster pod (kubernetes/apps/database/dragonfly/cluster/
+    # ciliumnetworkpolicy.yaml), so this egress rule is what actually gates it.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+            app.kubernetes.io/name: dragonfly
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    # Dedicated firecrawl-postgres CNPG cluster (cluster.yaml) -- same
+    # namespace, matched by CNPG's own cluster label.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            cnpg.io/cluster: firecrawl-postgres
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    # Fetching the actual pages being scraped/searched is inherently
+    # open-ended (any URL the agent asks it to fetch).
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+---
+# The schema-init Job and the two maintenance CronJobs aren't part of the
+# firecrawl HelmRelease release/instance, so they need their own egress rule
+# to reach firecrawl-postgres.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: firecrawl-nuq-maintenance
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: batch.kubernetes.io/job-name
+        operator: Exists
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            cnpg.io/cluster: firecrawl-postgres
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+---
+# Mirrors kubernetes/apps/database/cloudnative-pg/cluster/ciliumnetworkpolicy.yaml's
+# established pattern for the shared cluster (cluster-wide postgres access,
+# operator health checks, kubelet probes, Prometheus scraping) -- scaled
+# down for a single instance (no cross-instance replication rule needed).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: firecrawl-postgres
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/cluster: firecrawl-postgres
+  ingress:
+    # CNPG operator: health checks and cluster management via Patroni REST API
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+            app.kubernetes.io/name: cloudnative-pg
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Kubelet readiness/liveness probes (host network)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Postgres access from any pod in the cluster (matches the shared
+    # cluster's own policy -- the real gate is each consumer's own egress)
+    - fromEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    # Prometheus scraping of the CNPG metrics exporter
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9187"
+              protocol: TCP
+  egress:
+    - toEntities:
+        - cluster
+        - world

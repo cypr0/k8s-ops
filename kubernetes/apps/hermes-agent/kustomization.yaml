@@ -11,3 +11,4 @@ resources:
   - ./hermes-agent/ks.yaml
   - ./paperless-mcp/ks.yaml
   - ./nextcloud-mcp/ks.yaml
+  - ./firecrawl/ks.yaml

@@ -1,0 +1,188 @@
+---
+# Replaces the functionally-important half of upstream's pg_cron jobs (see
+# job-nuq-schema.yaml for why pg_cron itself isn't available here). Skips:
+# the pg_notify calls (nothing listens on that channel -- we don't run
+# rabbitmq, see cluster.yaml/ks.yaml docstrings for the whole
+# rabbitmq-less architecture this deployment uses), the REINDEX CONCURRENTLY
+# maintenance crons (not needed at this table size), and
+# cron.job_run_details pruning (n/a without pg_cron).
+#
+# k8s CronJob's 1-minute schedule granularity is coarser than pg_cron's
+# 15-second cadence for the reaper -- acceptable slack for a low-traffic
+# homelab queue; a stuck job now waits up to ~2 rather than ~1 minute to be
+# noticed.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: firecrawl-nuq-reaper
+spec:
+  # Lock reaper (both tables) + backlog reaper + group-finish detection.
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 50
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reaper
+              image: postgres:18-alpine
+              env:
+                - name: PGHOST
+                  value: firecrawl-postgres-rw
+                - name: PGDATABASE
+                  value: firecrawl
+                - name: PGUSER
+                  value: firecrawlusr
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: firecrawl-db-role
+                      key: password
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - "ALL"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              command:
+                - "sh"
+                - "-c"
+              args:
+                - |
+                  set -eu
+                  psql -v ON_ERROR_STOP=1 <<'SQL'
+                  SET statement_timeout = '30s';
+
+                  UPDATE nuq.queue_scrape SET status = 'queued'::nuq.job_status, lock = null, locked_at = null, stalls = COALESCE(stalls, 0) + 1
+                    WHERE locked_at <= now() - interval '1 minute' AND status = 'active'::nuq.job_status AND COALESCE(stalls, 0) < 9;
+                  UPDATE nuq.queue_scrape SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, stalls = COALESCE(stalls, 0) + 1
+                    WHERE locked_at <= now() - interval '1 minute' AND status = 'active'::nuq.job_status AND COALESCE(stalls, 0) >= 9;
+
+                  UPDATE nuq.queue_crawl_finished SET status = 'queued'::nuq.job_status, lock = null, locked_at = null, stalls = COALESCE(stalls, 0) + 1
+                    WHERE locked_at <= now() - interval '1 minute' AND status = 'active'::nuq.job_status AND COALESCE(stalls, 0) < 9;
+                  UPDATE nuq.queue_crawl_finished SET status = 'failed'::nuq.job_status, lock = null, locked_at = null, stalls = COALESCE(stalls, 0) + 1
+                    WHERE locked_at <= now() - interval '1 minute' AND status = 'active'::nuq.job_status AND COALESCE(stalls, 0) >= 9;
+
+                  DELETE FROM nuq.queue_scrape_backlog WHERE times_out_at < now();
+
+                  WITH finished_groups AS (
+                    UPDATE nuq.group_crawl
+                    SET status = 'completed'::nuq.group_status,
+                        expires_at = now() + MAKE_INTERVAL(secs => nuq.group_crawl.ttl / 1000)
+                    WHERE status = 'active'::nuq.group_status
+                      AND NOT EXISTS (SELECT 1 FROM nuq.queue_scrape WHERE nuq.queue_scrape.status IN ('active', 'queued') AND nuq.queue_scrape.group_id = nuq.group_crawl.id)
+                      AND NOT EXISTS (SELECT 1 FROM nuq.queue_scrape_backlog WHERE nuq.queue_scrape_backlog.group_id = nuq.group_crawl.id)
+                    RETURNING id, owner_id
+                  )
+                  INSERT INTO nuq.queue_crawl_finished (data, owner_id, group_id)
+                  SELECT '{}'::jsonb, finished_groups.owner_id, finished_groups.id FROM finished_groups;
+                  SQL
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+          volumes:
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: firecrawl-nuq-cleanup
+spec:
+  # Completed/failed job pruning (both tables) + expired-group cascade delete.
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 100
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cleanup
+              image: postgres:18-alpine
+              env:
+                - name: PGHOST
+                  value: firecrawl-postgres-rw
+                - name: PGDATABASE
+                  value: firecrawl
+                - name: PGUSER
+                  value: firecrawlusr
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: firecrawl-db-role
+                      key: password
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - "ALL"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              command:
+                - "sh"
+                - "-c"
+              args:
+                - |
+                  set -eu
+                  psql -v ON_ERROR_STOP=1 <<'SQL'
+                  SET statement_timeout = '90s';
+
+                  DELETE FROM nuq.queue_scrape WHERE status = 'completed'::nuq.job_status AND created_at < now() - interval '1 hour' AND group_id IS NULL;
+                  DELETE FROM nuq.queue_scrape WHERE status = 'failed'::nuq.job_status AND created_at < now() - interval '6 hours' AND group_id IS NULL;
+
+                  DELETE FROM nuq.queue_crawl_finished WHERE status = 'completed'::nuq.job_status AND created_at < now() - interval '1 hour' AND group_id IS NULL;
+                  DELETE FROM nuq.queue_crawl_finished WHERE status = 'failed'::nuq.job_status AND created_at < now() - interval '6 hours' AND group_id IS NULL;
+
+                  WITH victims AS (
+                    SELECT id FROM nuq.group_crawl WHERE status = 'completed'::nuq.group_status AND expires_at < now()
+                    ORDER BY expires_at LIMIT 500 FOR UPDATE SKIP LOCKED
+                  ), cleaned_groups AS (
+                    DELETE FROM nuq.group_crawl WHERE id IN (SELECT id FROM victims) RETURNING id
+                  ), d1 AS (
+                    DELETE FROM nuq.queue_scrape WHERE group_id IN (SELECT id FROM cleaned_groups)
+                  ), d2 AS (
+                    DELETE FROM nuq.queue_scrape_backlog WHERE group_id IN (SELECT id FROM cleaned_groups)
+                  ), d3 AS (
+                    DELETE FROM nuq.queue_crawl_finished WHERE group_id IN (SELECT id FROM cleaned_groups)
+                  )
+                  SELECT 1;
+                  SQL
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+          volumes:
+            - name: tmp
+              emptyDir: {}

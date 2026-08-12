@@ -1,0 +1,315 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+#
+# Self-hosted Firecrawl (web-search/scrape/extract backend for hermes-agent,
+# see kubernetes/apps/hermes-agent/hermes-agent/app/configmap.yaml's
+# mcp_servers/web section) via bjw-s app-template, matching the pattern the
+# rest of this repo already uses for multi-container apps (e.g. open-webui's
+# app+searxng) instead of hand-rolled Deployments. Follows the official
+# Kubernetes reference architecture at
+# github.com/firecrawl/firecrawl/tree/main/examples/kubernetes/cluster-install
+# (api/worker/nuq-worker/playwright-service, Postgres-backed "nuq" queue, NO
+# rabbitmq -- that's only needed by docker-compose's monolithic harness mode)
+# with resource sizing cut way down for this homelab cluster.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: firecrawl
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controllers:
+      api:
+        replicas: 1
+        containers:
+          api:
+            image:
+              repository: ghcr.io/firecrawl/firecrawl
+              # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
+              tag: 2.11.198-production
+            command:
+              - "node"
+            args:
+              - "--max-old-space-size=1536"
+              - "dist/src/index.js"
+            env:
+              PORT: &apiPort 3002
+            envFrom:
+              - configMapRef:
+                  name: firecrawl-config
+              - secretRef:
+                  name: firecrawl-secret
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /v0/health/liveness
+                    port: *apiPort
+                  initialDelaySeconds: 30
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /v0/health/readiness
+                    port: *apiPort
+                  initialDelaySeconds: 30
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 250m
+                memory: 512Mi
+              limits:
+                cpu: "1"
+                memory: 2Gi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+        pod:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+      worker:
+        replicas: 1
+        containers:
+          worker:
+            image:
+              repository: ghcr.io/firecrawl/firecrawl
+              # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
+              tag: 2.11.198-production
+            command:
+              - "node"
+            args:
+              - "--max-old-space-size=1024"
+              - "dist/src/services/queue-worker.js"
+            env:
+              PORT: &workerPort 3005
+            envFrom:
+              - configMapRef:
+                  name: firecrawl-config
+              - secretRef:
+                  name: firecrawl-secret
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /liveness
+                    port: *workerPort
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 1Gi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+        pod:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+      nuq-worker:
+        # 2, not upstream's 5 -- see the module docstring above.
+        replicas: 2
+        containers:
+          nuq-worker:
+            image:
+              repository: ghcr.io/firecrawl/firecrawl
+              # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
+              tag: 2.11.198-production
+            command:
+              - "node"
+            args:
+              - "--max-old-space-size=1024"
+              - "dist/src/services/worker/nuq-worker.js"
+            env:
+              NUQ_WORKER_PORT: &nuqWorkerPort 3006
+            envFrom:
+              - configMapRef:
+                  name: firecrawl-config
+              - secretRef:
+                  name: firecrawl-secret
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: *nuqWorkerPort
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: *nuqWorkerPort
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 1Gi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+        pod:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+      playwright-service:
+        replicas: 1
+        containers:
+          playwright-service:
+            image:
+              repository: ghcr.io/firecrawl/playwright-service
+              tag: latest@sha256:468009bae00911d40d7120d58489a1d529362c22c45585cb9076094fe61b0025
+            envFrom:
+              - configMapRef:
+                  name: playwright-service-config
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: &playwrightPort 3000
+                  initialDelaySeconds: 30
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 250m
+                memory: 512Mi
+              limits:
+                cpu: "1"
+                memory: 2Gi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - "ALL"
+        pod:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+    service:
+      api:
+        controller: api
+        ports:
+          http:
+            port: *apiPort
+      worker:
+        controller: worker
+        ports:
+          http:
+            port: *workerPort
+      nuq-worker:
+        controller: nuq-worker
+        ports:
+          http:
+            port: *nuqWorkerPort
+      playwright-service:
+        controller: playwright-service
+        ports:
+          http:
+            port: *playwrightPort
+
+    persistence:
+      api-tmp:
+        type: emptyDir
+        advancedMounts:
+          api:
+            api:
+              - path: /tmp
+      worker-tmp:
+        type: emptyDir
+        advancedMounts:
+          worker:
+            worker:
+              - path: /tmp
+      nuq-worker-tmp:
+        type: emptyDir
+        advancedMounts:
+          nuq-worker:
+            nuq-worker:
+              - path: /tmp
+      playwright-cache:
+        type: emptyDir
+        advancedMounts:
+          playwright-service:
+            playwright-service:
+              - path: /tmp/.cache
+      playwright-tmp:
+        type: emptyDir
+        advancedMounts:
+          playwright-service:
+            playwright-service:
+              - path: /tmp
+      # Chromium crashes under load with the tiny default /dev/shm -- same
+      # fix hermes-agent's own browser tool already needed.
+      playwright-dshm:
+        type: emptyDir
+        medium: Memory
+        sizeLimit: 512Mi
+        advancedMounts:
+          playwright-service:
+            playwright-service:
+              - path: /dev/shm
