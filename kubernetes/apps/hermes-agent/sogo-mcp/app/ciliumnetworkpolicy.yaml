@@ -31,18 +31,22 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # SOGo's CalDAV (HTTPS, SOGO_BASE_URL) + IMAPS (SOGO_IMAP_HOST) are
-    # both external to the cluster on the owner's Netcup account -- world,
-    # not a pinned toFQDNs like paperless-ngx's own external-IMAP rule
-    # uses, because that pattern needs the hostname in the *cluster's*
-    # SOPS secrets to reference via Flux $${VAR} substitution, and this
-    # one only lives in 1Password (dynamic, not statically known here).
-    # Also covers the install-deps init container's `pip install`.
+    # SOGo's CalDAV (HTTPS, SOGO_BASE_URL) + IMAP (SOGO_IMAP_HOST, port
+    # 143/STARTTLS on this Netcup account -- 993/implicit-TLS also opened
+    # in case that's ever switched to) are both external to the cluster
+    # on the owner's Netcup account -- world, not a pinned toFQDNs like
+    # paperless-ngx's own external-IMAP rule uses, because that pattern
+    # needs the hostname in the *cluster's* SOPS secrets to reference via
+    # Flux $${VAR} substitution, and this one only lives in 1Password
+    # (dynamic, not statically known here). Also covers the install-deps
+    # init container's `pip install`.
     - toEntities:
         - world
       toPorts:
         - ports:
             - port: "443"
+              protocol: TCP
+            - port: "143"
               protocol: TCP
             - port: "993"
               protocol: TCP

@@ -192,6 +192,16 @@ class Tools:
         :param start_date: Range start, ISO date or datetime (e.g. "2026-08-01" or "2026-08-01T00:00:00Z").
         :param end_date: Range end, exclusive, same format as start_date.
         :param calendar: Calendar id (see list_calendars). Defaults to the personal calendar (Valves.DEFAULT_CALENDAR).
+
+        NOTE on recurring events: confirmed live against this SOGo server --
+        a YEARLY-recurring event can be returned even when the queried range
+        doesn't contain one of its actual occurrences (the server appears to
+        match loosely on recurring components rather than expanding RRULE
+        for the filter). The returned start/end are always the ORIGINAL
+        occurrence's dates, not a specific occurrence in range. RRULE isn't
+        parsed/expanded here at all (see module docstring's scope decisions)
+        -- treat a recurring hit as "this series might be relevant", not as
+        proof an occurrence falls in the queried window.
         """
         err = self._require_config("SOGO_BASE_URL", "SOGO_USERNAME", "SOGO_PASSWORD")
         if err:
