@@ -405,14 +405,14 @@ class Tools:
 
     def search_messages(
         self,
-        query: str,
+        query: str = "",
         folder: str = "INBOX",
         since: Optional[str] = None,
         limit: int = 20,
     ) -> str:
-        """Search a mailbox folder. Returns UID + envelope (subject/from/date) for each match, newest first.
+        """Search (or, with an empty query, just list) a mailbox folder. Returns UID + envelope (subject/from/date) for each match, newest first.
 
-        :param query: Free text, matched against subject and body (IMAP TEXT search).
+        :param query: Free text, matched against subject and body (IMAP TEXT search). Leave empty to list all messages in the folder (optionally narrowed by `since`).
         :param folder: Mailbox folder name (see list_folders).
         :param since: Only messages received on/after this date (YYYY-MM-DD).
         :param limit: Max results (most recent first).
