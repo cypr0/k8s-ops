@@ -172,6 +172,30 @@ spec:
             - gateway
             - run
           workingDir: /opt/hermes
+          # Tirith (the agent's terminal-tool sandbox, see config.yaml's
+          # security.tirith_enabled) runs LLM-issued shell commands as a
+          # separate unprivileged user (confirmed live: uid=10000(hermes),
+          # no supplementary groups) with its OWN fixed PATH that ignores
+          # this container's PATH env var entirely (confirmed: sandboxed
+          # `echo $PATH` prints "/usr/local/bin:/usr/bin:/bin:/usr/local/
+          # games:/usr/games", never seeing /opt/data/tools/bin at all) --
+          # so kubectl (installed onto the shared volume by tools-install,
+          # only /opt/data/tools/bin) was invisible to any ad-hoc "check
+          # the cluster" chat/agent-mode request, unlike the no-agent
+          # cluster-health-check cron (runs as this main process itself,
+          # not through Tirith's sandbox, so it was never affected).
+          # postStart runs inside THIS container's own writable filesystem
+          # (not shared with init containers, so they can't place it
+          # directly) after tools-install has already populated the real
+          # binary on the shared volume -- a symlink onto a directory
+          # that IS on Tirith's fixed default PATH is the fix.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - mkdir -p /usr/local/bin && ln -sf /opt/data/tools/bin/kubectl /usr/local/bin/kubectl
           env:
             - name: HERMES_HOME
               value: *home
