@@ -30,7 +30,6 @@ import sys
 from datetime import datetime, timezone
 
 KUBECTL_TIMEOUT = 30
-CERT_EXPIRY_WARN_DAYS = 7
 BAD_WAITING_REASONS = {"CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull"}
 
 
@@ -60,6 +59,16 @@ def ready_status(conditions):
 
 
 def check_flux(resource, label):
+    """Only Ready == "False" counts as a problem. Ready == "Unknown" just
+    means "still reconciling" -- completely normal right after any git push
+    or during a dependency chain settling, confirmed live (a Kustomization
+    sat at Unknown/"Reconciliation in progress" for several minutes with
+    every underlying HelmRelease already healthy, purely because Flux's own
+    post-install health check hadn't finished its wait window yet). A
+    reconcile that's genuinely stuck eventually flips to an explicit False
+    once Flux's own retry/health-check timeout elapses, so filtering to
+    False only doesn't miss real failures -- it just stops flagging normal
+    in-flight state as if it were one."""
     data, err = kubectl_json(resource, "-A")
     if err:
         return [f"{label}: kubectl-Fehler ({err})"]
@@ -68,14 +77,23 @@ def check_flux(resource, label):
         if item.get("spec", {}).get("suspend"):
             continue
         status, message = ready_status(item.get("status", {}).get("conditions"))
-        if status != "True":
+        if status == "False":
             ns = item["metadata"]["namespace"]
             name = item["metadata"]["name"]
-            problems.append(f"{ns}/{name}: {message[:150] or 'kein Ready-Status'}")
+            problems.append(f"{ns}/{name}: {message[:150] or 'nicht Ready'}")
     return problems
 
 
 def check_certificates():
+    """Only real problems: Ready == False (an Unknown status, e.g. right
+    after issuance, is normal and self-resolving -- same reasoning as
+    check_flux above), an overdue renewal (cert-manager's own renewalTime
+    has passed without notAfter moving forward), or an actually-expired
+    notAfter. Ready=True with notAfter a few days out is NORMAL for
+    short-lived certs (e.g. Let's Encrypt's ~90-day certs renew
+    automatically well before expiry) -- alerting on days-left alone (an
+    earlier version of this check did) produces a false positive on every
+    single one of those, every renewal cycle."""
     data, err = kubectl_json("certificates.cert-manager.io", "-A")
     if err:
         return [f"Zertifikate: kubectl-Fehler ({err})"]
@@ -85,19 +103,26 @@ def check_certificates():
         ns, name = item["metadata"]["namespace"], item["metadata"]["name"]
         conditions = item.get("status", {}).get("conditions", [])
         status, message = ready_status(conditions)
-        if status != "True":
+        if status == "False":
             problems.append(f"{ns}/{name}: nicht Ready -- {message[:150]}")
             continue
-        not_after = item.get("status", {}).get("notAfter")
-        if not_after:
-            try:
-                expires = datetime.fromisoformat(not_after.replace("Z", "+00:00"))
-                days_left = (expires - now).days
-                if days_left < CERT_EXPIRY_WARN_DAYS:
-                    problems.append(f"{ns}/{name}: läuft in {days_left} Tag(en) ab")
-            except ValueError:
-                pass
+        status_block = item.get("status", {})
+        not_after = _parse_dt(status_block.get("notAfter"))
+        renewal_time = _parse_dt(status_block.get("renewalTime"))
+        if not_after and not_after < now:
+            problems.append(f"{ns}/{name}: abgelaufen (notAfter {status_block['notAfter']})")
+        elif renewal_time and renewal_time < now:
+            problems.append(f"{ns}/{name}: Erneuerung überfällig (geplant für {status_block['renewalTime']})")
     return problems
+
+
+def _parse_dt(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def check_nodes():
