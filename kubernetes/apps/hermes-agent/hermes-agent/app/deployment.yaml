@@ -89,7 +89,6 @@ spec:
               # documented in `hermes cron create --help`.
               mkdir -p /opt/data/scripts
               cp /cluster-health-script/cluster_health_check.py /opt/data/scripts/cluster_health_check.py
-              cp /refresh-kubeconfig-script/refresh_kubeconfig.py /opt/data/scripts/refresh_kubeconfig.py
           env:
             - name: HERMES_HOME
               value: &home /opt/data
@@ -104,9 +103,6 @@ spec:
               readOnly: true
             - name: cluster-health-script
               mountPath: /cluster-health-script
-              readOnly: true
-            - name: refresh-kubeconfig-script
-              mountPath: /refresh-kubeconfig-script
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -391,6 +387,59 @@ spec:
               mountPath: /tmp
             - name: dshm
               mountPath: /dev/shm
+        # Mirrors this pod's own ServiceAccount token into a world-readable
+        # kubeconfig at $HOME/.kube/config, refreshed every 15 minutes.
+        # Why a separate container, not a hermes cron job: confirmed live
+        # that s6-overlay drops the long-running hermes process (gateway,
+        # cron scheduler, terminal tool -- ALL of it, agent-mode AND
+        # --no-agent alike) to a fixed unprivileged user (uid=10000,
+        # gid=10000, NO supplementary groups) immediately after its own
+        # root bootstrap -- so no hermes-managed script, cron job, or
+        # terminal command can ever read the real token (root:<fsGroup>
+        # 0640, and Kubernetes' serviceAccountToken projected-volume
+        # source hard-codes that mode regardless of defaultMode -- also
+        # confirmed live, see git history on this file for both dead
+        # ends). This sidecar runs as uid/gid 1000 -- ordinary group-read
+        # access to the 0640 token is enough, no root needed here either.
+        - name: kubeconfig-refresher
+          image: *image
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              set -eu
+              while true; do
+                python3 /refresh-kubeconfig-script/refresh_kubeconfig.py || true
+                sleep 900
+              done
+          env:
+            - name: HOME
+              value: /opt/data/home
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: refresh-kubeconfig-script
+              mountPath: /refresh-kubeconfig-script
+              readOnly: true
+          resources:
+            requests:
+              cpu: 5m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - "ALL"
+            seccompProfile:
+              type: RuntimeDefault
       volumes:
         - name: data
           persistentVolumeClaim:
