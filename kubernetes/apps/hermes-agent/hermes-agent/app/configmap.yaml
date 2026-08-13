@@ -149,9 +149,13 @@ data:
     # admin/full-access credentials on their own end (see each server's
     # nextcloud_full.py/paperless_full.py module docstring for the exact
     # scope/tradeoffs), so treat every tool call through them with the
-    # same care as a direct API call would deserve.
+    # same care as a direct API call would deserve. sogo (kubernetes/apps/
+    # hermes-agent/sogo-mcp/) is the same story with the owner's real
+    # Netcup-hosted SOGo calendar/mailbox account.
     mcp_servers:
       paperless:
         url: "http://paperless-mcp.hermes-agent.svc.cluster.local:8000/mcp"
       nextcloud:
         url: "http://nextcloud-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+      sogo:
+        url: "http://sogo-mcp.hermes-agent.svc.cluster.local:8000/mcp"

@@ -12,3 +12,4 @@ resources:
   - ./paperless-mcp/ks.yaml
   - ./nextcloud-mcp/ks.yaml
   - ./firecrawl/ks.yaml
+  - ./sogo-mcp/ks.yaml

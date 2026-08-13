@@ -79,6 +79,14 @@ spec:
         - ports:
             - port: "8000"
               protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: sogo-mcp
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
     # Firecrawl's api service (kubernetes/apps/hermes-agent/firecrawl/),
     # this agent's web.backend for search/scrape/extract. app-template
     # labels every controller's pods app.kubernetes.io/name: firecrawl

@@ -1,0 +1,48 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: sogo-mcp
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: sogo-mcp
+  ingress:
+    # hermes-agent, as an MCP client (see hermes-agent's configmap.yaml
+    # mcp_servers section)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # SOGo's CalDAV (HTTPS, SOGO_BASE_URL) + IMAPS (SOGO_IMAP_HOST) are
+    # both external to the cluster on the owner's Netcup account -- world,
+    # not a pinned toFQDNs like paperless-ngx's own external-IMAP rule
+    # uses, because that pattern needs the hostname in the *cluster's*
+    # SOPS secrets to reference via Flux $${VAR} substitution, and this
+    # one only lives in 1Password (dynamic, not statically known here).
+    # Also covers the install-deps init container's `pip install`.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "993"
+              protocol: TCP
