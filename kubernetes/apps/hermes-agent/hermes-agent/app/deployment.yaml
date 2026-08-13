@@ -149,6 +149,17 @@ spec:
               value: *home
             - name: HOME
               value: /opt/data/home
+            # Base image has no /etc/localtime/TZ set (confirmed: `date`
+            # showed UTC) -- hermes's own cron scheduler uses whatever the
+            # container considers "server-local" time (its own `hermes
+            # config show` literally reports "Timezone: (server-local)"),
+            # so every "0 7 * * *"-style schedule was firing 2h later than
+            # its wall-clock reading implied (UTC vs. this cluster's
+            # actual German timezone). Setting TZ here fixes ALL cron
+            # jobs' scheduling at once, including automatic CET/CEST DST
+            # switching -- no need to touch individual cron expressions.
+            - name: TZ
+              value: "Europe/Berlin"
             # Exposes whatever tools-install placed on the shared volume.
             # Must repeat the image's OWN bin dirs too -- setting PATH via
             # env replaces the image's built-in PATH, it doesn't extend it.
