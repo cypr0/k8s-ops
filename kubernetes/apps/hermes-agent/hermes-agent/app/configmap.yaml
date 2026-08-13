@@ -154,7 +154,10 @@ data:
                    gesetzte Werte anderer Felder verloren (bereits live passiert:
                    ein Dokument mit vorhandenem Rechnungsbetrag/Steuerjahr verlor
                    beide, weil nur die neu erkannten Felder übergeben wurden).
-                5. Falls faelligkeitsdatum oder kuendigungsfrist_datum erkannt wurden,
+                5. UNABHÄNGIG davon, ob Schritt 4 tatsächlich etwas geschrieben hat
+                   (auch wenn die Custom Fields bereits vorher korrekt gesetzt waren --
+                   das entscheidet NICHT, ob schon ein Kalendertermin existiert):
+                   falls faelligkeitsdatum oder kuendigungsfrist_datum erkannt wurden,
                    lege dafür je einen ganztägigen Termin im "personal"-Kalender an
                    (sogo-mcp create_event, all_day=true):
                    - faelligkeitsdatum: Titel "Fällig: <Dokumenttitel>"
@@ -162,11 +165,12 @@ data:
                    Beschreibung jeweils: "Automatisch erstellt aus Paperless-Dokument
                    #{document_id}. Bei Fehlern: Termin einfach löschen, betrifft nicht
                    das Paperless-Dokument." -- das macht Fehlextraktionen leicht
-                   erkennbar und risikolos rückgängig zu machen. VORHER per
-                   list_events() für genau dieses eine Datum prüfen, ob schon ein
-                   Termin mit demselben Titel existiert (z.B. durch eine erneute
-                   Verarbeitung desselben Dokuments) -- falls ja, keinen zweiten
-                   Termin anlegen.
+                   erkennbar und risikolos rückgängig zu machen. Entscheidungsregel:
+                   rufe list_events() für genau dieses eine Datum auf -- taucht darin
+                   BEREITS ein Termin mit demselben Titel auf, nichts weiter tun;
+                   TAUCHT KEINER AUF (Normalfall, auch wenn die Custom Fields schon
+                   vorher gesetzt waren), dann create_event() jetzt aufrufen, nicht
+                   überspringen.
                 6. Antworte am Ende NUR mit maximal 2 kurzen Sätzen, was du erkannt,
                    eingetragen und ggf. terminiert hast (oder dass nichts Relevantes
                    gefunden wurde).
