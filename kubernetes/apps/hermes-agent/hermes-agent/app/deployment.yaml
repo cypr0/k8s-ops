@@ -78,6 +78,17 @@ spec:
               mkdir -p /opt/data/home/.hermes/scripts
               cp /portfolio-script/portfolio_price_check.py /opt/data/home/.hermes/scripts/portfolio_price_check.py
               cp /cluster-health-script/cluster_health_check.py /opt/data/home/.hermes/scripts/cluster_health_check.py
+              # cluster_health_check.py's cron job runs with --no-agent
+              # (no LLM involved -- see the job's own creation command),
+              # and --no-agent resolves its --script path from
+              # $HERMES_HOME/scripts/ instead of $HOME/.hermes/scripts/ --
+              # confirmed live: "hermes cron run" failed with "Script not
+              # found: /opt/data/scripts/cluster_health_check.py" until a
+              # copy existed at that exact path too. A DIFFERENT directory
+              # convention than agent-mode scripts (comment above), not
+              # documented in `hermes cron create --help`.
+              mkdir -p /opt/data/scripts
+              cp /cluster-health-script/cluster_health_check.py /opt/data/scripts/cluster_health_check.py
           env:
             - name: HERMES_HOME
               value: &home /opt/data
