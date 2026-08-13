@@ -212,7 +212,7 @@ spec:
             # the cluster-secrets Secret (kubernetes/components/sops/
             # cluster-secrets.sops.yaml, key SECRET_HERMES_WHATSAPP_USER;
             # the sops Kustomize component copies it into this namespace).
-            # Deliberately NOT using Flux's ${VAR} postBuild substitution
+            # Deliberately NOT using Flux's $${VAR} postBuild substitution
             # here -- when a field's entire value is a purely-numeric
             # substituted string, Flux/kustomize can render it as an
             # unquoted YAML number instead of a string, which the apiserver
@@ -232,7 +232,7 @@ spec:
             # separate allowed-user list needed. TELEGRAM_CHAT_ID is
             # purely-numeric like the WhatsApp phone number above, so it
             # gets the same secretKeyRef treatment (see that comment for
-            # why: Flux ${VAR} substitution can turn an all-digit string
+            # why: Flux $${VAR} substitution can turn an all-digit string
             # into an unquoted YAML number and fail apiserver validation).
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:

@@ -90,9 +90,18 @@ data:
     # `routes` has no env-var equivalent (only enabled/host/port/secret do)
     # so the whole platforms.webhook block lives here rather than split
     # across config.yaml + deployment.yaml like WhatsApp/Telegram are.
-    # secret uses ${VAR} substitution (confirmed supported by hermes-agent's
+    # secret uses $${VAR} substitution (confirmed supported by hermes-agent's
     # own config loader) so the actual value stays in the ExternalSecret,
-    # not committed here. Paperless's own Workflow "Webhook" action (see
+    # not committed here. Written as $${VAR} (double $) below: this
+    # Kustomization's ks.yaml has postBuild.substituteFrom: cluster-secrets,
+    # and Flux's OWN envsubst pass runs in strict mode over every resource
+    # under this path BEFORE it ever reaches hermes-agent's Python config
+    # loader -- a single, unescaped "$" + "{WEBHOOK_SHARED_SECRET}" would make Flux itself
+    # try (and fail: "variable not set (strict mode)") to resolve it from
+    # cluster-secrets, blocking the WHOLE Kustomization's apply, not just
+    # this field. $$ is Flux's own escape for a literal "$" it should leave
+    # alone -- see kubernetes/apps/nextcloud/nextcloud/ for the identical
+    # pattern with PHP/shell vars. Paperless's own Workflow "Webhook" action (see
     # kubernetes/apps/paperless/paperless-ngx/) must send the SAME secret
     # value as a plain `X-Gitlab-Token` header -- that comparison mode
     # (vs. a computed HMAC signature) is the only one a static, non-
@@ -105,7 +114,7 @@ data:
           port: 8644
           routes:
             paperless-document-added:
-              secret: "${WEBHOOK_SHARED_SECRET}"
+              secret: "$${WEBHOOK_SHARED_SECRET}"
               deliver: telegram
               deliver_only: false
               prompt: |
