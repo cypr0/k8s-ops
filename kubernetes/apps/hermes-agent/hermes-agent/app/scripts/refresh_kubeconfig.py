@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
-"""Refreshes a world-readable kubeconfig at $HOME/.kube/config, embedding
-the pod's own ServiceAccount token/CA inline.
+"""Refreshes a world-readable kubeconfig, embedding this pod's own
+ServiceAccount token/CA inline. Runs on a loop inside the
+`kubeconfig-refresher` sidecar (deployment.yaml), NOT as a hermes cron
+job -- see that container's own comment for the full path history:
 
-Why this exists: Tirith (the terminal tool's security sandbox) runs
-LLM-issued shell commands as a dedicated, unprivileged user with no
-supplementary groups (confirmed live: uid=10000, groups=10000 only).
-Kubernetes' serviceAccountToken projected-volume source ignores
-`defaultMode` and is hard-coded to file mode 0640 root:<fsGroup>
-regardless of what the volume spec requests (a known, longstanding
-kubelet limitation, confirmed by testing several defaultMode values
-against this exact pod) -- so that sandboxed user can never read
-/var/run/secrets/.../token directly, no matter how the volume is
-declared. Runs via `hermes cron create --no-agent --script`, i.e. as
-this main process itself (root, confirmed via this container's own
-securityContext), which CAN read the real, auto-rotating token -- and
-mirrors its current value into a kubeconfig at a path ($HOME/.kube/
-config) that the sandboxed user already has full access to (it's
-inside their own $HOME -- confirmed live via the topic-radar cron's
-state files landing there without issue).
+- hermes's terminal tool / cron scheduler (agent-mode AND --no-agent
+  alike) runs everything as a fixed unprivileged uid (10000, no
+  supplementary groups) once s6-overlay finishes its own root
+  bootstrap -- confirmed live, so nothing hermes-managed can ever read
+  the real token (root:<fsGroup> 0640 -- Kubernetes' own
+  serviceAccountToken projected-volume source hard-codes that mode
+  regardless of requested defaultMode, also confirmed live).
+- The obvious fix target, $HOME/.kube/config, sits under /opt/data,
+  whose root is 0700 owner-only and -- confirmed live -- not even
+  root can chmod it ("Operation not permitted" on this CSI/NFS-backed
+  volume's mount root specifically).
+
+So this writes to a path OUTSIDE /opt/data entirely (a plain emptyDir,
+no such restriction), and a KUBECONFIG env var on the main container
+points kubectl there -- confirmed live that non-PATH env vars (unlike
+PATH itself, which Tirith's sandbox resets to a fixed default) DO
+propagate into sandboxed commands.
 
 The `view`-only, no-Secrets ClusterRole (rbac.yaml) is the actual
 security boundary; this only works around a file-permission
@@ -31,7 +34,7 @@ import sys
 TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 API_SERVER = "https://kubernetes.default.svc"
-KUBECONFIG_PATH = os.path.expanduser("~/.kube/config")
+KUBECONFIG_PATH = os.environ["KUBECONFIG_PATH_OVERRIDE"]
 
 KUBECONFIG_TEMPLATE = """\
 apiVersion: v1
