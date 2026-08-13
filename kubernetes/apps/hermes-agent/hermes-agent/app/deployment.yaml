@@ -67,12 +67,16 @@ spec:
               # -sfn: safe to re-run every pod start.
               mkdir -p /opt/data/platforms
               ln -sfn /opt/data/whatsapp /opt/data/platforms/whatsapp
-              # portfolio_price_check.py: `hermes cron create --script` needs
-              # the file to exist at a real path under HERMES_HOME, not just
-              # in a ConfigMap -- same "seed the PVC from the ConfigMap on
-              # every start" reasoning as config.yaml above.
-              mkdir -p /opt/data/scripts
-              cp /portfolio-script/portfolio_price_check.py /opt/data/scripts/portfolio_price_check.py
+              # portfolio_price_check.py: `hermes cron create --script` only
+              # accepts a path relative to ~/.hermes/scripts/ (confirmed
+              # live: an absolute path, even one under HERMES_HOME, is
+              # rejected with "Script path must be relative to
+              # ~/.hermes/scripts/") -- and "~" here is $HOME
+              # (/opt/data/home per the env var below), NOT $HERMES_HOME,
+              # so this has to land under $HOME/.hermes/scripts, a
+              # different subtree than config.yaml's own bootstrap target.
+              mkdir -p /opt/data/home/.hermes/scripts
+              cp /portfolio-script/portfolio_price_check.py /opt/data/home/.hermes/scripts/portfolio_price_check.py
           env:
             - name: HERMES_HOME
               value: &home /opt/data
