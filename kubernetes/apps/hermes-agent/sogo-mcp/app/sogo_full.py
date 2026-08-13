@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import imaplib
 import logging
+import os
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
@@ -74,13 +75,15 @@ class Tools:
         guessable default for someone else's mail/calendar account."""
 
         SOGO_BASE_URL: str = Field(
-            default="",
+            default_factory=lambda: os.getenv("SOGO_BASE_URL", ""),
             description="e.g. https://<subdomain>.netcup-mail.de (no trailing slash, no /SOGo suffix).",
         )
-        SOGO_USERNAME: str = Field(default="")
-        SOGO_PASSWORD: str = Field(default="")
-        SOGO_IMAP_HOST: str = Field(default="")
-        SOGO_IMAP_PORT: int = Field(default=993)
+        SOGO_USERNAME: str = Field(default_factory=lambda: os.getenv("SOGO_USERNAME", ""))
+        SOGO_PASSWORD: str = Field(default_factory=lambda: os.getenv("SOGO_PASSWORD", ""))
+        SOGO_IMAP_HOST: str = Field(default_factory=lambda: os.getenv("SOGO_IMAP_HOST", ""))
+        SOGO_IMAP_PORT: int = Field(
+            default_factory=lambda: int(os.getenv("SOGO_IMAP_PORT", "993") or "993")
+        )
         REQUEST_TIMEOUT_SECONDS: int = Field(default=30)
         DEFAULT_CALENDAR: str = Field(
             default="personal",
