@@ -254,7 +254,7 @@ spec:
             # from the environment and merges them into the route config
             # config.yaml declares -- see that file's own comment for why
             # the secret specifically MUST come from here, not from a
-            # ${VAR}-templated value inline in config.yaml.
+            # $${VAR}-templated value inline in config.yaml.
             - name: WEBHOOK_ENABLED
               value: "true"
             - name: WEBHOOK_PORT

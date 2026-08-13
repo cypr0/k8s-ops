@@ -92,9 +92,9 @@ data:
     # deployment.yaml) and MUST be set that way instead of inline here:
     # gateway/config.py only ever *merges* WEBHOOK_SECRET into this route's
     # secret as a fallback default (`route.get("secret", self._global_secret)`)
-    # when the route itself has no `secret` key at all -- a literal
-    # "${WEBHOOK_SHARED_SECRET}" placeholder here would NOT get expanded
-    # (confirmed live: hermes-agent's generic `_expand_env_vars` helper
+    # when the route itself has no `secret` key at all -- a templated
+    # env-var placeholder inline here would NOT get expanded (confirmed
+    # live: hermes-agent's generic `_expand_env_vars` helper
     # exists but the gateway's own config-loading path never calls it on
     # platforms.*.extra) and would be used byte-for-byte as the actual
     # HMAC secret, breaking auth silently rather than failing loudly.
