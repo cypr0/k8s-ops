@@ -15,6 +15,23 @@ tool -- quantity/entry_price_eur left NULL). Both get the exact same
 real price history; only the summary line format differs, since a
 watching row has no quantity or entry price to compare against.
 
+Also computes real risk stats per holding from `price_history` itself
+(annualized volatility, max drawdown, geometric-vs-arithmetic
+volatility drag, Sharpe/Sortino with an assumed 0% risk-free rate --
+no external rate feed exists here, this is a deliberate simplification).
+All of it is gated behind MIN_DATA_POINTS: below that, every stat
+prints as "n/a" rather than a number computed from too little history
+to mean anything. This is intentional -- the full set of metrics is
+already wired in now so nothing needs restructuring later, but with
+~40 holdings and a same-day rollout none of them have enough history
+yet to safely influence a recommendation. Portfolio-level metrics that
+need a return-covariance matrix across holdings (Markowitz variance,
+Kelly position sizing) are deliberately NOT included: Kelly assumes a
+repeated bet with a known edge (p/b), which doesn't exist for a
+buy-and-hold stock/ETF portfolio, and a real covariance-matrix
+computation needs months of overlapping history plus numpy -- neither
+is worth scaffolding today with no way to validate it yet.
+
 Deliberately does NOT compose any buy/sell recommendation itself --
 this script is deterministic data plumbing, run via `hermes cron
 create --script` (agent mode, not --no-agent), so its stdout becomes
@@ -26,6 +43,8 @@ Connects to Postgres via the standard PG* environment variables
 (psycopg2.connect() with no arguments reads these automatically).
 """
 
+import math
+import statistics
 import sys
 import time
 import urllib.error
@@ -46,6 +65,71 @@ FX_TICKERS = {
     "USD": "USDEUR=X",
     "HKD": "HKDEUR=X",
 }
+
+# ~3 Kalenderwochen taeglicher Kurspunkte -- darunter ist eine Std.-Abw.-
+# /Sharpe-Schaetzung statistisch nicht belastbar, die Metrik bleibt "n/a"
+# statt eine Zahl mit Schein-Praezision zu liefern. Ein Kurspunkt pro
+# Kalendertag (nicht pro Handelstag): am Wochenende liefert Yahoo den
+# unveraenderten letzten Schlusskurs, was die geschaetzte Volatilitaet
+# leicht nach unten drueckt -- fuer diese grobe Heuristik tolerierbar.
+MIN_DATA_POINTS = 20
+TRADING_PERIODS_PER_YEAR = 365
+
+
+def compute_risk_stats(price_points: list) -> dict | None:
+    """price_points: chronologically ascending EUR closes for one ISIN."""
+    n = len(price_points)
+    if n < MIN_DATA_POINTS:
+        return None
+
+    returns = [
+        price_points[i] / price_points[i - 1] - 1
+        for i in range(1, n)
+        if price_points[i - 1]
+    ]
+    mean_r = statistics.mean(returns)
+    std_r = statistics.stdev(returns)
+
+    total_return = price_points[-1] / price_points[0] - 1
+    geo_annual = (1 + total_return) ** (TRADING_PERIODS_PER_YEAR / len(returns)) - 1
+    arith_annual = (1 + mean_r) ** TRADING_PERIODS_PER_YEAR - 1
+
+    peak = price_points[0]
+    max_dd = 0.0
+    for p in price_points:
+        peak = max(peak, p)
+        if peak:
+            max_dd = min(max_dd, (p - peak) / peak)
+
+    downside = [r for r in returns if r < 0]
+    downside_std = statistics.stdev(downside) if len(downside) > 1 else None
+
+    return {
+        "vol_annual": std_r * math.sqrt(TRADING_PERIODS_PER_YEAR),
+        "max_drawdown": max_dd,
+        "vol_drag": arith_annual - geo_annual,
+        "sharpe": (mean_r / std_r) * math.sqrt(TRADING_PERIODS_PER_YEAR) if std_r > 0 else None,
+        "sortino": (
+            (mean_r / downside_std) * math.sqrt(TRADING_PERIODS_PER_YEAR)
+            if downside_std
+            else None
+        ),
+    }
+
+
+def format_risk_stats(stats: dict | None) -> str:
+    if stats is None:
+        return f"Statistik: n/a (< {MIN_DATA_POINTS} Kurspunkte)"
+    parts = [
+        f"Vol(ann.): {stats['vol_annual'] * 100:.1f}%",
+        f"MaxDD: {stats['max_drawdown'] * 100:.1f}%",
+        f"Drag: {stats['vol_drag'] * 100:+.1f}%",
+    ]
+    if stats["sharpe"] is not None:
+        parts.append(f"Sharpe: {stats['sharpe']:.2f}")
+    if stats["sortino"] is not None:
+        parts.append(f"Sortino: {stats['sortino']:.2f}")
+    return " | ".join(parts)
 
 
 def fetch_yahoo(ticker: str) -> dict:
@@ -156,18 +240,25 @@ def main() -> int:
             f"30T: {f'{pct_30d:+.1f}%' if pct_30d is not None else 'n/a'}"
         )
 
+        cur.execute(
+            "SELECT price_eur FROM price_history WHERE isin = %s ORDER BY fetched_at ASC",
+            (h["isin"],),
+        )
+        price_points = [float(r["price_eur"]) for r in cur.fetchall()]
+        stats_str = format_risk_stats(compute_risk_stats(price_points))
+
         if h["status"] == "watching":
             note = f" -- {h['note']}" if h["note"] else ""
             lines.append(
                 f"[BEOBACHTUNG] {h['name']} [{h['asset_class']}] {h['ticker']}: "
-                f"{price_eur:.2f} EUR | {trend}{note}"
+                f"{price_eur:.2f} EUR | {trend} | {stats_str}{note}"
             )
         else:
             entry = h["entry_price_eur"]
             pct_vs_entry = round((price_eur / float(entry) - 1) * 100, 1) if entry else None
             lines.append(
                 f"{h['name']} [{h['asset_class']}] {h['ticker']}: {price_eur:.2f} EUR "
-                f"(x{h['quantity']}) | vs. Einstieg: {pct_vs_entry:+.1f}% | {trend}"
+                f"(x{h['quantity']}) | vs. Einstieg: {pct_vs_entry:+.1f}% | {trend} | {stats_str}"
             )
         time.sleep(0.2)  # be a polite, unhurried caller -- this is a once-daily job
 
