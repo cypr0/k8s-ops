@@ -51,6 +51,7 @@ from __future__ import annotations
 import imaplib
 import logging
 import os
+import re
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
@@ -67,6 +68,13 @@ logger = logging.getLogger(__name__)
 
 _DAV_NS = "DAV:"
 _CALDAV_NS = "urn:ietf:params:xml:ns:caldav"
+
+# RFC 3501 mailbox-list untagged response: (flags) delimiter name -- name
+# and delimiter are each EITHER a quoted string or a bare atom (confirmed
+# live: this server mixes both forms, e.g. `"Sent Messages"` vs. `INBOX`
+# in the very same LIST response), so a naive quote-count split breaks on
+# the bare-atom entries.
+_IMAP_LIST_RE = re.compile(r'^\([^)]*\)\s+(?:"[^"]*"|\S+)\s+(?P<name>".*"|\S+)$')
 
 
 class Tools:
@@ -383,9 +391,13 @@ class Tools:
                 return str({"error": f"IMAP LIST failed: {folders}"})
             names = []
             for raw in folders:
-                # RFC 3501 mailbox-list: (flags) "delimiter" "name"
                 decoded = raw.decode(errors="replace") if isinstance(raw, bytes) else raw
-                name = decoded.rsplit('"', 2)[-2] if '"' in decoded else decoded.split()[-1]
+                m = _IMAP_LIST_RE.match(decoded)
+                if not m:
+                    continue
+                name = m.group("name")
+                if name.startswith('"') and name.endswith('"'):
+                    name = name[1:-1]
                 names.append(name)
             return str({"folders": names})
         finally:
