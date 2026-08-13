@@ -126,9 +126,10 @@ data:
                 1. get_document(document_id={document_id}) für Volltext + Metadaten
                    (NICHT get_document_type/_metadata/_notes/_version).
                 2. list_custom_fields(), um die aktuellen IDs der Felder
-                   "Rechnungsbetrag" (existiert bereits, NICHT neu anlegen),
-                   "faelligkeitsdatum", "vertragsende" und "kuendigungsfrist_datum"
-                   nachzuschlagen -- IDs nicht raten, immer frisch nachschlagen.
+                   "Rechnungsbetrag" und "Steuerjahr" (beide existieren bereits,
+                   NICHT neu anlegen), "faelligkeitsdatum", "vertragsende" und
+                   "kuendigungsfrist_datum" nachzuschlagen -- IDs nicht raten,
+                   immer frisch nachschlagen.
                 3. Extrahiere, falls jeweils zutreffend (sonst weglassen, nicht raten):
                    - Rechnungsbetrag: Rechnungsbetrag als Zahl (nur bei Rechnungen)
                    - faelligkeitsdatum: Fälligkeitsdatum, Format YYYY-MM-DD (nur bei Rechnungen)
@@ -136,6 +137,13 @@ data:
                    - kuendigungsfrist_datum: spätestes Datum für eine fristgerechte
                      Kündigung, berechnet aus der im Dokument genannten Kündigungsfrist
                      und vertragsende (nur bei Verträgen/Abos mit erkennbarer Frist)
+                   - Steuerjahr: das Kalenderjahr, dem das Dokument steuerlich
+                     zuzuordnen ist, als Zahl (z.B. 2026) -- bei praktisch jedem
+                     Dokument mit erkennbarem Bezugsjahr sinnvoll (nicht nur
+                     Rechnungen/Verträge), i.d.R. das Jahr des Dokumentendatums;
+                     bei erkennbar rückwirkendem Bezug (z.B. Jahresabrechnung für
+                     das VORJAHR) das tatsächlich betroffene Jahr nehmen, nicht
+                     das Dokumentendatum
                 4. Schreibe die zutreffenden Felder per update_document(document_id=...,
                    custom_fields=[...]) zurück (NICHT update_document_type/_version) --
                    nur die neu erkannten Werte, andere bereits gesetzte Custom Fields
