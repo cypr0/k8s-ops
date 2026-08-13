@@ -67,7 +67,7 @@ spec:
                 name text NOT NULL,
                 asset_class text,
                 ticker text,
-                quantity numeric NOT NULL,
+                quantity numeric,
                 entry_price_eur numeric,
                 last_price_native numeric,
                 last_price_currency text,
@@ -77,6 +77,28 @@ spec:
                 added_at timestamptz NOT NULL DEFAULT now(),
                 updated_at timestamptz NOT NULL DEFAULT now()
               );
+
+              -- Despite the table name, a row isn't necessarily an owned
+              -- position: 'watching' rows (quantity/entry_price_eur left
+              -- NULL) are candidate ideas the agent itself added after
+              -- researching a fit with the existing portfolio -- tracked
+              -- with the exact same real price history as owned holdings,
+              -- rather than being a one-off, unverifiable LLM suggestion
+              -- re-invented from scratch on every cron run. The agent adds
+              -- these itself via its terminal toolset (psycopg2, same
+              -- PG* env vars this Job uses) -- no separate tool/table
+              -- needed. ALTER COLUMN DROP NOT NULL / ADD COLUMN IF NOT
+              -- EXISTS are themselves idempotent, safe on a table that
+              -- already has 39 real rows from before this column existed.
+              ALTER TABLE holdings ALTER COLUMN quantity DROP NOT NULL;
+              ALTER TABLE holdings ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'owned';
+              ALTER TABLE holdings ADD COLUMN IF NOT EXISTS note text;
+              DO $tag$ BEGIN
+                ALTER TABLE holdings ADD CONSTRAINT holdings_status_check
+                  CHECK (status IN ('owned', 'watching'));
+              EXCEPTION
+                WHEN duplicate_object THEN null;
+              END $tag$;
 
               -- price_eur is the comparable value across holdings/time --
               -- converted from whatever native currency+quirk Yahoo

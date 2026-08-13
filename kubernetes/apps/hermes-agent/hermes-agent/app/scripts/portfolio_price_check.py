@@ -8,6 +8,13 @@ specific mixed-currency, ISIN-heavy portfolio), converts everything to
 EUR, records it in `price_history`, and prints a plain-text summary to
 stdout.
 
+`holdings` covers two kinds of rows via `status`: 'owned' (real
+positions, quantity/entry_price_eur set) and 'watching' (candidate new
+investments the agent researched and inserted itself via its terminal
+tool -- quantity/entry_price_eur left NULL). Both get the exact same
+real price history; only the summary line format differs, since a
+watching row has no quantity or entry price to compare against.
+
 Deliberately does NOT compose any buy/sell recommendation itself --
 this script is deterministic data plumbing, run via `hermes cron
 create --script` (agent mode, not --no-agent), so its stdout becomes
@@ -86,8 +93,8 @@ def main() -> int:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     cur.execute(
-        "SELECT isin, name, asset_class, ticker, quantity, entry_price_eur "
-        "FROM holdings WHERE active = true AND ticker IS NOT NULL ORDER BY name"
+        "SELECT isin, name, asset_class, ticker, quantity, entry_price_eur, status, note "
+        "FROM holdings WHERE active = true AND ticker IS NOT NULL ORDER BY status, name"
     )
     holdings = cur.fetchall()
     if not holdings:
@@ -138,21 +145,30 @@ def main() -> int:
         )
         row_30d = cur.fetchone()
 
-        entry = h["entry_price_eur"]
-        pct_vs_entry = round((price_eur / float(entry) - 1) * 100, 1) if entry else None
         pct_7d = (
             round((price_eur / float(row_7d["price_eur"]) - 1) * 100, 1) if row_7d else None
         )
         pct_30d = (
             round((price_eur / float(row_30d["price_eur"]) - 1) * 100, 1) if row_30d else None
         )
-
-        lines.append(
-            f"{h['name']} [{h['asset_class']}] {h['ticker']}: {price_eur:.2f} EUR "
-            f"(x{h['quantity']}) | vs. Einstieg: {pct_vs_entry:+.1f}% | "
+        trend = (
             f"7T: {f'{pct_7d:+.1f}%' if pct_7d is not None else 'n/a'} | "
             f"30T: {f'{pct_30d:+.1f}%' if pct_30d is not None else 'n/a'}"
         )
+
+        if h["status"] == "watching":
+            note = f" -- {h['note']}" if h["note"] else ""
+            lines.append(
+                f"[BEOBACHTUNG] {h['name']} [{h['asset_class']}] {h['ticker']}: "
+                f"{price_eur:.2f} EUR | {trend}{note}"
+            )
+        else:
+            entry = h["entry_price_eur"]
+            pct_vs_entry = round((price_eur / float(entry) - 1) * 100, 1) if entry else None
+            lines.append(
+                f"{h['name']} [{h['asset_class']}] {h['ticker']}: {price_eur:.2f} EUR "
+                f"(x{h['quantity']}) | vs. Einstieg: {pct_vs_entry:+.1f}% | {trend}"
+            )
         time.sleep(0.2)  # be a polite, unhurried caller -- this is a once-daily job
 
     cur.close()
