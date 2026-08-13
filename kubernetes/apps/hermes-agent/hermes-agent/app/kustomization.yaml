@@ -7,6 +7,7 @@ resources:
   - ./serviceaccount.yaml
   - ./pvc.yaml
   - ./configmap.yaml
+  - ./job-portfolio-schema.yaml
   - ./deployment.yaml
   - ./service.yaml
   - ./rbac.yaml
@@ -19,7 +20,9 @@ resources:
 # The trading bot (BTC/ETH paper-trading simulation) that used to live here
 # -- scripts, cron jobs, its own Postgres DB, and the OpenSearch/Grafana
 # dashboards feeding off it -- was deprovisioned (2026-08-12): didn't work
-# well enough to be worth keeping running, and the project will be
-# revisited with a different approach later. Its Postgres database/roles
+# well enough to be worth keeping running. Its Postgres database/roles
 # were fully dropped the same day, see kubernetes/apps/database/
-# cloudnative-pg/cluster/cluster.yaml's managed.roles comment.
+# cloudnative-pg/cluster/cluster.yaml's managed.roles comment. Revisited
+# (2026-08-13) as a real-portfolio price-tracking cron instead of paper-
+# trading -- see job-portfolio-schema.yaml and deployment.yaml's
+# tools-install init container (portfolio cron script).

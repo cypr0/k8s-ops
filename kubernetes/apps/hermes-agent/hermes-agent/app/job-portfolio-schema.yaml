@@ -1,0 +1,110 @@
+---
+# Applies the portfolio-tracking schema (holdings, price_history,
+# recommendations_log) to the "portfolio" database on the shared CNPG
+# cluster (see kubernetes/apps/database/cloudnative-pg/databases/
+# database-portfolio.yaml/externalsecret-portfolio.yaml for the managed
+# role). Every statement is idempotent (IF NOT EXISTS), so re-running on
+# every content change (see the force annotation below) is safe. No
+# dollar-quoted PL/pgSQL blocks anywhere in this file on purpose --
+# kubelet's own $(VAR) expansion over command/args unconditionally
+# collapses "$$" to a literal "$" before exec, which silently breaks
+# Postgres dollar-quoting (confirmed the hard way in firecrawl's
+# job-nuq-schema.yaml -- see that file's own comment). Plain
+# CREATE TABLE/INDEX IF NOT EXISTS statements need no such quoting at all.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hermes-agent-portfolio-schema
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: apply-schema
+          image: postgres:18-alpine
+          env:
+            - name: PGHOST
+              value: postgres-rw.database.svc.cluster.local
+            - name: PGDATABASE
+              value: portfolio
+            - name: PGUSER
+              value: portfoliousr
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-agent-secrets
+                  key: PORTFOLIO_DB_PASSWORD
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          command:
+            - "sh"
+            - "-c"
+          args:
+            - |
+              set -eu
+              psql -v ON_ERROR_STOP=1 <<'SQL'
+              CREATE TABLE IF NOT EXISTS holdings (
+                id serial PRIMARY KEY,
+                isin text UNIQUE NOT NULL,
+                wkn text,
+                name text NOT NULL,
+                asset_class text,
+                ticker text,
+                quantity numeric NOT NULL,
+                entry_price_eur numeric,
+                last_price_native numeric,
+                last_price_currency text,
+                last_price_eur numeric,
+                last_price_at timestamptz,
+                active boolean NOT NULL DEFAULT true,
+                added_at timestamptz NOT NULL DEFAULT now(),
+                updated_at timestamptz NOT NULL DEFAULT now()
+              );
+
+              -- price_eur is the comparable value across holdings/time --
+              -- converted from whatever native currency+quirk Yahoo
+              -- reports (GBp is pence, /100 before FX; HKD/USD via a same-
+              -- run FX snapshot). price_native/currency_native are kept
+              -- for reference/debugging, not for direct cross-holding math.
+              CREATE TABLE IF NOT EXISTS price_history (
+                id bigserial PRIMARY KEY,
+                isin text NOT NULL REFERENCES holdings(isin) ON DELETE CASCADE,
+                price_native numeric NOT NULL,
+                currency_native text NOT NULL,
+                price_eur numeric NOT NULL,
+                fetched_at timestamptz NOT NULL DEFAULT now()
+              );
+
+              CREATE INDEX IF NOT EXISTS idx_price_history_isin_fetched
+                ON price_history (isin, fetched_at DESC);
+
+              CREATE TABLE IF NOT EXISTS recommendations_log (
+                id bigserial PRIMARY KEY,
+                isin text REFERENCES holdings(isin) ON DELETE SET NULL,
+                action text,
+                rationale text,
+                created_at timestamptz NOT NULL DEFAULT now()
+              );
+
+              SELECT 'portfolio schema applied OK' AS result;
+              SQL
+      volumes:
+        - name: tmp
+          emptyDir: {}
