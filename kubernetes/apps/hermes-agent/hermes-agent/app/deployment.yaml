@@ -387,6 +387,8 @@ spec:
               mountPath: /tmp
             - name: dshm
               mountPath: /dev/shm
+            - name: kube-dir
+              mountPath: /opt/data/home/.kube
         # Mirrors this pod's own ServiceAccount token into a world-readable
         # kubeconfig at $HOME/.kube/config, refreshed every 15 minutes.
         # Why a separate container, not a hermes cron job: confirmed live
@@ -401,6 +403,14 @@ spec:
         # confirmed live, see git history on this file for both dead
         # ends). This sidecar runs as uid/gid 1000 -- ordinary group-read
         # access to the 0640 token is enough, no root needed here either.
+        # Does NOT mount the `data` PVC: /opt/data itself is 0700, owned
+        # solely by uid 10000 (confirmed live) -- no group or other bits
+        # at all, so no other uid could ever traverse into it regardless
+        # of group membership. The `kube-dir` emptyDir mounted at exactly
+        # /opt/data/home/.kube (shared with the main container below)
+        # shadows just that one subpath with independent permissions,
+        # sidestepping the PVC root's restriction entirely rather than
+        # trying to loosen it.
         - name: kubeconfig-refresher
           image: *image
           command:
@@ -417,8 +427,8 @@ spec:
             - name: HOME
               value: /opt/data/home
           volumeMounts:
-            - name: data
-              mountPath: /opt/data
+            - name: kube-dir
+              mountPath: /opt/data/home/.kube
             - name: refresh-kubeconfig-script
               mountPath: /refresh-kubeconfig-script
               readOnly: true
@@ -463,4 +473,9 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 1Gi
+        # Shadows /opt/data/home/.kube specifically -- see the
+        # kubeconfig-refresher container's own comment for why.
+        - name: kube-dir
+          emptyDir:
+            sizeLimit: 16Mi
       terminationGracePeriodSeconds: 120
