@@ -346,7 +346,16 @@ class Tools:
     # IMAP (read-only)
     # ==================================================================
     def _imap_connect(self):
-        conn = imaplib.IMAP4_SSL(self.valves.SOGO_IMAP_HOST, self.valves.SOGO_IMAP_PORT)
+        # Port 993 is implicit-TLS (wrap the socket in TLS before any IMAP
+        # traffic); anything else (this Netcup account uses 143) is
+        # plaintext-then-upgrade via STARTTLS. Confirmed live: IMAP4_SSL
+        # against this account's port 143 doesn't speak TLS at connect time
+        # at all and just hangs/fails the handshake.
+        if self.valves.SOGO_IMAP_PORT == 993:
+            conn = imaplib.IMAP4_SSL(self.valves.SOGO_IMAP_HOST, self.valves.SOGO_IMAP_PORT)
+        else:
+            conn = imaplib.IMAP4(self.valves.SOGO_IMAP_HOST, self.valves.SOGO_IMAP_PORT)
+            conn.starttls()
         conn.login(self.valves.SOGO_USERNAME, self.valves.SOGO_PASSWORD)
         return conn
 
