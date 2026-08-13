@@ -102,9 +102,19 @@ class Tools:
             return f"Missing required config: {', '.join(missing)} (set as env vars / Valves)."
         return None
 
+    def _base_url(self) -> str:
+        # Netcup's own docs show the URL WITH the "/SOGo" suffix already
+        # (https://.../SOGo/dav) -- accept that form too rather than
+        # relying on the config having exactly one specific shape, since
+        # _calendar_home() always appends "/SOGo/dav/..." itself.
+        url = self.valves.SOGO_BASE_URL.rstrip("/")
+        if url.lower().endswith("/sogo"):
+            url = url[: -len("/sogo")]
+        return url
+
     def _dav_client(self) -> httpx.Client:
         return httpx.Client(
-            base_url=self.valves.SOGO_BASE_URL.rstrip("/"),
+            base_url=self._base_url(),
             auth=(self.valves.SOGO_USERNAME, self.valves.SOGO_PASSWORD),
             timeout=self.valves.REQUEST_TIMEOUT_SECONDS,
         )
