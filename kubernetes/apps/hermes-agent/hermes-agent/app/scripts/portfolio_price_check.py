@@ -38,7 +38,6 @@ FX_TICKERS = {
     "GBP": "GBPEUR=X",
     "USD": "USDEUR=X",
     "HKD": "HKDEUR=X",
-    "CNH": "CNHEUR=X",
 }
 
 
