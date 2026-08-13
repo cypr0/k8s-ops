@@ -24,6 +24,9 @@ configMapGenerator:
   - name: hermes-agent-portfolio-script
     files:
       - scripts/portfolio_price_check.py
+  - name: hermes-agent-cluster-health-script
+    files:
+      - scripts/cluster_health_check.py
 
 generatorOptions:
   disableNameSuffixHash: false

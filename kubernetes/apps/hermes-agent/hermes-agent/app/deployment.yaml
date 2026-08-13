@@ -77,6 +77,7 @@ spec:
               # different subtree than config.yaml's own bootstrap target.
               mkdir -p /opt/data/home/.hermes/scripts
               cp /portfolio-script/portfolio_price_check.py /opt/data/home/.hermes/scripts/portfolio_price_check.py
+              cp /cluster-health-script/cluster_health_check.py /opt/data/home/.hermes/scripts/cluster_health_check.py
           env:
             - name: HERMES_HOME
               value: &home /opt/data
@@ -88,6 +89,9 @@ spec:
               readOnly: true
             - name: portfolio-script
               mountPath: /portfolio-script
+              readOnly: true
+            - name: cluster-health-script
+              mountPath: /cluster-health-script
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -358,6 +362,9 @@ spec:
         - name: portfolio-script
           configMap:
             name: hermes-agent-portfolio-script
+        - name: cluster-health-script
+          configMap:
+            name: hermes-agent-cluster-health-script
         - name: tmp
           emptyDir: {}
         # Browser tool uses shared memory for headless rendering.
