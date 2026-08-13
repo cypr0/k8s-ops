@@ -100,3 +100,15 @@ spec:
         - ports:
             - port: "3002"
               protocol: TCP
+    # Shared Postgres cluster (kubernetes/apps/database/cloudnative-pg/) --
+    # job-portfolio-schema.yaml's one-shot init Job and the
+    # portfolio_price_check.py cron script (main container, psycopg2) both
+    # connect directly, following the established "any pod can reach the
+    # shared cluster" loose pattern already used elsewhere in this repo.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP

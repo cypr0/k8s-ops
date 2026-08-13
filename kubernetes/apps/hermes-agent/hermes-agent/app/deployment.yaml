@@ -67,6 +67,12 @@ spec:
               # -sfn: safe to re-run every pod start.
               mkdir -p /opt/data/platforms
               ln -sfn /opt/data/whatsapp /opt/data/platforms/whatsapp
+              # portfolio_price_check.py: `hermes cron create --script` needs
+              # the file to exist at a real path under HERMES_HOME, not just
+              # in a ConfigMap -- same "seed the PVC from the ConfigMap on
+              # every start" reasoning as config.yaml above.
+              mkdir -p /opt/data/scripts
+              cp /portfolio-script/portfolio_price_check.py /opt/data/scripts/portfolio_price_check.py
           env:
             - name: HERMES_HOME
               value: &home /opt/data
@@ -75,6 +81,9 @@ spec:
               mountPath: /opt/data
             - name: bootstrap
               mountPath: /bootstrap
+              readOnly: true
+            - name: portfolio-script
+              mountPath: /portfolio-script
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -279,6 +288,21 @@ spec:
                 secretKeyRef:
                   name: hermes-agent-secrets
                   key: WEBHOOK_SHARED_SECRET
+            # portfolio_price_check.py (cron script) connects via psycopg2.
+            # connect() with no arguments, which reads these standard PG*
+            # vars automatically -- no need to wire them through the
+            # script's own argv/config.
+            - name: PGHOST
+              value: "postgres-rw.database.svc.cluster.local"
+            - name: PGDATABASE
+              value: "portfolio"
+            - name: PGUSER
+              value: "portfoliousr"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hermes-agent-secrets
+                  key: PORTFOLIO_DB_PASSWORD
             - name: DISCORD_ALLOWED_USERS
               value: ""
             - name: DISCORD_HOME_CHANNEL
@@ -327,6 +351,9 @@ spec:
         - name: bootstrap
           configMap:
             name: hermes-agent-config
+        - name: portfolio-script
+          configMap:
+            name: hermes-agent-portfolio-script
         - name: tmp
           emptyDir: {}
         # Browser tool uses shared memory for headless rendering.

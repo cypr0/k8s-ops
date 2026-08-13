@@ -12,17 +12,32 @@ resources:
   - ./service.yaml
   - ./rbac.yaml
   - ./ciliumnetworkpolicy.yaml
-# No chart, no GitRepository/HelmRelease: hand-rolled instead of depending
-# on ultraworkers/hermes-agent-helm-chart (young, unofficial, and both its
-# default image tag and its ExternalSecret apiVersion were wrong on first
-# real deploy). See deployment.yaml for details.
-#
-# The trading bot (BTC/ETH paper-trading simulation) that used to live here
-# -- scripts, cron jobs, its own Postgres DB, and the OpenSearch/Grafana
-# dashboards feeding off it -- was deprovisioned (2026-08-12): didn't work
-# well enough to be worth keeping running. Its Postgres database/roles
-# were fully dropped the same day, see kubernetes/apps/database/
-# cloudnative-pg/cluster/cluster.yaml's managed.roles comment. Revisited
-# (2026-08-13) as a real-portfolio price-tracking cron instead of paper-
-# trading -- see job-portfolio-schema.yaml and deployment.yaml's
-# tools-install init container (portfolio cron script).
+
+# Content-hash-suffixed, same rationale as firecrawl-mcp/sogo-mcp/
+# nextcloud-mcp's script ConfigMaps: any change to the actual .py file
+# changes the ConfigMap name, which changes the Deployment's volume
+# reference, which triggers a real rollout automatically -- generating
+# it straight from the file (instead of embedding its text inline in
+# configmap.yaml, which was the first draft here) also means there's
+# only ONE copy of the script to keep in sync, not two.
+configMapGenerator:
+  - name: hermes-agent-portfolio-script
+    files:
+      - scripts/portfolio_price_check.py
+
+generatorOptions:
+  disableNameSuffixHash: false
+  # No chart, no GitRepository/HelmRelease: hand-rolled instead of depending
+  # on ultraworkers/hermes-agent-helm-chart (young, unofficial, and both its
+  # default image tag and its ExternalSecret apiVersion were wrong on first
+  # real deploy). See deployment.yaml for details.
+  #
+  # The trading bot (BTC/ETH paper-trading simulation) that used to live here
+  # -- scripts, cron jobs, its own Postgres DB, and the OpenSearch/Grafana
+  # dashboards feeding off it -- was deprovisioned (2026-08-12): didn't work
+  # well enough to be worth keeping running. Its Postgres database/roles
+  # were fully dropped the same day, see kubernetes/apps/database/
+  # cloudnative-pg/cluster/cluster.yaml's managed.roles comment. Revisited
+  # (2026-08-13) as a real-portfolio price-tracking cron instead of paper-
+  # trading -- see job-portfolio-schema.yaml and deployment.yaml's
+  # tools-install init container (portfolio cron script).
