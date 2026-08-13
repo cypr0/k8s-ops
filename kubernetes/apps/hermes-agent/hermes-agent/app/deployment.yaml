@@ -56,6 +56,17 @@ spec:
           args:
             - |
               set -eu
+              # /opt/data itself is 0700 owner-only (confirmed live -- likely
+              # just whatever hermes's own first-ever write to a fresh PVC
+              # happened to create it as; group is already 1000, matching
+              # fsGroup, just without the execute bit). The kubeconfig-
+              # refresher sidecar (gid 1000) needs to TRAVERSE this directory
+              # to reach the emptyDir shadow-mounted at /opt/data/home/.kube
+              # -- g+x only, no read/write, keeps everything else under here
+              # exactly as protected as before. -R not used on purpose: this
+              # must stay a cheap, idempotent, every-boot no-op once set, not
+              # a recursive walk of the whole (multi-GB, many-file) volume.
+              chmod g+x /opt/data
               mkdir -p /opt/data/home
               cp /bootstrap/config.yaml /opt/data/config.yaml
               # The `hermes whatsapp` pairing CLI writes its session to
