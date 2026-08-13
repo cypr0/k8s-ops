@@ -250,8 +250,16 @@ spec:
                   name: hermes-agent-secrets
                   key: TELEGRAM_CHAT_ID
             # In-cluster webhook platform (config.yaml's platforms.webhook) --
-            # see that config's own comment for the full picture.
-            - name: WEBHOOK_SHARED_SECRET
+            # gateway/config.py reads WEBHOOK_ENABLED/_PORT/_SECRET directly
+            # from the environment and merges them into the route config
+            # config.yaml declares -- see that file's own comment for why
+            # the secret specifically MUST come from here, not from a
+            # ${VAR}-templated value inline in config.yaml.
+            - name: WEBHOOK_ENABLED
+              value: "true"
+            - name: WEBHOOK_PORT
+              value: "8644"
+            - name: WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
                   name: hermes-agent-secrets

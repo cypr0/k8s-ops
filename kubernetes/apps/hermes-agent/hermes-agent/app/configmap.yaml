@@ -87,34 +87,26 @@ data:
         language: ""
     # In-cluster-only webhook receiver (service.yaml exposes port 8644,
     # ciliumnetworkpolicy.yaml restricts ingress to paperless-ngx's pod).
-    # `routes` has no env-var equivalent (only enabled/host/port/secret do)
-    # so the whole platforms.webhook block lives here rather than split
-    # across config.yaml + deployment.yaml like WhatsApp/Telegram are.
-    # secret uses $${VAR} substitution (confirmed supported by hermes-agent's
-    # own config loader) so the actual value stays in the ExternalSecret,
-    # not committed here. Written as $${VAR} (double $) below: this
-    # Kustomization's ks.yaml has postBuild.substituteFrom: cluster-secrets,
-    # and Flux's OWN envsubst pass runs in strict mode over every resource
-    # under this path BEFORE it ever reaches hermes-agent's Python config
-    # loader -- a single, unescaped "$" + "{WEBHOOK_SHARED_SECRET}" would make Flux itself
-    # try (and fail: "variable not set (strict mode)") to resolve it from
-    # cluster-secrets, blocking the WHOLE Kustomization's apply, not just
-    # this field. $$ is Flux's own escape for a literal "$" it should leave
-    # alone -- see kubernetes/apps/nextcloud/nextcloud/ for the identical
-    # pattern with PHP/shell vars. Paperless's own Workflow "Webhook" action (see
-    # kubernetes/apps/paperless/paperless-ngx/) must send the SAME secret
-    # value as a plain `X-Gitlab-Token` header -- that comparison mode
-    # (vs. a computed HMAC signature) is the only one a static, non-
-    # computed header value can satisfy.
+    # `routes` has no env-var equivalent, so it's declared here -- but
+    # `enabled`/`port`/`secret` DO have one (WEBHOOK_ENABLED/_PORT/_SECRET,
+    # deployment.yaml) and MUST be set that way instead of inline here:
+    # gateway/config.py only ever *merges* WEBHOOK_SECRET into this route's
+    # secret as a fallback default (`route.get("secret", self._global_secret)`)
+    # when the route itself has no `secret` key at all -- a literal
+    # "${WEBHOOK_SHARED_SECRET}" placeholder here would NOT get expanded
+    # (confirmed live: hermes-agent's generic `_expand_env_vars` helper
+    # exists but the gateway's own config-loading path never calls it on
+    # platforms.*.extra) and would be used byte-for-byte as the actual
+    # HMAC secret, breaking auth silently rather than failing loudly.
+    # Paperless's own Workflow "Webhook" action (kubernetes/apps/paperless/
+    # paperless-ngx/) sends this same secret back as a plain `X-Gitlab-Token`
+    # header -- that comparison mode (vs. a computed HMAC signature) is the
+    # only one a static, non-computed header value can satisfy.
     platforms:
       webhook:
-        enabled: true
         extra:
-          host: "0.0.0.0"
-          port: 8644
           routes:
             paperless-document-added:
-              secret: "$${WEBHOOK_SHARED_SECRET}"
               deliver: telegram
               deliver_only: false
               prompt: |
