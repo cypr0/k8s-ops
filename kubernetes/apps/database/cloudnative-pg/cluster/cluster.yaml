@@ -103,14 +103,21 @@ spec:
         inherit: true
         passwordSecret:
           name: firecrawl-db-role
+      - name: portfoliousr
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        passwordSecret:
+          name: portfolio-db-role
 
   # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned -- see
   # kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml) were
-  # removed from managed.roles above on 2026-08-12. Removing a role from that
-  # list only makes CNPG stop MANAGING it -- it does NOT drop the role or its
-  # data (that needs `ensure: absent`, not just deletion from the list) -- so
-  # the "trading" database/roles/data are still live in Postgres, just
-  # unmanaged by IaC now, in case they're still useful later.
+  # removed from managed.roles above on 2026-08-12, and the "trading"
+  # database + both roles were fully DROPPED the same day (not just
+  # unmanaged) -- nothing left to clean up if this ever comes up again.
   monitoring:
     enablePodMonitor: true
 
