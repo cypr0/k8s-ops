@@ -27,6 +27,9 @@ configMapGenerator:
   - name: hermes-agent-cluster-health-script
     files:
       - scripts/cluster_health_check.py
+  - name: hermes-agent-refresh-kubeconfig-script
+    files:
+      - scripts/refresh_kubeconfig.py
 
 generatorOptions:
   disableNameSuffixHash: false

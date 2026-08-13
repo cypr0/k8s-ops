@@ -33,21 +33,7 @@ spec:
         app.kubernetes.io/name: hermes-agent
     spec:
       serviceAccountName: hermes-agent
-      # false here, but NOT "no token" -- an explicit serviceAccountToken
-      # projected volume replaces the auto-mounted one below (same volume
-      # kubelet would inject anyway, same automatic rotation), only with a
-      # custom defaultMode. Needed because the auto-mounted token defaults
-      # to 0640 root:<fsGroup> -- fine for this container's own root
-      # process, but unreadable ("permission denied", confirmed live) to
-      # Tirith's terminal-tool sandbox, which runs LLM-issued commands as
-      # a dedicated uid=10000 with NO supplementary groups (so it never
-      # gets fsGroup's usual group-read access either). rbac.yaml's own
-      # comment states the intent -- "lets the agent's own kubectl answer
-      # 'what's the cluster status'" -- which the file-permission default
-      # broke without anyone deciding it should. The `view`-only, no-
-      # Secrets ClusterRole (rbac.yaml) is the actual security boundary
-      # here, not this file's mode bit.
-      automountServiceAccountToken: false
+      automountServiceAccountToken: true
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
@@ -103,6 +89,7 @@ spec:
               # documented in `hermes cron create --help`.
               mkdir -p /opt/data/scripts
               cp /cluster-health-script/cluster_health_check.py /opt/data/scripts/cluster_health_check.py
+              cp /refresh-kubeconfig-script/refresh_kubeconfig.py /opt/data/scripts/refresh_kubeconfig.py
           env:
             - name: HERMES_HOME
               value: &home /opt/data
@@ -117,6 +104,9 @@ spec:
               readOnly: true
             - name: cluster-health-script
               mountPath: /cluster-health-script
+              readOnly: true
+            - name: refresh-kubeconfig-script
+              mountPath: /refresh-kubeconfig-script
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -401,9 +391,6 @@ spec:
               mountPath: /tmp
             - name: dshm
               mountPath: /dev/shm
-            - name: kube-api-access
-              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -417,6 +404,9 @@ spec:
         - name: cluster-health-script
           configMap:
             name: hermes-agent-cluster-health-script
+        - name: refresh-kubeconfig-script
+          configMap:
+            name: hermes-agent-refresh-kubeconfig-script
         - name: tmp
           emptyDir: {}
         # Browser tool uses shared memory for headless rendering.
@@ -424,28 +414,4 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 1Gi
-        # Same shape kubelet auto-injects (confirmed via `kubectl describe
-        # pod`: a projected volume with a serviceAccountToken + the
-        # kube-root-ca.crt ConfigMap + a namespace downwardAPI item) --
-        # declared explicitly only so defaultMode can be widened to 0644
-        # (see automountServiceAccountToken comment above). Token rotation
-        # is a property of the serviceAccountToken source type itself, not
-        # of auto- vs. explicit-injection, so this stays just as fresh.
-        - name: kube-api-access
-          projected:
-            defaultMode: 0644
-            sources:
-              - serviceAccountToken:
-                  expirationSeconds: 3607
-                  path: token
-              - configMap:
-                  name: kube-root-ca.crt
-                  items:
-                    - key: ca.crt
-                      path: ca.crt
-              - downwardAPI:
-                  items:
-                    - path: namespace
-                      fieldRef:
-                        fieldPath: metadata.namespace
       terminationGracePeriodSeconds: 120
