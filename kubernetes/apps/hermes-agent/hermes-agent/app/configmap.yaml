@@ -117,6 +117,10 @@ data:
                 z.B. "get_document" vs. "get_document_type"/"_metadata"/"_notes"/"_version"
                 -- bei mehrdeutigen Treffern IMMER den kürzesten, exakt passenden Namen ohne
                 Suffix wählen, notfalls tool_search mit höherem limit erneut aufrufen).
+                WICHTIG beim Aufruf von tool_call: das Argument-Objekt MUSS unter dem
+                Schlüssel "arguments" übergeben werden, NICHT "parameters" -- sonst werden
+                die Werte stillschweigend verworfen und Pflichtfelder (z.B. document_id)
+                kommen leer an, ohne dass ein Fehler das sofort erkennen lässt.
 
                 Nutze die paperless-mcp-Tools:
                 1. get_document(document_id={document_id}) für Volltext + Metadaten
