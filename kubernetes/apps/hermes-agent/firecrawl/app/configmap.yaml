@@ -13,7 +13,14 @@ metadata:
   name: firecrawl-config
 data:
   HOST: "0.0.0.0"
-  PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service:3000"
+  # app-template names Services "<release>-<service-key>" when a release has
+  # multiple Services (verified live on this exact chart digest in the
+  # hypersonica-cluster repo's own Firecrawl deployment) -- so this release's
+  # "playwright-service" key produces Service "firecrawl-playwright-service",
+  # not bare "playwright-service". Latent bug fixed alongside the
+  # open-webui/firecrawl cutover; likely silently broke JS-rendered scraping
+  # since this was first deployed.
+  PLAYWRIGHT_MICROSERVICE_URL: "http://firecrawl-playwright-service:3000"
   USE_DB_AUTHENTICATION: "false"
   ENV: "production"
   LOGGING_LEVEL: "INFO"

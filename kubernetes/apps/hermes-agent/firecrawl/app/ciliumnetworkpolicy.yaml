@@ -1,7 +1,8 @@
 ---
 # Firecrawl is fully internal: no HTTPRoute, USE_DB_AUTHENTICATION=false on
 # the API itself, so network isolation via CNP is the actual access control
-# here -- only hermes-agent may reach the api service on :3002.
+# here -- only hermes-agent and open-webui (kubernetes/apps/open-webui/
+# open-webui/, its web search backend) may reach the api service on :3002.
 #
 # One combined policy for all four app-template controllers (api/worker/
 # nuq-worker/playwright-service), matched by the shared
@@ -24,6 +25,16 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": hermes-agent
             app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "3002"
+              protocol: TCP
+    # open-webui's web search backend (kubernetes/apps/open-webui/open-webui/) --
+    # same target label set hermes-agent's own CNP already relies on.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
       toPorts:
         - ports:
             - port: "3002"

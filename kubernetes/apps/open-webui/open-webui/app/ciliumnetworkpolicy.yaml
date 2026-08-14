@@ -1,6 +1,5 @@
 ---
-# open-webui: AI chat UI (also hosts the SearXNG sidecar in the same pod,
-# so this policy covers SearXNG's egress too).
+# open-webui: AI chat UI.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -100,7 +99,7 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
-    # OpenRouter LLM API + SearXNG web search to arbitrary engines (world)
+    # OpenRouter LLM API (world)
     - toEntities:
         - world
       toPorts:
@@ -108,6 +107,18 @@ spec:
             - port: "443"
               protocol: TCP
             - port: "80"
+              protocol: TCP
+    # Firecrawl's api service (kubernetes/apps/hermes-agent/firecrawl/),
+    # this app's web search backend -- same target hermes-agent's own CNP
+    # already allows (app.kubernetes.io/name: firecrawl, verified live there).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: firecrawl
+            app.kubernetes.io/controller: api
+      toPorts:
+        - ports:
+            - port: "3002"
               protocol: TCP
 ---
 # tika: dedicated document text-extraction service for open-webui

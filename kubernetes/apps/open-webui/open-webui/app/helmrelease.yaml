@@ -50,12 +50,21 @@ spec:
               ENABLE_OLLAMA_API: "false"
               OPENAI_API_BASE_URL: https://openrouter.ai/api/v1
 
-              # Web search via the SearXNG sidecar (localhost in the same pod)
+              # Web search via self-hosted Firecrawl (kubernetes/apps/hermes-agent/
+              # firecrawl/), same backend hermes-agent's own web tool uses.
+              # Replaces the searxng sidecar, which was flaky.
               ENABLE_WEB_SEARCH: "true"
               ENABLE_SEARCH_QUERY_GENERATION: "true"
               WEB_SEARCH_RESULT_COUNT: "5"
-              WEB_SEARCH_ENGINE: searxng
-              SEARXNG_QUERY_URL: http://localhost:8080/search?q=<query>
+              WEB_SEARCH_ENGINE: firecrawl
+              # app-template names Services "<release>-<service-key>" -- so
+              # firecrawl's HelmRelease (release "firecrawl", service key "api")
+              # produces Service "firecrawl-api" in the hermes-agent namespace.
+              FIRECRAWL_API_BASE_URL: http://firecrawl-api.hermes-agent.svc.cluster.local:3002
+              # Not a real secret: firecrawl runs with USE_DB_AUTHENTICATION=false
+              # (kubernetes/apps/hermes-agent/firecrawl/app/configmap.yaml), so it
+              # never validates this value -- open-webui just requires it non-empty.
+              FIRECRAWL_API_KEY: internal-unused
 
               ENABLE_WEBSOCKET_SUPPORT: "true"
               WEBSOCKET_MANAGER: redis
@@ -135,49 +144,18 @@ spec:
               runAsUser: 0
               runAsGroup: 0
 
-          searxng:
-            image:
-              repository: searxng/searxng
-              # renovate: datasource=docker depName=searxng/searxng
-              tag: 2026.3.13-3c1f68c59
-            env:
-              SEARXNG_BASE_URL: http://localhost:8080
-              SEARXNG_SECRET:
-                valueFrom:
-                  secretKeyRef:
-                    name: open-webui-secret
-                    key: SEARXNG_SECRET
-            resources:
-              requests:
-                cpu: 100m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
-            probes:
-              liveness:
-                enabled: true
-              readiness:
-                enabled: true
-            securityContext:
-              allowPrivilegeEscalation: false
-              capabilities:
-                drop:
-                  - "ALL"
-              runAsUser: 977
-              runAsNonRoot: true
-
     service:
       app:
         controller: open-webui
+        # app-template only suffixes a Service name with its identifier when
+        # multiple Services exist for the release. With searxng's Service
+        # gone, "app" is now the sole Service and would otherwise silently
+        # rename from open-webui-app to bare open-webui, breaking
+        # httproute.yaml's backendRef. forceRename pins it.
+        forceRename: open-webui-app
         ports:
           http:
             port: *webuiPort
-      searxng:
-        controller: open-webui
-        ports:
-          http:
-            port: 8080
 
     persistence:
       data:
@@ -187,18 +165,3 @@ spec:
             app:
               - path: /data
                 subPath: data
-      searxng-config:
-        type: configMap
-        name: searxng-settings
-        advancedMounts:
-          open-webui:
-            searxng:
-              - path: /etc/searxng/settings.yml
-                subPath: settings.yml
-                readOnly: true
-      searxng-tmp:
-        type: emptyDir
-        advancedMounts:
-          open-webui:
-            searxng:
-              - path: /tmp
