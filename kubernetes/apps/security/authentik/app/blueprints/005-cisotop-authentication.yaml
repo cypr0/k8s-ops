@@ -58,6 +58,14 @@ entries:
         - authentik_stages_captcha.captchastage
         - - name
           - cisotop-turnstile
+      # Combines username + password on a single screen instead of two
+      # separate steps: a would-be attacker submits both at once and only
+      # gets one generic "invalid credentials" error, so they can't tell
+      # whether the username or the password was wrong.
+      password_stage: !Find
+        - authentik_stages_password.passwordstage
+        - - name
+          - cisotop-password
 
   - model: authentik_stages_password.passwordstage
     id: cisotop-password
@@ -95,8 +103,7 @@ entries:
           - authentik_flows.stage
           - - name
             - cisotop-static-setup
-  -
-
+  - #magic___^_^___line
     model: authentik_stages_user_login.userloginstage
     id: cisotop-login
     identifiers:
