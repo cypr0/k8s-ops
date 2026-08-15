@@ -46,7 +46,21 @@ spec:
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": nextcloud
-    # WOPI callbacks to Nextcloud via the public domain (cloud.${SECRET_DOMAIN})
+    # WOPI CheckFileInfo callbacks to Nextcloud now stay in-cluster: coredns
+    # resolves cloud.${SECRET_DOMAIN} to the envoy-internal Gateway ClusterIP
+    # (same split-horizon setup as Authentik), landing on the envoy pods'
+    # DNAT'd HTTPS port -- see the nextcloud CiliumNetworkPolicy's identical
+    # id.${SECRET_DOMAIN} egress rule.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
+    # Legacy fallback path (unused while the split-horizon DNS override above
+    # is in place, kept in case that ever needs to be rolled back).
     - toEntities:
         - world
       toPorts:
