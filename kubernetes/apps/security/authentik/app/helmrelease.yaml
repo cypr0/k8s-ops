@@ -59,6 +59,7 @@ spec:
             name: authentik-nextcloud-oidc
         - secretRef:
             name: authentik-pushover
+            optional: true
       volumes:
         - name: authentik-templates
           configMap:
