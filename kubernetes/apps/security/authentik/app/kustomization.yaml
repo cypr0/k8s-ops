@@ -16,7 +16,6 @@ resources:
   - ./helmrelease.yaml
   - ./httproute.yaml
   - ./ciliumnetworkpolicy.yaml
-  - ./referencegrant-openclaw.yaml
 
 configMapGenerator:
   - name: authentik-blueprints
@@ -27,7 +26,6 @@ configMapGenerator:
       - blueprints/04-paperless-oidc.yaml
       - blueprints/05-open-webui-oidc.yaml
       - blueprints/06-nextcloud-oidc.yaml
-      - blueprints/07-openclaw-proxy.yaml
       - blueprints/08-kubernetes-oidc.yaml
     options:
       disableNameSuffixHash: true
