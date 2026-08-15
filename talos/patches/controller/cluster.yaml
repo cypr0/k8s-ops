@@ -1,5 +1,21 @@
+---
 cluster:
-  allowSchedulingOnControlPlanes: true
+  # Was true — control-plane nodes (8Gi allocatable each) were running
+  # arbitrary app workloads alongside kube-apiserver/etcd/scheduler with no
+  # taint to keep them apart. kube-apiserver alone uses 2-4Gi RSS per CP node
+  # (75d of accumulated CRD/webhook/watch-cache growth); combined with
+  # workload memory *limits* overcommitted to 137-160% of allocatable, this
+  # caused recurring cgroup-level OOM kills and node-wide reclaim stalls that
+  # cascaded into probe timeouts across every namespace (2026-08-15 incident —
+  # see barman-cloud/CNPG symptom that started the investigation). falco,
+  # kubescape node-agent, and alloy already exclude themselves from
+  # control-plane via nodeAffinity for the same reason (see
+  # kubernetes/apps/security/falco/app/helmrelease-falco.yaml); this is the
+  # cluster-wide version of that same fix via the standard
+  # node-role.kubernetes.io/control-plane:NoSchedule taint. Talos only applies
+  # this taint at boot, so it takes a rolling reboot of the 3 control-plane
+  # nodes to actually take effect on already-running nodes.
+  allowSchedulingOnControlPlanes: false
   apiServer:
     admissionControl:
       # PodSecurity: enforce stays "privileged" (no blocking) — Kyverno owns

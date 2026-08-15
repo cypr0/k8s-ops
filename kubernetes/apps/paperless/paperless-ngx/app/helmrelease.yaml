@@ -147,6 +147,21 @@ spec:
                 spec:
                   failureThreshold: 30
                   periodSeconds: 5
+            # Previously unset entirely (0 requests/no limit) despite steadily
+            # using 1+Gi live (2 task workers, OCR/Tika round-trips, and the
+            # in-process huggingface embedding model for AI suggestions/chat)
+            # -- BestEffort QoS made it the scheduler's/kernel's first OOM
+            # target despite being one of the heavier real consumers on its
+            # node, and its declared-zero request hid its true footprint from
+            # scheduling decisions. Sized in line with its sibling gotenberg/
+            # tika (2Gi) with headroom above the ~1.1Gi already observed.
+            resources:
+              requests:
+                cpu: 250m
+                memory: 512Mi
+              limits:
+                cpu: "2"
+                memory: 3Gi
 
     service:
       paperless:
