@@ -1,6 +1,24 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  extends: ["github>home-operations/renovate-presets#2.2.0"],
+  // 2.2.0's default.json cross-referenced its own sibling files (e.g.
+  // //config/baseConfig.json5) WITHOUT a pinned ref, and Renovate resolves
+  // unpinned nested extends against the repo's current default branch, not
+  // the tag used on the parent reference. Upstream restructured at 7.0.0
+  // ("consolidate the general-purpose presets into default.json"), deleting
+  // those paths from the default branch — so the 2.2.0 pin stopped working
+  // even though tag 2.2.0 itself is untouched. Fixed upstream in 7.0.0 by
+  // making default.json fully self-contained (no internal cross-references),
+  // so a single tag now reliably pins the whole thing again. App-specific
+  // extras (CNPG, Grafana dashboards, Talos factory schematics — all used in
+  // this cluster) moved to opt-in apps/ presets and, per the README, need
+  // their own separate pin since a tag never propagates across a path-based
+  // extends.
+  extends: [
+    "github>home-operations/renovate-presets#7.0.0",
+    "github>home-operations/renovate-presets//apps/cnpg.json5#7.0.0",
+    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#7.0.0",
+    "github>home-operations/renovate-presets//apps/talosFactory.json5#7.0.0",
+  ],
   schedule: ["every weekend"],
   lockFileMaintenance: {
     enabled: true,
