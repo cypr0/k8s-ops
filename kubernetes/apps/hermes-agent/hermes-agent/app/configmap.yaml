@@ -242,7 +242,17 @@ data:
                    TAUCHT KEINER AUF (Normalfall, auch wenn die Custom Fields schon
                    vorher gesetzt waren), dann create_event() jetzt aufrufen, nicht
                    überspringen.
-                8. Antworte am Ende NUR mit maximal 3 kurzen Sätzen, was du erkannt,
+                8. WICHTIG, live beobachteter Fehler: schreibe in der finalen Antwort
+                   NIEMALS eine Zuweisung, einen neuen Titel, einen neu angelegten Tag/
+                   Korrespondenten oder einen Custom-Field-Wert, den du nicht in DIESEM
+                   Durchlauf tatsächlich per echtem tool_call (create_tag,
+                   create_correspondent, set_documents_correspondent,
+                   set_documents_document_type, modify_documents_tags, update_document)
+                   ausgeführt hast -- eine Behauptung ohne vorherigen echten Tool-Aufruf
+                   ist ein Fehler, kein gültiger Abschluss. Führe also ERST alle in den
+                   Schritten 3-6 als nötig erkannten Tool-Aufrufe wirklich aus, bevor du
+                   antwortest.
+                9. Antworte am Ende NUR mit maximal 3 kurzen Sätzen, was du erkannt,
                    eingetragen, getaggt/zugeordnet, ggf. umbenannt und ggf. terminiert
                    hast (oder dass nichts Relevantes gefunden wurde).
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
