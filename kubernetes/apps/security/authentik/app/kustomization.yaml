@@ -12,6 +12,7 @@ resources:
   - ./externalsecret-paperless-oidc.yaml
   - ./externalsecret-open-webui-oidc.yaml
   - ./externalsecret-nextcloud-oidc.yaml
+  - ./externalsecret-pushover.yaml
   - ./helmrepository.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml
@@ -20,6 +21,13 @@ resources:
 configMapGenerator:
   - name: authentik-blueprints
     files:
+      - blueprints/001-cisotop-recovery.yaml
+      - blueprints/002-cisotop-mfa-setup.yaml
+      - blueprints/003-cisotop-turnstile-reputation.yaml
+      - blueprints/004-cisotop-passwordless.yaml
+      - blueprints/005-cisotop-authentication.yaml
+      - blueprints/006-cisotop-enrollment.yaml
+      - blueprints/007-cisotop-pushover-notifications.yaml
       - blueprints/01-grafana-oidc.yaml
       - blueprints/02-opensearch-oidc.yaml
       - blueprints/03-proxmox-oidc.yaml

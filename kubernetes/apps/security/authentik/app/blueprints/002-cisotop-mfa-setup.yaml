@@ -1,0 +1,90 @@
+---
+version: 1
+metadata:
+  name: cisotop MFA Setup Flows
+  labels:
+    app: authentik
+
+entries:
+  # ── TOTP ──────────────────────────────────────────────────────────────
+  - model: authentik_flows.flow
+    id: cisotop-authenticator-totp-setup
+    identifiers:
+      slug: cisotop-authenticator-totp-setup
+    attrs:
+      name: cisotop-authenticator-totp-setup
+      title: TOTP-App einrichten
+      designation: stage_configuration
+      authentication: require_authenticated
+
+  - model: authentik_stages_authenticator_totp.authenticatortotpstage
+    id: cisotop-totp-setup
+    identifiers:
+      name: cisotop-totp-setup
+    attrs:
+      friendly_name: TOTP Device
+      digits: 6
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authenticator-totp-setup-binding
+    identifiers:
+      target: !KeyOf cisotop-authenticator-totp-setup
+      stage: !KeyOf cisotop-totp-setup
+      order: 10
+    attrs: {}
+
+  # ── WebAuthn (security keys / platform authenticators) ───────────────
+  - model: authentik_flows.flow
+    id: cisotop-authenticator-webauthn-setup
+    identifiers:
+      slug: cisotop-authenticator-webauthn-setup
+    attrs:
+      name: cisotop-authenticator-webauthn-setup
+      title: Sicherheitsschlüssel einrichten
+      designation: stage_configuration
+      authentication: require_authenticated
+
+  - model: authentik_stages_authenticator_webauthn.authenticatorwebauthnstage
+    id: cisotop-webauthn-setup
+    identifiers:
+      name: cisotop-webauthn-setup
+    attrs:
+      friendly_name: Security Key
+      user_verification: preferred
+      resident_key_requirement: preferred
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authenticator-webauthn-setup-binding
+    identifiers:
+      target: !KeyOf cisotop-authenticator-webauthn-setup
+      stage: !KeyOf cisotop-webauthn-setup
+      order: 10
+    attrs: {}
+
+  # ── Static recovery codes ─────────────────────────────────────────────
+  - model: authentik_flows.flow
+    id: cisotop-authenticator-static-setup
+    identifiers:
+      slug: cisotop-authenticator-static-setup
+    attrs:
+      name: cisotop-authenticator-static-setup
+      title: Wiederherstellungscodes erzeugen
+      designation: stage_configuration
+      authentication: require_authenticated
+
+  - model: authentik_stages_authenticator_static.authenticatorstaticstage
+    id: cisotop-static-setup
+    identifiers:
+      name: cisotop-static-setup
+    attrs:
+      friendly_name: Wiederherstellungscodes
+      token_count: 6
+      token_length: 12
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authenticator-static-setup-binding
+    identifiers:
+      target: !KeyOf cisotop-authenticator-static-setup
+      stage: !KeyOf cisotop-static-setup
+      order: 10
+    attrs: {}

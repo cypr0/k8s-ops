@@ -1,0 +1,113 @@
+---
+version: 1
+metadata:
+  name: cisotop Password Recovery
+  labels:
+    app: authentik
+
+entries:
+  # ── Flow ──────────────────────────────────────────────────────────────
+  - model: authentik_flows.flow
+    id: cisotop-recovery
+    identifiers:
+      slug: cisotop-recovery
+    attrs:
+      name: Forgot Password?
+      title: Forgot Password?
+      designation: recovery
+      authentication: none
+
+  # ── Stages ────────────────────────────────────────────────────────────
+  - model: authentik_stages_identification.identificationstage
+    id: cisotop-recovery-identification
+    identifiers:
+      name: cisotop-recovery-identification
+    attrs:
+      user_fields:
+        - username
+        - email
+      case_insensitive_matching: true
+      show_matched_user: true
+
+  - model: authentik_stages_email.emailstage
+    id: cisotop-recovery-email
+    identifiers:
+      name: cisotop-recovery-email
+    attrs:
+      use_global_settings: true
+      activate_user_on_success: false
+      token_expiry: minutes=30
+      subject: Passwort zurücksetzen
+      template: mail_password_reset.html
+
+  - model: authentik_stages_prompt.prompt
+    id: cisotop-recovery-field-password
+    identifiers:
+      field_key: password
+      name: cisotop-recovery-field-password
+    attrs:
+      label: Neues Passwort
+      type: password
+      required: true
+      placeholder: Neues Passwort
+      order: 0
+
+  - model: authentik_stages_prompt.prompt
+    id: cisotop-recovery-field-password-repeat
+    identifiers:
+      field_key: password_repeat
+      name: cisotop-recovery-field-password-repeat
+    attrs:
+      label: Neues Passwort bestätigen
+      type: password
+      required: true
+      placeholder: Neues Passwort bestätigen
+      order: 1
+
+  - model: authentik_stages_prompt.promptstage
+    id: cisotop-recovery-prompt
+    identifiers:
+      name: cisotop-recovery-prompt
+    attrs:
+      fields:
+        - !KeyOf cisotop-recovery-field-password
+        - !KeyOf cisotop-recovery-field-password-repeat
+
+  - model: authentik_stages_user_write.userwritestage
+    id: cisotop-recovery-write
+    identifiers:
+      name: cisotop-recovery-write
+    attrs: {}
+
+  # ── Flow stage bindings ───────────────────────────────────────────────
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-recovery-binding-identification
+    identifiers:
+      target: !KeyOf cisotop-recovery
+      stage: !KeyOf cisotop-recovery-identification
+      order: 10
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-recovery-binding-email
+    identifiers:
+      target: !KeyOf cisotop-recovery
+      stage: !KeyOf cisotop-recovery-email
+      order: 20
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-recovery-binding-prompt
+    identifiers:
+      target: !KeyOf cisotop-recovery
+      stage: !KeyOf cisotop-recovery-prompt
+      order: 30
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-recovery-binding-write
+    identifiers:
+      target: !KeyOf cisotop-recovery
+      stage: !KeyOf cisotop-recovery-write
+      order: 40
+    attrs: {}

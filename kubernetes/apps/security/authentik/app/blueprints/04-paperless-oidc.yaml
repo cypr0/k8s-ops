@@ -28,7 +28,7 @@ entries:
       authentication_flow: !Find
         - authentik_flows.flow
         - - slug
-          - default-authentication-flow
+          - cisotop-authentication
       authorization_flow: !Find
         - authentik_flows.flow
         - - slug
@@ -65,18 +65,17 @@ entries:
           - authentik_providers_oauth2.scopemapping
           - - scope_name
             - profile
-        # NOT [scope_name, groups]: every app blueprint declares its own custom
-        # groups mapping with the SAME scope_name "groups" (that's just the
-        # OAuth2 scope string, not a unique key), so a scope_name lookup is
-        # ambiguous across all of them and can silently resolve to a DIFFERENT
-        # app's mapping. Look it up by its own unique `name` instead.
         - !Find
+          # NOT [scope_name, groups]: every app blueprint declares its own custom
+          # groups mapping with the SAME scope_name "groups" (that's just the
+          # OAuth2 scope string, not a unique key), so a scope_name lookup is
+          # ambiguous across all of them and can silently resolve to a DIFFERENT
+          # app's mapping. Look it up by its own unique `name` instead.
           - authentik_providers_oauth2.scopemapping
           - - name
             - paperless-groups
   # ── Application ───────────────────────────────────────────────────────
-  -
-
+  - #magic___^_^___line
     model: authentik_core.application
     id: paperless-app
     identifiers:

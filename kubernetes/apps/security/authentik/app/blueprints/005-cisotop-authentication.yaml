@@ -1,0 +1,188 @@
+---
+version: 1
+metadata:
+  name: cisotop Authentication
+  labels:
+    app: authentik
+
+entries:
+  # ── LAN/VPN password-bypass policy ─────────────────────────────────────
+  # ak_client_ip is pre-parsed by the expression evaluator as an
+  # ipaddress.ip_address(); ip_network is a builtin evaluator global.
+  # Returns True (password stage required) unless the client is on the
+  # scanner subnet or the WireGuard VPN.
+  - model: authentik_policies_expression.expressionpolicy
+    id: cisotop-policy-require-password-remote
+    identifiers:
+      name: cisotop-policy-require-password-remote
+    attrs:
+      expression: |
+        return (
+            ak_client_ip not in ip_network("192.168.40.0/24")
+            and ak_client_ip not in ip_network("10.10.0.0/24")
+        )
+
+  # ── Flow ──────────────────────────────────────────────────────────────
+  - model: authentik_flows.flow
+    id: cisotop-authentication
+    identifiers:
+      slug: cisotop-authentication
+    attrs:
+      name: Welcome to authentik!
+      title: Welcome to authentik!
+      designation: authentication
+      authentication: none
+
+  # ── Stages ────────────────────────────────────────────────────────────
+  - model: authentik_stages_identification.identificationstage
+    id: cisotop-identification
+    identifiers:
+      name: cisotop-identification
+    attrs:
+      user_fields:
+        - username
+        - email
+      case_insensitive_matching: true
+      show_matched_user: true
+      # No enrollment_flow: enrollment is invitation-only, no public
+      # "Sign up" link on the login page.
+      recovery_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - cisotop-recovery
+      passwordless_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - cisotop-passwordless
+      captcha_stage: !Find
+        - authentik_stages_captcha.captchastage
+        - - name
+          - cisotop-turnstile
+
+  - model: authentik_stages_password.passwordstage
+    id: cisotop-password
+    identifiers:
+      name: cisotop-password
+    attrs:
+      backends:
+        - authentik.core.auth.InbuiltBackend
+        - authentik.sources.kerberos.auth.KerberosBackend
+        - authentik.sources.ldap.auth.LDAPBackend
+        - authentik.core.auth.TokenBackend
+      failed_attempts_before_cancel: 5
+
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    id: cisotop-mfa
+    identifiers:
+      name: cisotop-mfa
+    attrs:
+      not_configured_action: configure
+      device_classes:
+        - totp
+        - webauthn
+        - static
+      webauthn_user_verification: preferred
+      configuration_stages:
+        - !Find
+          - authentik_flows.stage
+          - - name
+            - cisotop-totp-setup
+        - !Find
+          - authentik_flows.stage
+          - - name
+            - cisotop-webauthn-setup
+        - !Find
+          - authentik_flows.stage
+          - - name
+            - cisotop-static-setup
+  -
+
+    model: authentik_stages_user_login.userloginstage
+    id: cisotop-login
+    identifiers:
+      name: cisotop-login
+    attrs: {}
+
+  # ── Flow stage bindings ───────────────────────────────────────────────
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authentication-binding-identification
+    identifiers:
+      target: !KeyOf cisotop-authentication
+      stage: !KeyOf cisotop-identification
+      order: 10
+    attrs: {}
+
+  # Adaptive Turnstile: this binding only executes when the reputation
+  # policy below reports a bad score, so the CAPTCHA is not shown on every
+  # single login.
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authentication-binding-turnstile
+    identifiers:
+      target: !KeyOf cisotop-authentication
+      stage: !Find
+        - authentik_stages_captcha.captchastage
+        - - name
+          - cisotop-turnstile
+      order: 15
+    attrs: {}
+
+  - model: authentik_policies.policybinding
+    id: cisotop-authentication-turnstile-policy
+    identifiers:
+      target: !KeyOf cisotop-authentication-binding-turnstile
+      order: 0
+    attrs:
+      policy: !Find
+        - authentik_policies_reputation.reputationpolicy
+        - - name
+          - cisotop-reputation
+      enabled: true
+      negate: false
+
+  # LAN/VPN password bypass: this binding only executes (i.e. password is
+  # required) when the LAN-bypass policy above returns True.
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authentication-binding-password
+    identifiers:
+      target: !KeyOf cisotop-authentication
+      stage: !KeyOf cisotop-password
+      order: 20
+    attrs: {}
+
+  - model: authentik_policies.policybinding
+    id: cisotop-authentication-password-policy
+    identifiers:
+      target: !KeyOf cisotop-authentication-binding-password
+      order: 0
+    attrs:
+      policy: !KeyOf cisotop-policy-require-password-remote
+      enabled: true
+      negate: false
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authentication-binding-mfa
+    identifiers:
+      target: !KeyOf cisotop-authentication
+      stage: !KeyOf cisotop-mfa
+      order: 30
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-authentication-binding-login
+    identifiers:
+      target: !KeyOf cisotop-authentication
+      stage: !KeyOf cisotop-login
+      order: 40
+    attrs: {}
+
+  # ── Brand: make this the site-wide default authentication/recovery flow ─
+  - model: authentik_brands.brand
+    id: cisotop-default-brand
+    identifiers:
+      domain: authentik-default
+    attrs:
+      flow_authentication: !KeyOf cisotop-authentication
+      flow_recovery: !Find
+        - authentik_flows.flow
+        - - slug
+          - cisotop-recovery

@@ -35,7 +35,7 @@ entries:
       authentication_flow: !Find
         - authentik_flows.flow
         - - slug
-          - default-authentication-flow
+          - cisotop-authentication
       authorization_flow: !Find
         - authentik_flows.flow
         - - slug

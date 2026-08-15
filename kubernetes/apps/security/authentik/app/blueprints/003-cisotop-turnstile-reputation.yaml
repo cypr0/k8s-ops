@@ -1,0 +1,33 @@
+---
+version: 1
+metadata:
+  name: cisotop Turnstile + Reputation
+  labels:
+    app: authentik
+
+entries:
+  # ── Reputation policy (bad IP/username score) ─────────────────────────
+  # passes() returns True when the score is BAD (score <= threshold). Bound
+  # (un-negated) to the Turnstile stage's FlowStageBinding in
+  # 005-cisotop-authentication.yaml so the CAPTCHA only appears for risky
+  # logins instead of on every single one.
+  - model: authentik_policies_reputation.reputationpolicy
+    id: cisotop-reputation
+    identifiers:
+      name: cisotop-reputation
+    attrs:
+      check_ip: true
+      check_username: true
+      threshold: -5
+
+  # ── Cloudflare Turnstile captcha stage ─────────────────────────────────
+  - model: authentik_stages_captcha.captchastage
+    id: cisotop-turnstile
+    identifiers:
+      name: cisotop-turnstile
+    attrs:
+      public_key: !Env TURNSTILE_SITE_KEY
+      private_key: !Env TURNSTILE_SECRET_KEY
+      js_url: https://challenges.cloudflare.com/turnstile/v0/api.js
+      api_url: https://challenges.cloudflare.com/turnstile/v0/siteverify
+      interactive: true

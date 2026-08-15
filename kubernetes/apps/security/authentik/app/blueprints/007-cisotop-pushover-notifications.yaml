@@ -1,0 +1,64 @@
+---
+version: 1
+metadata:
+  name: cisotop Pushover Notifications
+  labels:
+    app: authentik
+
+entries:
+  # ── Webhook body mapping ────────────────────────────────────────────────
+  # Pushover's /1/messages.json accepts a JSON POST body. The token/user
+  # fields can't be read from env vars at expression-evaluation time, so
+  # they're baked into the stored expression string via !Format (same
+  # trust boundary as everything else already living in the Authentik DB).
+  - model: authentik_events.notificationwebhookmapping
+    id: cisotop-pushover-mapping
+    identifiers:
+      name: cisotop-pushover-mapping
+    attrs:
+      expression: !Format
+        - |
+          return {
+              "token": "%s",
+              "user": "%s",
+              "message": notification.body,
+              "title": "authentik: " + notification.severity,
+          }
+        - !Env AUTHENTIK_PUSHOVER_API_TOKEN
+        - !Env PUSHOVER_USER_KEY
+
+  - model: authentik_events.notificationtransport
+    id: cisotop-pushover-transport
+    identifiers:
+      name: cisotop-pushover-transport
+    attrs:
+      mode: webhook
+      webhook_url: https://api.pushover.net/1/messages.json
+      webhook_mapping_body: !KeyOf cisotop-pushover-mapping
+
+  # ── Rule: alert on failed logins ────────────────────────────────────────
+  - model: authentik_policies_event_matcher.eventmatcherpolicy
+    id: cisotop-match-login-failed
+    identifiers:
+      name: cisotop-match-login-failed
+    attrs:
+      action: login_failed
+
+  - model: authentik_events.notificationrule
+    id: cisotop-notify-security
+    identifiers:
+      name: cisotop-notify-security
+    attrs:
+      severity: notice
+      transports:
+        - !KeyOf cisotop-pushover-transport
+
+  - model: authentik_policies.policybinding
+    id: cisotop-notify-security-binding
+    identifiers:
+      target: !KeyOf cisotop-notify-security
+      order: 0
+    attrs:
+      policy: !KeyOf cisotop-match-login-failed
+      enabled: true
+      negate: false

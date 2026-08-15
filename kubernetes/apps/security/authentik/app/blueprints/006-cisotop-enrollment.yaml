@@ -1,0 +1,172 @@
+---
+version: 1
+metadata:
+  name: cisotop Enrollment (Invitation-only)
+  labels:
+    app: authentik
+
+entries:
+  # ── Flow ──────────────────────────────────────────────────────────────
+  # Not wired to the identification stage's enrollment_flow -- there is no
+  # public "Sign up" link. New users only reach this flow via a per-invite
+  # link created by an admin (Admin UI: System > Invitations, pointing at
+  # this flow), e.g. https://sso.${SECRET_DOMAIN}/if/flow/cisotop-enrollment/?itoken=...
+  - model: authentik_flows.flow
+    id: cisotop-enrollment
+    identifiers:
+      slug: cisotop-enrollment
+    attrs:
+      name: cisotop-enrollment
+      title: Willkommen! Erstelle Dein Konto
+      designation: enrollment
+      authentication: none
+
+  # ── Stages ────────────────────────────────────────────────────────────
+  - model: authentik_stages_invitation.invitationstage
+    id: cisotop-enrollment-invitation
+    identifiers:
+      name: cisotop-enrollment-invitation
+    attrs:
+      # Without a valid invitation token, the flow fails instead of
+      # continuing -- this is what makes enrollment invitation-only.
+      continue_flow_without_invitation: false
+
+  - model: authentik_stages_prompt.prompt
+    id: cisotop-enrollment-field-username
+    identifiers:
+      field_key: username
+      name: cisotop-enrollment-field-username
+    attrs:
+      label: Benutzername
+      type: username
+      required: true
+      placeholder: Benutzername
+      order: 0
+
+  - model: authentik_stages_prompt.prompt
+    id: cisotop-enrollment-field-name
+    identifiers:
+      field_key: name
+      name: cisotop-enrollment-field-name
+    attrs:
+      label: Name
+      type: text
+      required: true
+      placeholder: Vollständiger Name
+      order: 1
+
+  - model: authentik_stages_prompt.prompt
+    id: cisotop-enrollment-field-email
+    identifiers:
+      field_key: email
+      name: cisotop-enrollment-field-email
+    attrs:
+      label: E-Mail
+      type: email
+      required: true
+      placeholder: E-Mail-Adresse
+      order: 2
+
+  - model: authentik_stages_prompt.prompt
+    id: cisotop-enrollment-field-password
+    identifiers:
+      field_key: password
+      name: cisotop-enrollment-field-password
+    attrs:
+      label: Passwort
+      type: password
+      required: true
+      placeholder: Passwort
+      order: 3
+
+  - model: authentik_stages_prompt.prompt
+    id: cisotop-enrollment-field-password-repeat
+    identifiers:
+      field_key: password_repeat
+      name: cisotop-enrollment-field-password-repeat
+    attrs:
+      label: Passwort bestätigen
+      type: password
+      required: true
+      placeholder: Passwort bestätigen
+      order: 4
+
+  - model: authentik_stages_prompt.promptstage
+    id: cisotop-enrollment-prompt
+    identifiers:
+      name: cisotop-enrollment-prompt
+    attrs:
+      fields:
+        - !KeyOf cisotop-enrollment-field-username
+        - !KeyOf cisotop-enrollment-field-name
+        - !KeyOf cisotop-enrollment-field-email
+        - !KeyOf cisotop-enrollment-field-password
+        - !KeyOf cisotop-enrollment-field-password-repeat
+
+  - model: authentik_stages_user_write.userwritestage
+    id: cisotop-enrollment-write
+    identifiers:
+      name: cisotop-enrollment-write
+    attrs:
+      user_creation_mode: always_create
+      # Stay inactive until the confirmation email below is clicked.
+      create_users_as_inactive: true
+      user_type: internal
+
+  - model: authentik_stages_email.emailstage
+    id: cisotop-enrollment-email-verify
+    identifiers:
+      name: cisotop-enrollment-email-verify
+    attrs:
+      use_global_settings: true
+      activate_user_on_success: true
+      token_expiry: minutes=30
+      subject: Bitte bestätige Dein Konto
+      template: mail_account_confirmation.html
+
+  - model: authentik_stages_user_login.userloginstage
+    id: cisotop-enrollment-login
+    identifiers:
+      name: cisotop-enrollment-login
+    attrs: {}
+
+  # ── Flow stage bindings ───────────────────────────────────────────────
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-enrollment-binding-invitation
+    identifiers:
+      target: !KeyOf cisotop-enrollment
+      stage: !KeyOf cisotop-enrollment-invitation
+      order: 10
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-enrollment-binding-prompt
+    identifiers:
+      target: !KeyOf cisotop-enrollment
+      stage: !KeyOf cisotop-enrollment-prompt
+      order: 20
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-enrollment-binding-write
+    identifiers:
+      target: !KeyOf cisotop-enrollment
+      stage: !KeyOf cisotop-enrollment-write
+      order: 30
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-enrollment-binding-email-verify
+    identifiers:
+      target: !KeyOf cisotop-enrollment
+      stage: !KeyOf cisotop-enrollment-email-verify
+      order: 40
+    attrs: {}
+
+  - model: authentik_flows.flowstagebinding
+    id: cisotop-enrollment-binding-login
+    identifiers:
+      target: !KeyOf cisotop-enrollment
+      stage: !KeyOf cisotop-enrollment-login
+      order: 50
+    attrs: {}
