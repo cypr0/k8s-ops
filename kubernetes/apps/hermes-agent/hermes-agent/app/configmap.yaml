@@ -186,7 +186,20 @@ data:
                       einer der vorhandenen Typen aus 3a gewählt werden, auch wenn
                       keiner perfekt passt (dann den am ehesten passenden nehmen,
                       niemals null lassen oder einen neuen Typ erfinden).
-                4. Extrahiere, falls jeweils zutreffend (sonst weglassen, nicht raten):
+                4. Titel vergeben, falls der aktuelle Titel (aus get_document, Schritt 1)
+                   generisch/wenig aussagekräftig ist (z.B. ein reiner Zahlen-/
+                   Dateiname-Rest wie "0000966", ein automatisch übernommener
+                   Scanner-/Consumption-Dateiname o.ä. -- KEIN Titel, der bereits
+                   inhaltlich sinnvoll ist, z.B. von Paperless selbst aus dem
+                   Dateinamen oder einer OCR-Titelerkennung übernommen wurde -- den
+                   NICHT überschreiben). Format: "<Dokumententyp> – <Korrespondent> –
+                   <Datum>" (Dokumententyp/Korrespondent aus Schritt 3, Datum im
+                   Format YYYY-MM-DD aus dem im Dokument erkannten Dokumentdatum --
+                   jeden der drei Teile weglassen, der nicht sicher bekannt ist; bei
+                   nur einem bekannten Teil reicht auch nur dieser als Titel). Der neue
+                   Titel wird zusammen mit den custom_fields in Schritt 6 per
+                   update_document(title=...) gesetzt, NICHT per einem eigenen Aufruf.
+                5. Extrahiere, falls jeweils zutreffend (sonst weglassen, nicht raten):
                    - Rechnungsbetrag: Rechnungsbetrag als Zahl (nur bei Rechnungen)
                    - faelligkeitsdatum: Fälligkeitsdatum, Format YYYY-MM-DD (nur bei Rechnungen)
                    - vertragsende: Vertragsende, Format YYYY-MM-DD (nur bei Verträgen/Abos)
@@ -200,8 +213,10 @@ data:
                      bei erkennbar rückwirkendem Bezug (z.B. Jahresabrechnung für
                      das VORJAHR) das tatsächlich betroffene Jahr nehmen, nicht
                      das Dokumentendatum
-                5. Schreibe die zutreffenden Felder per update_document(document_id=...,
-                   custom_fields=[...]) zurück (NICHT update_document_type/_version).
+                6. Schreibe die zutreffenden Felder sowie ggf. den neuen Titel aus
+                   Schritt 4 per update_document(document_id=..., title=...,
+                   custom_fields=[...]) zurück (NICHT update_document_type/_version;
+                   title weglassen, wenn Schritt 4 den Titel unverändert lässt).
                    WICHTIG: custom_fields bei update_document ist eine VOLLSTÄNDIGE
                    Ersetzung, keine additive Aktualisierung -- jedes existierende
                    custom_fields-Element aus der get_document-Antwort in Schritt 1
@@ -210,7 +225,7 @@ data:
                    gesetzte Werte anderer Felder verloren (bereits live passiert:
                    ein Dokument mit vorhandenem Rechnungsbetrag/Steuerjahr verlor
                    beide, weil nur die neu erkannten Felder übergeben wurden).
-                6. UNABHÄNGIG davon, ob Schritt 5 tatsächlich etwas geschrieben hat
+                7. UNABHÄNGIG davon, ob Schritt 6 tatsächlich etwas geschrieben hat
                    (auch wenn die Custom Fields bereits vorher korrekt gesetzt waren --
                    das entscheidet NICHT, ob schon ein Kalendertermin existiert):
                    falls faelligkeitsdatum oder kuendigungsfrist_datum erkannt wurden,
@@ -227,9 +242,9 @@ data:
                    TAUCHT KEINER AUF (Normalfall, auch wenn die Custom Fields schon
                    vorher gesetzt waren), dann create_event() jetzt aufrufen, nicht
                    überspringen.
-                7. Antworte am Ende NUR mit maximal 3 kurzen Sätzen, was du erkannt,
-                   eingetragen, getaggt/zugeordnet und ggf. terminiert hast (oder dass
-                   nichts Relevantes gefunden wurde).
+                8. Antworte am Ende NUR mit maximal 3 kurzen Sätzen, was du erkannt,
+                   eingetragen, getaggt/zugeordnet, ggf. umbenannt und ggf. terminiert
+                   hast (oder dass nichts Relevantes gefunden wurde).
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
     # Nextcloud API coverage the paperless_full/nextcloud_full Open WebUI
     # Tools have -- see kubernetes/apps/hermes-agent/{paperless-mcp,
