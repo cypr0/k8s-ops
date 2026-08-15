@@ -53,9 +53,18 @@ spec:
           # 1. `rewrite name` only affects A queries, AAAA queries still forward to upstream
           # 2. Node.js prefers AAAA (IPv6), which resolves to Cloudflare and times out
           # 3. `hosts` with fallthrough handles all query types and falls through for other names
+          # Same split-horizon trick for cloud.${SECRET_DOMAIN} (Nextcloud):
+          # Collabora calls back into Nextcloud server-to-server for WOPI
+          # CheckFileInfo. Over the public Cloudflare hairpin, Nextcloud saw
+          # the connection arrive from Cloudflare's edge IP, which richdocuments'
+          # wopi_allowlist (10.0.0.0/8, 192.168.0.0/16) rejected with a 403,
+          # surfacing to the user as "Unauthorised WOPI host". The nextcloud
+          # HTTPRoute is attached to envoy-internal too, so in-cluster callers
+          # land inside the pod CIDR the allowlist already permits.
           - name: hosts
             configBlock: |-
               10.43.38.197 id.${SECRET_DOMAIN}
+              10.43.38.197 cloud.${SECRET_DOMAIN}
               fallthrough
           # Gatus's Echo (Connectivity Test) endpoint kept timing out: this
           # cluster has no IPv6 routing, but echo.${SECRET_DOMAIN} (proxied

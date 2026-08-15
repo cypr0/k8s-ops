@@ -15,6 +15,14 @@ spec:
       name: envoy-external
       namespace: network
       sectionName: https
+    # Also expose via the internal gateway so in-cluster callers (Collabora's
+    # WOPI CheckFileInfo callback) reach Nextcloud without hairpinning through
+    # the public Cloudflare tunnel -- see the coredns hosts-plugin comment.
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+      namespace: network
+      sectionName: https
   rules:
     - matches:
         - path:
