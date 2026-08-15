@@ -102,6 +102,23 @@ data:
     # paperless-ngx/) sends this same secret back as a plain `X-Gitlab-Token`
     # header -- that comparison mode (vs. a computed HMAC signature) is the
     # only one a static, non-computed header value can satisfy.
+    #
+    # GOTCHA (confirmed live 2026-08-15, not obvious from either side's
+    # config): the Paperless Workflow action itself lives in Paperless's own
+    # database, not in this repo (created via nested POST to /api/workflows/,
+    # see project memory) -- but its `webhook.as_json` flag MUST be `false`.
+    # Paperless's send_webhook() (documents/workflows/webhooks.py) does
+    # `post_args["json"] = data` when as_json=true, and `data` here is
+    # already the Jinja2-rendered body STRING (e.g. `{"document_id": 123}`
+    # as text, not a dict) -- httpx then json.dumps()'s that string AGAIN,
+    # double-encoding it into a quoted/escaped JSON string. This gateway's
+    # own `json.loads(raw_body)` then returns a Python str, not a dict, and
+    # `payload.get("event_type", ...)` blows up with
+    # `AttributeError: 'str' object has no attribute 'get'` -- silently
+    # swallowing every single webhook call (no Telegram message, no error
+    # visible anywhere except this pod's own logs). With as_json=false,
+    # Paperless sends the already-JSON body string verbatim as raw content,
+    # which this gateway's json.loads() parses correctly.
     platforms:
       webhook:
         extra:
@@ -124,13 +141,52 @@ data:
 
                 Nutze die paperless-mcp-Tools:
                 1. get_document(document_id={document_id}) für Volltext + Metadaten
-                   (NICHT get_document_type/_metadata/_notes/_version).
+                   (NICHT get_document_type/_metadata/_notes/_version). Merke dir daraus
+                   den aktuellen Stand von tags/correspondent/document_type -- Schritt 3
+                   darf einen bereits gesetzten correspondent oder document_type NICHT
+                   überschreiben, nur einen leeren (null) Wert setzen; Tags werden
+                   ohnehin nur ergänzt, nie ersetzt oder entfernt.
                 2. list_custom_fields(), um die aktuellen IDs der Felder
                    "Rechnungsbetrag" und "Steuerjahr" (beide existieren bereits,
                    NICHT neu anlegen), "faelligkeitsdatum", "vertragsende" und
                    "kuendigungsfrist_datum" nachzuschlagen -- IDs nicht raten,
                    immer frisch nachschlagen.
-                3. Extrahiere, falls jeweils zutreffend (sonst weglassen, nicht raten):
+                3. Tags/Korrespondent/Dokumententyp zuweisen -- IMMER anhand des
+                   VORHANDENEN Bestands, nie blind neu erfinden:
+                   a. list_tags(page_size=200), list_correspondents(page_size=200) und
+                      list_document_types(page_size=200) laden (bei mehr Treffern als
+                      page_size weitere Seiten nachladen) -- das ist der vollständige
+                      aktuelle Bestand, gegen den abgeglichen wird.
+                   b. Passende Tags (mehrere möglich) aus diesem Bestand auswählen und
+                      per modify_documents_tags(document_ids=[{document_id}],
+                      add_tag_ids=[...]) ERGÄNZEND hinzufügen (add_tag_ids, nie
+                      remove_tag_ids -- bestehende Tags, auch der automatische
+                      Inbox-Tag aus dem "Neue Dokumente markieren"-Workflow, bleiben
+                      unangetastet). Neuen Tag NUR per create_tag(...) anlegen, wenn
+                      der Abgleich gegen den kompletten Bestand aus 3a zweifelsfrei
+                      ergeben hat, dass weder ein gleichlautender noch ein ähnlicher
+                      Tag existiert (Groß-/Kleinschreibung, Singular/Plural, Synonyme,
+                      Abkürzungen wie "Rech." vs. "Rechnung" zählen als ähnlich -- im
+                      Zweifel den vorhandenen Tag verwenden statt neu anzulegen).
+                   c. Passenden Korrespondenten aus dem Bestand auswählen und NUR
+                      falls in get_document (Schritt 1) noch keiner gesetzt ist per
+                      set_documents_correspondent(document_ids=[{document_id}],
+                      correspondent_id=...) setzen. Neuen Korrespondenten NUR per
+                      create_correspondent(...) anlegen, wenn der Abgleich zweifelsfrei
+                      ergeben hat, dass kein gleichlautender oder ähnlicher existiert
+                      (Rechtsform-Zusätze wie GmbH/AG/e.V./Inc./Ltd., Groß-/
+                      Kleinschreibung, Adress-/Filial-Zusätze zählen als ähnlich --
+                      "Telekom Deutschland GmbH" und "Telekom" sind derselbe
+                      Korrespondent, nicht zwei).
+                   d. Passenden Dokumententyp aus dem Bestand auswählen und NUR falls
+                      in get_document (Schritt 1) noch keiner gesetzt ist per
+                      set_documents_document_type(document_ids=[{document_id}],
+                      document_type_id=...) setzen. Dokumententypen werden NIEMALS neu
+                      angelegt (create_document_type NIE aufrufen) -- es MUSS immer
+                      einer der vorhandenen Typen aus 3a gewählt werden, auch wenn
+                      keiner perfekt passt (dann den am ehesten passenden nehmen,
+                      niemals null lassen oder einen neuen Typ erfinden).
+                4. Extrahiere, falls jeweils zutreffend (sonst weglassen, nicht raten):
                    - Rechnungsbetrag: Rechnungsbetrag als Zahl (nur bei Rechnungen)
                    - faelligkeitsdatum: Fälligkeitsdatum, Format YYYY-MM-DD (nur bei Rechnungen)
                    - vertragsende: Vertragsende, Format YYYY-MM-DD (nur bei Verträgen/Abos)
@@ -144,7 +200,7 @@ data:
                      bei erkennbar rückwirkendem Bezug (z.B. Jahresabrechnung für
                      das VORJAHR) das tatsächlich betroffene Jahr nehmen, nicht
                      das Dokumentendatum
-                4. Schreibe die zutreffenden Felder per update_document(document_id=...,
+                5. Schreibe die zutreffenden Felder per update_document(document_id=...,
                    custom_fields=[...]) zurück (NICHT update_document_type/_version).
                    WICHTIG: custom_fields bei update_document ist eine VOLLSTÄNDIGE
                    Ersetzung, keine additive Aktualisierung -- jedes existierende
@@ -154,7 +210,7 @@ data:
                    gesetzte Werte anderer Felder verloren (bereits live passiert:
                    ein Dokument mit vorhandenem Rechnungsbetrag/Steuerjahr verlor
                    beide, weil nur die neu erkannten Felder übergeben wurden).
-                5. UNABHÄNGIG davon, ob Schritt 4 tatsächlich etwas geschrieben hat
+                6. UNABHÄNGIG davon, ob Schritt 5 tatsächlich etwas geschrieben hat
                    (auch wenn die Custom Fields bereits vorher korrekt gesetzt waren --
                    das entscheidet NICHT, ob schon ein Kalendertermin existiert):
                    falls faelligkeitsdatum oder kuendigungsfrist_datum erkannt wurden,
@@ -171,9 +227,9 @@ data:
                    TAUCHT KEINER AUF (Normalfall, auch wenn die Custom Fields schon
                    vorher gesetzt waren), dann create_event() jetzt aufrufen, nicht
                    überspringen.
-                6. Antworte am Ende NUR mit maximal 2 kurzen Sätzen, was du erkannt,
-                   eingetragen und ggf. terminiert hast (oder dass nichts Relevantes
-                   gefunden wurde).
+                7. Antworte am Ende NUR mit maximal 3 kurzen Sätzen, was du erkannt,
+                   eingetragen, getaggt/zugeordnet und ggf. terminiert hast (oder dass
+                   nichts Relevantes gefunden wurde).
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
     # Nextcloud API coverage the paperless_full/nextcloud_full Open WebUI
     # Tools have -- see kubernetes/apps/hermes-agent/{paperless-mcp,
