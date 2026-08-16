@@ -43,13 +43,84 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
+        # Confirmed live (2026-08-16) via a Velero restore-test: a
+        # restored copy of this PVC keeps /opt/data's OWN top-level
+        # ownership exactly as Kopia backed it up -- owned by uid 10000
+        # (the long-running hermes process's unprivileged user, see the
+        # main container's securityContext comment below), mode 0700
+        # (owner-only, zero bits for any group). bootstrap-config below
+        # runs as uid 1000 (this pod's runAsUser) precisely BECAUSE it
+        # needs to be non-root -- but that also means, on a freshly
+        # restored volume, it can neither create entries directly under
+        # /opt/data nor overwrite the pre-existing config.yaml/.env/
+        # auth.json there (Permission denied on plain `mkdir /opt/data`,
+        # then on `cp .../config.yaml` once mkdir was fixed), permanently
+        # CrashLoopBackOff'ing every restore before the app ever gets a
+        # chance to start even once.
+        # `fsGroup`/`fsGroupChangePolicy` (pod securityContext, below)
+        # does NOT fix this: it only ever adjusts GROUP OWNERSHIP to
+        # match fsGroup, never the permission MODE bits -- it cannot add
+        # the missing group-write bit to an already-0700 directory, so it
+        # provides zero help here regardless of policy (confirmed live:
+        # `OnRootMismatch`'s own recursive chown pass completed
+        # successfully after ~5 minutes over this PVC's ~5000+ files, yet
+        # the directory came out AS 0700 as before -- ownership changed,
+        # permission bits didn't).
+        # In steady-state PRODUCTION operation this dir is _also_ 0700
+        # owned by uid 10000 -- but bootstrap-config still succeeds there
+        # every restart, because Unix directory permissions govern
+        # create/unlink/overwrite of entries INSIDE a directory, not the
+        # entries' own individual modes: once /opt/data's OWNER (not just
+        # group) is 1000, a uid-1000 process can create new entries and
+        # freely overwrite (unlink+recreate) existing ones underneath it
+        # regardless of who those existing entries themselves belong to
+        # -- confirmed live, this is exactly why a single one-time,
+        # NON-recursive `chown 1000:1000 /opt/data` is the complete fix,
+        # not a recursive one: everything ELSE this Deployment's init
+        # logic touches (/opt/data/home and below) was already restored
+        # with permissive group-writable modes from the app's own
+        # original writes, so only this one top-level directory ever
+        # needs correcting.
+        # CAP_CHOWN (not full root) is the minimal privilege that can
+        # chown a path it doesn't already own -- confirmed live to work
+        # against this NFS-backed volume. Kyverno will flag the added
+        # capability (this repo's baseline is Audit-only, see
+        # project_cis_benchmark_review memory -- nothing is blocked by
+        # it); accepted the same way the main container's own root
+        # override below already is, and a much narrower exception than
+        # that one.
+        - name: fix-data-ownership
+          image: &image nousresearch/hermes-agent:v2026.7.7.2
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              set -eu
+              chown 1000:1000 /opt/data
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - "ALL"
+              add:
+                - "CHOWN"
         # Seeds HERMES_HOME/config.yaml from the ConfigMap on every start
         # (always-overwrite -- matches the chart's bootstrap.overwrite=true
         # default, since we want the ConfigMap to stay the single source of
         # truth rather than drifting from whatever the running agent wrote
         # back to its own config at runtime).
         - name: bootstrap-config
-          image: &image nousresearch/hermes-agent:v2026.7.7.2
+          image: *image
           command:
             - /bin/sh
             - -ec
