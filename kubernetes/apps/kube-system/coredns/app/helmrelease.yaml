@@ -66,21 +66,6 @@ spec:
               10.43.38.197 id.${SECRET_DOMAIN}
               10.43.38.197 cloud.${SECRET_DOMAIN}
               fallthrough
-          # Gatus's Echo (Connectivity Test) endpoint kept timing out: this
-          # cluster has no IPv6 routing, but echo.${SECRET_DOMAIN} (proxied
-          # through Cloudflare) publishes AAAA records, and the dialer hangs
-          # on the unreachable IPv6 address rather than falling back
-          # quickly. Unlike id.${SECRET_DOMAIN} above, this hostname needs
-          # to keep resolving to the REAL public Cloudflare edge (that's the
-          # whole point of a connectivity test) -- so instead of a static
-          # `hosts` rewrite (which would need a hardcoded, rotation-prone
-          # Cloudflare IP), suppress only the AAAA answer here and let the A
-          # query keep forwarding upstream normally for a live, current IPv4
-          # answer.
-          - name: template
-            parameters: ANY AAAA echo.${SECRET_DOMAIN}
-            configBlock: |-
-              rcode NXDOMAIN
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
             configBlock: |-
@@ -88,6 +73,33 @@ spec:
               fallthrough in-addr.arpa ip6.arpa
           - name: autopath
             parameters: "@kubernetes"
+          # This cluster has NO working IPv6 egress anywhere -- confirmed
+          # repeatedly across unrelated subsystems, not just the original
+          # echo.${SECRET_DOMAIN} connectivity-test case this rule started
+          # as: Velero's Kopia repo-maintenance jobs failing against
+          # de-fra.i3storage.com ("dial tcp [2a00:ccc0::32]:443: network is
+          # unreachable"), Flux failing to fetch HelmRepository/OCIRepository
+          # artifacts from github.io/mirror.gcr.io mirrors, and even
+          # Alertmanager's own Pushover delivery intermittently failing
+          # against api.pushover.net's AAAA record. Every one of these hosts
+          # happens to publish BOTH A and AAAA records, and whichever client
+          # picks the AAAA address first hangs/fails instead of falling back
+          # to IPv4 quickly.
+          #
+          # Rather than keep whack-a-moling this one hostname at a time
+          # (the previous version of this rule only covered
+          # echo.${SECRET_DOMAIN}), suppress the AAAA answer for EVERY
+          # external name cluster-wide: placed after the `kubernetes` plugin
+          # (which already fully answers cluster.local/in-addr.arpa/ip6.arpa
+          # itself and never reaches this rule for those zones), a zone of
+          # "." here only ever sees names the `kubernetes` plugin didn't
+          # claim -- i.e. external names about to be forwarded upstream.
+          # Internal cluster DNS is completely unaffected; nothing in this
+          # cluster resolves or needs an internal AAAA record anyway.
+          - name: template
+            parameters: ANY AAAA .
+            configBlock: |-
+              rcode NXDOMAIN
           - name: forward
             parameters: . /etc/resolv.conf
           - name: cache
