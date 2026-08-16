@@ -40,6 +40,7 @@ check here before assuming a gap means "not interesting."
 | Gotenberg | paperless | [gotenberg.md](gotenberg.md) |
 | Grafana | monitoring | [grafana.md](grafana.md) |
 | hermes-agent | hermes-agent | [hermes-agent.md](hermes-agent.md) |
+| Immich | immich | [immich.md](immich.md) |
 | k8s-gateway | network | [k8s-gateway.md](k8s-gateway.md) |
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
 | Kubescape | security | [kubescape.md](kubescape.md) |
