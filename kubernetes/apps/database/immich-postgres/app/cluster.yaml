@@ -1,0 +1,66 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/postgresql.cnpg.io/cluster_v1.json
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: immich-postgres
+spec:
+  description: Dedicated PostgreSQL cluster for Immich (needs the VectorChord extension)
+  instances: 1
+  # A separate cluster from the shared "postgres" one (kubernetes/apps/database/cloudnative-pg/cluster/)
+  # because Immich requires the VectorChord (vchord) extension for smart search/
+  # face recognition, which the shared cluster's plain
+  # ghcr.io/cloudnative-pg/postgresql image doesn't provide. This image is
+  # tensorchord's own CNPG-compatible build of Postgres + VectorChord, not
+  # Immich's own docker-compose image (ghcr.io/immich-app/postgres), which
+  # isn't built for the CNPG operator's expected layout.
+  # renovate: datasource=docker depName=ghcr.io/tensorchord/cloudnative-vectorchord
+  imageName: ghcr.io/tensorchord/cloudnative-vectorchord:18.4-1.1.1@sha256:9c9246cb8ba0332f7e1115def71329410657237db8ef104160a479a89c7e03a2
+
+  storage:
+    size: 20Gi
+    storageClass: zfs-nfs
+
+  enableSuperuserAccess: true
+
+  postgresql:
+    shared_preload_libraries:
+      - "vchord.so"
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+
+  primaryUpdateStrategy: unsupervised
+
+  nodeMaintenanceWindow:
+    inProgress: false
+    reusePVC: true
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: immichdb
+      owner: immichusr
+      secret:
+        name: immich-db-role
+      postInitSQL:
+        - CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
+        - CREATE EXTENSION IF NOT EXISTS earthdistance CASCADE;
+
+  # Reuses the cluster-wide barman-cloud plugin/ObjectStore already set up for
+  # the shared "postgres" cluster (kubernetes/apps/database/plugin-barman-cloud/)
+  # instead of provisioning separate S3 credentials for a second bucket.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: postgres-backup

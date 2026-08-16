@@ -1,0 +1,55 @@
+---
+# Allow postgres access from all cluster pods (port 5432)
+# and internal CNPG replication between instances
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: immich-postgres
+  namespace: database
+spec:
+  endpointSelector:
+    matchLabels:
+      cnpg.io/cluster: immich-postgres
+  ingress:
+    # CNPG internal replication (all ports between instances)
+    - fromEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: immich-postgres
+    # CNPG operator: health checks and cluster management via Patroni REST API (:8000)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+            app.kubernetes.io/name: cloudnative-pg
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Kubelet readiness/liveness probes: kubelet runs in host-network and probes
+    # https://<pod-ip>:8000/readyz — must allow host entity, not just cluster pods
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Allow postgres access from any pod in the cluster
+    - fromEntities:
+        - cluster
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    # Prometheus scraping of the CNPG metrics exporter (:9187)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9187"
+              protocol: TCP
+  egress:
+    # Allow replication + barman S3 backup + DNS
+    - toEntities:
+        - cluster
+        - world

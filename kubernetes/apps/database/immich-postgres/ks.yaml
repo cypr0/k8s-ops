@@ -1,0 +1,31 @@
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app immich-postgres
+  namespace: &namespace database
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  dependsOn:
+    - name: cloudnative-pg
+      namespace: database
+    - name: external-secrets-stores
+      namespace: security
+    # The Cluster references the ObjectStore by name (plugins.parameters.barmanObjectName)
+    - name: plugin-barman-cloud-objectstore
+      namespace: database
+  interval: 1h
+  path: ./kubernetes/apps/database/immich-postgres/app
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: *namespace
+  timeout: 10m
+  # CNPG Cluster CRD health status not recognized by Flux — cluster runs fine
+  wait: false
