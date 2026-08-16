@@ -66,6 +66,38 @@ def missing_docs(apps):
     return {name: dirs for name, dirs in apps.items() if name not in existing}
 
 
+def apps_with_open_pr():
+    """App names already covered by an open docs-bot PR - re-drafting these
+    would just pile up duplicates every time this workflow re-triggers before
+    the prior PR is reviewed and merged (confirmed live: 6 duplicate PRs for
+    the same app before this check existed)."""
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            "cypr0/k8s-ops",
+            "--state",
+            "open",
+            "--label",
+            "docs-bot",
+            "--json",
+            "files",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    apps = set()
+    for pr in json.loads(result.stdout):
+        for f in pr["files"]:
+            m = re.match(r"^docs/apps/([^/]+)\.md$", f["path"])
+            if m and m.group(1) != "README":
+                apps.add(m.group(1))
+    return apps
+
+
 def scan_for_secrets(text):
     hits = []
     for pat in SECRET_PATTERNS:
@@ -183,6 +215,16 @@ def main():
     todo = missing_docs(discover_apps())
     if not todo:
         print("No undocumented apps found.")
+        return
+
+    already_open = apps_with_open_pr()
+    if already_open:
+        skipped = already_open & todo.keys()
+        if skipped:
+            print(f"Skipping (already has an open PR): {sorted(skipped)}")
+        todo = {name: dirs for name, dirs in todo.items() if name not in already_open}
+    if not todo:
+        print("Nothing left to draft - all missing docs already have an open PR.")
         return
 
     template = open(TEMPLATE_PATH).read()
