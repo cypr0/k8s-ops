@@ -242,7 +242,7 @@ def main():
             "--body",
             f"The docs-refresh workflow could not safely auto-draft docs for:\n\n{body}",
             "--label",
-            "documentation",
+            "docs-bot",
         )
 
     if not drafted:
@@ -279,7 +279,7 @@ def main():
         "--head",
         branch,
         "--label",
-        "documentation",
+        "docs-bot",
     )
 
 

@@ -14,6 +14,8 @@ Automated follow-on to the interactive campaign in [`app-docs-campaign.md`](app-
 4. If the scan is clean: writes the file, updates `docs/apps/README.md`'s index, opens a **pull request** for human review.
 5. If the scan flags something, or the OpenRouter call fails: opens a **GitHub Issue** instead, naming the app and the reason — never a PR with unreviewed content that failed the scan.
 
+Every PR/Issue this bot opens carries the `docs-bot` label (`.github/labels.yaml`), so bot-authored content is identifiable at a glance, the same way Renovate's own PRs carry `renovate/*`. PRs additionally pick up `area/docs` automatically via the existing labeler workflow (`.github/labeler.yaml` was extended to match `docs/**/*`, not just the root `README.md`).
+
 **It never auto-merges.** Every draft — clean scan or not — is a first draft meant to be checked against the actual manifests before merging, same as the interactive campaign's own citation discipline. It also only handles the "genuinely new, undocumented app" case; it does not attempt to detect staleness in existing docs (see Known limitations).
 
 ## One-time setup required
