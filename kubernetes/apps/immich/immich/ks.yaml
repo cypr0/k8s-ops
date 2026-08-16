@@ -10,7 +10,7 @@ spec:
     labels:
       app.kubernetes.io/name: *app
   dependsOn:
-    - name: immich-postgres
+    - name: cloudnative-pg-databases
       namespace: database
     - name: csi-driver-nfs
       namespace: kube-system

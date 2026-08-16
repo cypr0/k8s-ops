@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/postgresql.cnpg.io/database_v1.json
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: immich
+spec:
+  name: immichdb
+  owner: immichusr
+  cluster:
+    name: postgres
+  # Listed in dependency order rather than relying on CASCADE (the Database
+  # CRD's extensions field has no cascade option) - vector/cube must exist
+  # before vchord/earthdistance, which depend on them. Matches Immich's own
+  # documented setup (docs.immich.app/administration/postgres-standalone/):
+  # CREATE EXTENSION vchord CASCADE; CREATE EXTENSION earthdistance CASCADE;
+  extensions:
+    - name: vector
+    - name: vchord
+    - name: cube
+    - name: earthdistance

@@ -40,6 +40,26 @@ spec:
       max_replication_slots: "10"
       # Storage (ZFS via NFS behaves closer to SSD for sequential reads)
       random_page_cost: "1.1"
+    # VectorChord (vchord.so) for Immich's smart search/facial recognition -
+    # loading this requires a rolling restart of the whole cluster (all
+    # instances, one at a time) since shared_preload_libraries isn't
+    # reloadable; expect a brief primary failover when this first applies.
+    shared_preload_libraries:
+      - "vchord.so"
+    extensions:
+      - name: vchord
+        image:
+          # No official CNPG-compatible VectorChord extension image exists
+          # upstream (unlike pgvector, which CNPG publishes directly) - this
+          # is repackaged from ghcr.io/tensorchord/vchord-scratch (upstream's
+          # own image, just with the wrong file layout for CNPG's
+          # extension_control_path/dynamic_library_path contract) into the
+          # flat /lib + /share/extension layout CNPG expects, mirroring
+          # cloudnative-pg/postgres-extensions-containers' own pgvector
+          # Dockerfile. Auto-rebuilt by .github/workflows/vchord-extension-rebuild.yaml
+          # whenever upstream publishes a new pg18 tag - see that workflow
+          # and .github/vchord-extension/Dockerfile for the build itself.
+          reference: ghcr.io/cypr0/cnpg-vchord-extension:pg18-v1.1.1
 
   resources:
     requests:
@@ -112,6 +132,15 @@ spec:
         inherit: true
         passwordSecret:
           name: portfolio-db-role
+      - name: immichusr
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        passwordSecret:
+          name: immich-db-role
 
   # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned -- see
   # kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml) were

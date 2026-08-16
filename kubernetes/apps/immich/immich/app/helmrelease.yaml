@@ -119,7 +119,7 @@ spec:
           # was added — 0 (open-webui, paperless-ngx), 1 (nextcloud), 3
           # (whiteboard), 4 (firecrawl) were already taken.
           REDIS_DBINDEX: "2"
-          DB_HOSTNAME: "immich-postgres-rw.database.svc.cluster.local"
+          DB_HOSTNAME: "postgres-rw.database.svc.cluster.local"
           DB_PORT: "5432"
           DB_DATABASE_NAME: "immichdb"
           DB_VECTOR_EXTENSION: "vectorchord"
