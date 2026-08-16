@@ -1,0 +1,77 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: immich
+  namespace: immich
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: immich
+  ingress:
+    # Envoy proxy (network ns)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "2283"
+              protocol: TCP
+    # Gatus health check
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "2283"
+              protocol: TCP
+    # Same namespace (immich-server <-> immich-machine-learning)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": immich
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # PostgreSQL (dedicated immich-postgres cluster) + Redis/Dragonfly
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+            - port: "6379"
+              protocol: TCP
+    # Authentik OIDC via id.${SECRET_DOMAIN} (envoy-internal, DNAT :10443)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
+    # Same namespace
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": immich
+    # External: map tiles (tiles.immich.cloud), reverse geocoding data,
+    # release/version checks, SMTP notifications
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "25"
+              protocol: TCP

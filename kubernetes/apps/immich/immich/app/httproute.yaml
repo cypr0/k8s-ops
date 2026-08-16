@@ -1,0 +1,37 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: immich
+  namespace: immich
+  labels:
+    app.kubernetes.io/name: immich
+spec:
+  hostnames:
+    - media.${SECRET_DOMAIN}
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-external
+      namespace: network
+      sectionName: https
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      timeouts:
+        request: "1h"
+        backendRequest: "1h"
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: immich-immich-server
+          namespace: immich
+          port: 2283
+          weight: 1

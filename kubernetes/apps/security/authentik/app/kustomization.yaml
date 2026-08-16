@@ -12,6 +12,7 @@ resources:
   - ./externalsecret-paperless-oidc.yaml
   - ./externalsecret-open-webui-oidc.yaml
   - ./externalsecret-nextcloud-oidc.yaml
+  - ./externalsecret-immich-oidc.yaml
   - ./externalsecret-pushover.yaml
   - ./helmrepository.yaml
   - ./helmrelease.yaml
@@ -34,6 +35,7 @@ configMapGenerator:
       - blueprints/04-paperless-oidc.yaml
       - blueprints/05-open-webui-oidc.yaml
       - blueprints/06-nextcloud-oidc.yaml
+      - blueprints/07-immich-oidc.yaml
       - blueprints/08-kubernetes-oidc.yaml
     options:
       disableNameSuffixHash: true

@@ -16,3 +16,5 @@ resources:
   - ./database-firecrawl.yaml
   - ./externalsecret-portfolio.yaml
   - ./database-portfolio.yaml
+  - ./externalsecret-immich.yaml
+  - ./database-immich.yaml
