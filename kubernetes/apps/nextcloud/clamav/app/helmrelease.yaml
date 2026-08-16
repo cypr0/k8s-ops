@@ -26,7 +26,7 @@ spec:
           app:
             image:
               repository: clamav/clamav
-              tag: 1.5.3
+              tag: 1.5.4
             env:
               - name: CLAMD_CONF_MaxFileSize
                 value: "104857600"
