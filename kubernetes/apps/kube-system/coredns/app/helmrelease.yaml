@@ -89,17 +89,31 @@ spec:
           # Rather than keep whack-a-moling this one hostname at a time
           # (the previous version of this rule only covered
           # echo.${SECRET_DOMAIN}), suppress the AAAA answer for EVERY
-          # external name cluster-wide: placed after the `kubernetes` plugin
-          # (which already fully answers cluster.local/in-addr.arpa/ip6.arpa
-          # itself and never reaches this rule for those zones), a zone of
-          # "." here only ever sees names the `kubernetes` plugin didn't
-          # claim -- i.e. external names about to be forwarded upstream.
-          # Internal cluster DNS is completely unaffected; nothing in this
-          # cluster resolves or needs an internal AAAA record anyway.
+          # name cluster-wide.
+          #
+          # IMPORTANT (2026-08-16 incident): the `kubernetes` plugin above
+          # does NOT fully own AAAA queries for existing cluster.local
+          # services -- it has no IPv6 endpoint to answer with, and (since
+          # `fallthrough` is only configured for in-addr.arpa/ip6.arpa, not
+          # cluster.local itself) the query still reaches this template rule.
+          # The original version of this rule used `rcode NXDOMAIN`, which
+          # broke real, existing internal names: glibc's resolver (used by
+          # Nextcloud's PHP container, confirmed live) treats an NXDOMAIN
+          # answer to the AAAA query as proof the name doesn't exist at all
+          # and refuses to also try the A record, surfacing as "Failed to
+          # connect to the database: ... Name does not resolve" even though
+          # postgres-rw.database.svc.cluster.local very much resolves via A.
+          # `rcode NOERROR` (the default, so simply omitting `rcode` here)
+          # answers with NODATA instead (NOERROR + empty answer section) --
+          # the semantically correct response for "this name exists, just
+          # has no AAAA record" -- which every resolver correctly falls back
+          # from to the A record. External-name suppression (the original
+          # goal: Kopia, Flux, Alertmanager/Pushover) still works identically,
+          # since those never had an A-record fallback concern to begin with.
           - name: template
             parameters: ANY AAAA .
             configBlock: |-
-              rcode NXDOMAIN
+              rcode NOERROR
           - name: forward
             parameters: . /etc/resolv.conf
           - name: cache
