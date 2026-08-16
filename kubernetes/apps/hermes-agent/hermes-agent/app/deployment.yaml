@@ -93,11 +93,23 @@ spec:
           image: &image nousresearch/hermes-agent:v2026.7.7.2
           command:
             - /bin/sh
-            - -ec
+            - -c
           args:
             - |
-              set -eu
-              chown 1000:1000 /opt/data
+              # MUST be best-effort, not `set -e`: confirmed live (2026-08-16)
+              # that this chown fails outright on the LIVE production volume
+              # -- "Operation not permitted" -- matching a previously
+              # documented constraint on this specific CSI/NFS-backed mount
+              # root that not even root can chmod/chown it once it's past
+              # initial provisioning (see project memory). It only succeeds
+              # on a FRESHLY csi-driver-nfs-provisioned subdirectory, which
+              # is exactly the restore scenario this container exists for --
+              # production's own /opt/data has been correctly owned since
+              # its very first mount and never needed this fix, so a failure
+              # here is expected and harmless there, not a reason to
+              # CrashLoopBackOff a Deployment that was otherwise fine.
+              chown 1000:1000 /opt/data || echo "chown skipped (already correct, or this mount denies it -- see this container's own args comment)"
+              exit 0
           volumeMounts:
             - name: data
               mountPath: /opt/data
