@@ -1,0 +1,92 @@
+---
+version: 1
+metadata:
+  name: Immich OIDC
+  labels:
+    app: immich
+
+entries:
+  # ── Groups scope mapping (returns groups claim when "groups" scope is requested) ──
+  - model: authentik_providers_oauth2.scopemapping
+    id: immich-groups-mapping
+    identifiers:
+      name: immich-groups
+    attrs:
+      scope_name: groups
+      description: Groups claim for Immich
+      expression: |
+        return {
+            "groups": [group.name for group in request.user.ak_groups.all()],
+        }
+
+  # ── OAuth2 / OIDC Provider ────────────────────────────────────────────
+  - model: authentik_providers_oauth2.oauth2provider
+    id: immich-oidc-provider
+    identifiers:
+      name: immich-oidc
+    attrs:
+      authentication_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - cisotop-authentication
+      authorization_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-provider-authorization-implicit-consent
+      invalidation_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-provider-invalidation-flow
+      client_type: confidential
+      client_id: !Env IMMICH_CLIENT_ID
+      client_secret: !Env IMMICH_CLIENT_SECRET
+      redirect_uris:
+        - matching_mode: strict
+          url: https://media.${SECRET_DOMAIN}/auth/login
+        - matching_mode: strict
+          url: https://media.${SECRET_DOMAIN}/user-settings
+        - matching_mode: strict
+          # Mobile app deep link — required for iOS/Android login per Immich's
+          # own OAuth docs (docs.immich.app/administration/oauth).
+          url: app.immich:///oauth-callback
+      access_code_validity: minutes=1
+      access_token_validity: minutes=5
+      refresh_token_validity: days=30
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      signing_key: !Find
+        - authentik_crypto.certificatekeypair
+        - - name
+          - "authentik Self-signed Certificate"
+      property_mappings:
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - openid
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - email
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - profile
+        - !Find
+          # NOT [scope_name, groups] — see paperless/open-webui blueprints for
+          # why a scope_name lookup here would be ambiguous.
+          - authentik_providers_oauth2.scopemapping
+          - - name
+            - immich-groups
+  # ── Application ───────────────────────────────────────────────────────
+  - #magic___^_^___line
+    model: authentik_core.application
+    id: immich-app
+    identifiers:
+      slug: immich
+    attrs:
+      name: Immich
+      group: Productivity
+      provider: !KeyOf immich-oidc-provider
+      meta_launch_url: https://media.${SECRET_DOMAIN}
+      meta_icon: https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/immich.png
+      policy_engine_mode: all
