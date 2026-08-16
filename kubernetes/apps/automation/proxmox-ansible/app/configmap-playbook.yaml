@@ -11,13 +11,19 @@ data:
     apk add --no-cache ansible openssh-client >/dev/null 2>&1
     echo "Ansible $(ansible --version | head -1)"
 
-    # Fix SSH key: 1Password collapses newlines to spaces in password fields.
-    # fix_key.py is a proper Python file (no shell quoting issues).
+    # Fix SSH keys: 1Password collapses newlines to spaces in password fields.
+    # fix_key.py is a proper Python file (no shell quoting issues). Applied to
+    # both keys - root's and the ansible user's own, separate keypair.
     mkdir -p /tmp/ssh-rw
     python3 /scripts/fix_key.py /tmp/ssh/id_rsa /tmp/ssh-rw/id_rsa
     chmod 600 /tmp/ssh-rw/id_rsa
-    echo "SSH key lines: $(wc -l < /tmp/ssh-rw/id_rsa)"
+    echo "root SSH key lines: $(wc -l < /tmp/ssh-rw/id_rsa)"
     head -1 /tmp/ssh-rw/id_rsa
+
+    python3 /scripts/fix_key.py /tmp/ssh/ansible_id_rsa /tmp/ssh-rw/ansible_id_rsa
+    chmod 600 /tmp/ssh-rw/ansible_id_rsa
+    echo "ansible SSH key lines: $(wc -l < /tmp/ssh-rw/ansible_id_rsa)"
+    head -1 /tmp/ssh-rw/ansible_id_rsa
 
     # $$$${VAR} -> Flux ignores and passes through as $${VAR} to the shell at
     # runtime. Without doubling, Flux's postBuild.substituteFrom would replace
@@ -25,16 +31,15 @@ data:
     # (Doubled again here vs. the actual usage below: this is a comment, and
     # Flux's substitution scans the whole rendered text, comments included --
     # a bare $${VAR} in prose is itself a live substitution attempt.)
-    # Two inventory entries for the same physical host: one connecting as
-    # root (bootstrap only - creates/repairs the ansible user), one as
-    # ansible (everything else, via passwordless sudo). Both use the same
-    # private key - PROXMOX_ANSIBLE_SSH_PUBKEY installed for the ansible
-    # user is the public half of this same PROXMOX_ROOT_SSH_KEY keypair,
-    # not a second credential.
+    # Two inventory entries for the same physical host, each with its OWN
+    # keypair: root (bootstrap only - creates/repairs the ansible user) and
+    # ansible (everything else, via passwordless sudo). Confirmed live
+    # 2026-08-16 these are genuinely separate keys, not one key shared
+    # across two accounts - see PROXMOX_ANSIBLE_SSH_KEY in externalsecret.yaml.
     echo "[proxmox_root]" > /tmp/inventory.ini
     echo "proxmox-host-root ansible_host=$${PROXMOX_SSH_HOST} ansible_user=root ansible_ssh_private_key_file=/tmp/ssh-rw/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
     echo "[proxmox_ansible]" >> /tmp/inventory.ini
-    echo "proxmox-host-ansible ansible_host=$${PROXMOX_SSH_HOST} ansible_user=ansible ansible_ssh_private_key_file=/tmp/ssh-rw/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
+    echo "proxmox-host-ansible ansible_host=$${PROXMOX_SSH_HOST} ansible_user=ansible ansible_ssh_private_key_file=/tmp/ssh-rw/ansible_id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
     echo "Inventory written for host: $${PROXMOX_SSH_HOST}"
 
     export ANSIBLE_LOCAL_TMP=/tmp/ansible-local
