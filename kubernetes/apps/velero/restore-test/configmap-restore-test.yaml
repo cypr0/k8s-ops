@@ -91,6 +91,20 @@ data:
     OPENSEARCH_PASS   = os.environ.get("OPENSEARCH_PASSWORD", "")
     POLL_INTERVAL  = 15
     STATE_CONFIGMAP = "velero-restore-test-state"
+    # This cluster has a known intermittent apiserver-reachability issue
+    # (Cilium/KubePrism only ever resolves ONE of the three control-plane
+    # backends for the kubernetes.default ClusterIP -- if that one node
+    # blips, every apiserver call cluster-wide hangs simultaneously). None
+    # of this script's urlopen() calls used to set a timeout, so a single
+    # blip during this hit live: a poll call blocked forever, past the
+    # 600s pods_healthy() deadline this script itself defines, past
+    # cleanup()'s own "always run" guarantee -- the only thing that ever
+    # stopped it was the CronJob's activeDeadlineSeconds SIGKILL-ing the
+    # whole container hours later, which bypasses every try/finally in
+    # this script, leaving a wedged scratch namespace with no Pushover
+    # alert ever sent. A bounded per-call timeout turns that hang into a
+    # normal, catchable exception instead.
+    HTTP_TIMEOUT = 15
 
     import base64
     _OS_AUTH = base64.b64encode(f"{OPENSEARCH_USER}:{OPENSEARCH_PASS}".encode()).decode()
@@ -111,7 +125,7 @@ data:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, context=_OS_CTX) as r:
+            with urllib.request.urlopen(req, context=_OS_CTX, timeout=HTTP_TIMEOUT) as r:
                 r.read()
         except Exception as e:
             print(f"  ERROR indexing restore-test result: {e}", file=sys.stderr)
@@ -128,7 +142,7 @@ data:
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(f"{API}{path}", data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, context=CTX) as r:
+            with urllib.request.urlopen(req, context=CTX, timeout=HTTP_TIMEOUT) as r:
                 return json.loads(r.read() or b"{}")
         except urllib.error.HTTPError as e:
             if e.code == 404:
@@ -153,7 +167,7 @@ data:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req) as r:
+            with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
                 r.read()
         except Exception as e:
             print(f"  ERROR sending Pushover alert: {e}", file=sys.stderr)
@@ -204,7 +218,17 @@ data:
         deadline = time.time() + timeout_seconds
         last_detail = "no pods found"
         while time.time() < deadline:
-            resp = k8s("GET", f"/api/v1/namespaces/{namespace}/pods") or {}
+            try:
+                resp = k8s("GET", f"/api/v1/namespaces/{namespace}/pods") or {}
+            except Exception as e:
+                # Transient apiserver blip -- HTTP_TIMEOUT bounds how long a
+                # single call can hang, but a hung call still shouldn't burn
+                # this function's own timeout budget on one bad poll. Retry
+                # within the same deadline instead of treating it as
+                # "unhealthy".
+                last_detail = f"transient error polling pods: {e}"
+                time.sleep(poll)
+                continue
             items = resp.get("items", [])
             if not items:
                 last_detail = "no restored pods"
@@ -224,8 +248,16 @@ data:
 
     def cleanup(restore_name, scratch_namespaces):
         print(f"=== Cleanup: restore={restore_name}, namespaces={scratch_namespaces} ===")
+        # Each delete is its own try/except: an unhandled exception here
+        # (e.g. a transient apiserver blip on the restore-object delete)
+        # must never skip the namespace deletes below it -- that's exactly
+        # how a previous run left a scratch namespace with a crash-looping
+        # restored pod running for hours with nothing ever cleaning it up.
         if restore_name:
-            k8s("DELETE", f"/apis/velero.io/v1/namespaces/velero/restores/{restore_name}")
+            try:
+                k8s("DELETE", f"/apis/velero.io/v1/namespaces/velero/restores/{restore_name}")
+            except Exception as e:
+                print(f"  WARN: failed to delete restore {restore_name}: {e}", file=sys.stderr)
         for ns in scratch_namespaces:
             try:
                 k8s("DELETE", f"/api/v1/namespaces/{ns}")
@@ -301,7 +333,17 @@ data:
             phase = "New"
             restore = None
             while True:
-                restore = k8s("GET", f"/apis/velero.io/v1/namespaces/velero/restores/{restore_name}")
+                try:
+                    restore = k8s("GET", f"/apis/velero.io/v1/namespaces/velero/restores/{restore_name}")
+                except Exception as e:
+                    # Same reasoning as pods_healthy(): a bounded per-call
+                    # timeout (HTTP_TIMEOUT) means this raises instead of
+                    # hanging forever, but a single transient apiserver blip
+                    # still shouldn't fail an otherwise-healthy multi-hour
+                    # restore -- retry the poll instead.
+                    print(f"  transient error polling restore status: {e} -- retrying", file=sys.stderr)
+                    time.sleep(POLL_INTERVAL)
+                    continue
                 phase = (restore or {}).get("status", {}).get("phase", "New")
                 print(f"  phase={phase}")
                 if phase in ("Completed", "PartiallyFailed", "Failed"):
