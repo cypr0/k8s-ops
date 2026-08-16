@@ -113,6 +113,13 @@ spec:
         # ── Custom detection rules ────────────────────────────────────────────
 
         # Alert: shell spawned inside a database container
+        # CNPG's own operator invokes `sh -c /controller/manager wal-archive
+        # ...` on postgres-1 roughly every 5 minutes as part of routine WAL
+        # archiving to barman-cloud -- not an intrusion. Confirmed live
+        # (2026-08-16): 30 CRITICAL hits in 6h, all this exact command. Same
+        # false-positive shape as the cnpg_wal_archive exception above, just
+        # against a different rule -- excluded in the condition itself
+        # below (this rule has no `exceptions:` block to extend).
         - rule: Shell in Database Container
           desc: A shell was spawned inside a database pod — potential intrusion
           condition: >
@@ -121,6 +128,7 @@ spec:
             and k8s.ns.name in (database)
             and proc.name in (bash, sh, zsh, dash, ash)
             and not proc.cmdline contains "healthcheck.sh"
+            and not proc.cmdline contains "wal-archive"
           output: >
             Shell spawned in database container
             (user=%user.name pod=%k8s.pod.name ns=%k8s.ns.name
