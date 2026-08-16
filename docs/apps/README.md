@@ -12,4 +12,8 @@ uninteresting, just not reached yet.
 
 | App | Namespace | Doc |
 | --- | --- | --- |
-| _(none yet — campaign in progress)_ | | |
+| Authentik | security | [authentik.md](authentik.md) |
+| CoreDNS | kube-system | [coredns.md](coredns.md) |
+| Nextcloud | nextcloud | [nextcloud.md](nextcloud.md) |
+| Kubescape | kubescape | [kubescape.md](kubescape.md) |
+| hermes-agent | hermes-agent | [hermes-agent.md](hermes-agent.md) |
