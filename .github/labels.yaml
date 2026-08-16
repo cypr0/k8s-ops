@@ -31,6 +31,9 @@
   color: "027fa0"
 - name: renovate/helm
   color: "027fa0"
+# Bots
+- name: docs-bot
+  color: "5319e7"
 # Semantic Types
 - name: type/digest
   color: "ffeC19"
