@@ -56,9 +56,26 @@ cluster:
       oidc-username-prefix: "oidc:"
       oidc-groups-claim: groups
       oidc-groups-prefix: "oidc:"
+    # Requests only, no limits — same reasoning as the cilium-agent resources
+    # block (kubernetes/apps/kube-system/cilium/app/helmrelease.yaml): these
+    # static pods ran completely unaccounted for in kubelet's own bookkeeping
+    # (confirmed live 2026-08-15: kube-apiserver alone uses 2-4Gi RSS per CP
+    # node with zero request), which was a real contributor to the CP
+    # memory-overcommit/OOM-kill incident this session investigated (see
+    # project memory). A limit here risks throttling/OOM-killing the apiserver
+    # itself under a load spike — exactly the failure mode being fixed —
+    # so this only gives the scheduler/kubelet accurate accounting.
+    resources:
+      requests:
+        cpu: 250m
+        memory: 2Gi
   controllerManager:
     extraArgs:
       bind-address: 0.0.0.0
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
   coreDNS:
     disabled: true
   etcd:
@@ -71,3 +88,7 @@ cluster:
   scheduler:
     extraArgs:
       bind-address: 0.0.0.0
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
