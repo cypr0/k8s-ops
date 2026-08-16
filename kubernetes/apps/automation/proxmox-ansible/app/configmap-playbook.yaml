@@ -43,8 +43,14 @@ data:
     echo "Inventory written for host: $${PROXMOX_SSH_HOST}"
 
     export ANSIBLE_LOCAL_TMP=/tmp/ansible-local
-    export ANSIBLE_REMOTE_TMP=/tmp/.ansible/tmp
     export ANSIBLE_HOST_KEY_CHECKING=False
+    # No ANSIBLE_REMOTE_TMP override: left at Ansible's own per-user default
+    # (~/.ansible/tmp). Confirmed live 2026-08-16 that forcing a shared
+    # /tmp/.ansible/tmp path broke the ansible-user play - years of root-only
+    # runs had left that directory 0700 root-owned, so the unprivileged
+    # ansible user couldn't create its own scratch subdirectory inside it
+    # ("Failed to create temporary directory"). Root uses /root/.ansible/tmp,
+    # ansible uses /home/ansible/.ansible/tmp - separate homes, no collision.
 
     mkdir -p /tmp/ansible-local
 
