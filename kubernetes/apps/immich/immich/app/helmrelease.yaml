@@ -68,7 +68,7 @@ spec:
               - secretRef:
                   name: immich-secret
               - configMapRef:
-                  name: immich-config
+                  name: immich
           immich-machine-learning:
             image:
               repository: ghcr.io/immich-app/immich-machine-learning
@@ -93,7 +93,7 @@ spec:
               - secretRef:
                   name: immich-secret
               - configMapRef:
-                  name: immich-config
+                  name: immich
     service:
       immich-server:
         controller: main
