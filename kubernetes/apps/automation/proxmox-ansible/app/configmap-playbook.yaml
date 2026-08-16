@@ -135,6 +135,14 @@ data:
             mode: "0600"
           when: ansible_pubkey | length > 0
 
+        # This host was always administered as root directly, so sudo was
+        # never installed - confirmed live 2026-08-16 ("sudo: not found")
+        # once the ansible-user play first tried to use become: yes.
+        - name: Ensure sudo is installed
+          ansible.builtin.apt:
+            name: sudo
+            state: present
+
         - name: Grant ansible user passwordless sudo
           ansible.builtin.copy:
             content: "ansible ALL=(ALL) NOPASSWD: ALL\n"
