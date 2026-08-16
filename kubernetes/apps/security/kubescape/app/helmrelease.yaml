@@ -6,6 +6,16 @@ metadata:
   name: kubescape
 spec:
   interval: 1h
+  # node-agent's DaemonSet rolls one of 5 worker nodes at a time, and each
+  # pod's /readyz takes several minutes to respond after (re)start (eBPF
+  # collector init under CPU contention) -- confirmed live 2026-08-16: a
+  # full rollout comfortably exceeds Helm's default ~5m wait, causing a
+  # false-negative "timeout waiting for DaemonSet" upgrade failure that then
+  # auto-rolls-back to an older release even though the rollout itself goes
+  # on to succeed seconds/minutes later. Longer timeout, not a resource
+  # problem -- see nodeAgent.resources below for the actual CPU-starvation
+  # fix (F6).
+  timeout: 15m
   chart:
     spec:
       chart: kubescape-operator

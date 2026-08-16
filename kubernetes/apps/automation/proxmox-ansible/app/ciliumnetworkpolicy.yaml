@@ -20,7 +20,7 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # SSH to Proxmox host (95.216.8.94 or via VPN)
+    # SSH to Proxmox host (see SECRET_ALLOWED_IP)
     - toEntities:
         - world
       toPorts:
