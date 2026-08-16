@@ -9,6 +9,24 @@ spec:
     name: cilium
   interval: 1h
   values:
+    # No resources block existed anywhere for the main agent DaemonSet
+    # before this -- confirmed live (2026-08-16): cilium-agent runs
+    # completely unaccounted for in the scheduler's own bookkeeping
+    # (0 memory/cpu requested), while actually using ~90m CPU / ~215Mi
+    # memory per node. This is a real contributor to the already-known
+    # control-plane memory overcommit (cp-0/cp-2 running at 67-78% actual
+    # RAM while only 16-20% of that is ever reserved via requests).
+    # Deliberately NOT setting a memory/cpu LIMIT here: this is the
+    # cluster's own CNI, already suspected of separate stability issues
+    # (single-apiserver-backend fragility, see project memory) --
+    # throttling or OOM-killing it under an aggressive limit would risk
+    # causing the exact kind of cluster-wide networking instability this
+    # is meant to help diagnose, not fix it. A request-only entry still
+    # gives the scheduler an accurate accounting without that risk.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
     autoDirectNodeRoutes: true
     bpf:
       masquerade: true
