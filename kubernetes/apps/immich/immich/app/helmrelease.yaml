@@ -1,0 +1,150 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: immich
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    defaultPodOptions:
+      annotations:
+        reloader.stakater.com/auto: "true"
+        secret.reloader.stakater.com/reload: immich-secret
+      # Runs as root: the media PVC is NFS-backed via csi-driver-nfs, which
+      # doesn't enforce fsGroup (same reasoning/fix as open-webui's PVC —
+      # see docs/apps/open-webui.md) — a non-root UID can't reliably write to
+      # a freshly-provisioned NFS export without it.
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 0
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+    controllers:
+      main:
+        replicas: 1
+        strategy: RollingUpdate
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          immich-server:
+            image:
+              repository: ghcr.io/immich-app/immich-server
+              tag: v3.1.0
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+              limits:
+                memory: 4Gi
+            probes:
+              startup:
+                enabled: true
+                spec:
+                  failureThreshold: 30
+                  periodSeconds: 5
+              liveness:
+                enabled: true
+              readiness:
+                enabled: true
+            envFrom:
+              - secretRef:
+                  name: immich-secret
+              - configMapRef:
+                  name: immich-config
+          immich-machine-learning:
+            image:
+              repository: ghcr.io/immich-app/immich-machine-learning
+              tag: v3.1.0
+            resources:
+              requests:
+                cpu: 15m
+                memory: 512Mi
+              limits:
+                memory: 4Gi
+            probes:
+              startup:
+                enabled: true
+                spec:
+                  failureThreshold: 30
+                  periodSeconds: 5
+              liveness:
+                enabled: true
+              readiness:
+                enabled: true
+            envFrom:
+              - secretRef:
+                  name: immich-secret
+              - configMapRef:
+                  name: immich-config
+    service:
+      immich-server:
+        controller: main
+        ports:
+          http:
+            port: 2283
+      immich-machine-learning:
+        controller: main
+        ports:
+          http:
+            port: 3003
+    configMaps:
+      immich-config:
+        enabled: true
+        data:
+          TZ: ${TIMEZONE}
+          IMMICH_CONFIG_FILE: &configLocation /usr/src/app/immich.json
+          IMMICH_MEDIA_LOCATION: &mediaLocation /usr/src/app/upload
+          IMMICH_ENV: production
+          REDIS_HOSTNAME: "dragonfly.database.svc.cluster.local"
+          REDIS_PORT: "6379"
+          # Index 2 was the first unused Dragonfly DB index at the time this
+          # was added — 0 (open-webui, paperless-ngx), 1 (nextcloud), 3
+          # (whiteboard), 4 (firecrawl) were already taken.
+          REDIS_DBINDEX: "2"
+          DB_HOSTNAME: "immich-postgres-rw.database.svc.cluster.local"
+          DB_PORT: "5432"
+          DB_DATABASE_NAME: "immichdb"
+          DB_VECTOR_EXTENSION: "vectorchord"
+    persistence:
+      data:
+        enabled: true
+        existingClaim: immich-media
+        globalMounts:
+          - path: *mediaLocation
+      cache:
+        enabled: true
+        type: emptyDir
+        advancedMounts:
+          main:
+            immich-machine-learning:
+              - path: /cache
+      config:
+        type: secret
+        name: immich-secret
+        items:
+          - key: immich.json
+            path: immich.json
+        advancedMounts:
+          main:
+            immich-server:
+              - path: *configLocation
+                subPath: immich.json
+                readOnly: true
