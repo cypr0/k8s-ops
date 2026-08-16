@@ -127,7 +127,18 @@ spec:
         enabled: true
         minAvailable: 1
     geoip:
-      enabled: true
+      # Temporarily disabled 2026-08-16: the sidecar's geoipupdate container
+      # crash-loops on "429 LIMIT_EXCEEDED: Daily GeoIP database download
+      # limit reached" -- almost certainly triggered by this session's own
+      # repeated authentik-server/worker restarts (each restart = a fresh
+      # download attempt against MaxMind's account-wide daily quota). Because
+      # the chart runs geoip as a regular sidecar (no readinessProbe override),
+      # a crash-looping geoip container blocks the WHOLE pod's Ready
+      # condition, which took authentik-server's Service to 0 endpoints --
+      # a full cluster-wide SSO outage, not just missing geo-enrichment.
+      # Re-enable once MaxMind's daily quota resets (resets at UTC midnight
+      # for the free tier) and confirm no crash-loop before trusting it again.
+      enabled: false
       editionIds: "GeoLite2-City GeoLite2-ASN"
       updateInterval: 48
       existingSecret:
