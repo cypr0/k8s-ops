@@ -80,7 +80,6 @@ Two more ExternalSecrets outside this app's directory read the same `openwebui` 
 - Pause reconciliation: `flux suspend kustomization open-webui -n flux-system` / `flux suspend helmrelease open-webui -n open-webui`.
 
 ## TODOs / unknowns
-- Whether `ai.${SECRET_DOMAIN}` being internal-only (see [Routing & access](#routing--access)) is intentional policy or an oversight was not confirmed with the operator — flagging rather than assuming either way.
 - The open-webui Kopia backup job error during the 2026-08-16 CoreDNS incident was never confirmed as DNS-caused versus coincidental (tracked in the incident doc's own TODO list).
 - Exact behavior/error surfaced to a user when the RAG pipeline tries to embed a web-search HTML result under `CONTENT_EXTRACTION_ENGINE: tika` (silently empty context vs. a visible error) was not observed/tested from this repo.
 
