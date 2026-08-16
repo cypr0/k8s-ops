@@ -109,7 +109,10 @@ spec:
       immich-config:
         enabled: true
         data:
-          TZ: ${TIMEZONE}
+          # No TIMEZONE key exists in cluster-secrets - every other app in
+          # this repo hardcodes the literal instead (paperless-ngx, gatus,
+          # open-webui, hermes-agent all use Europe/Berlin directly).
+          TZ: Europe/Berlin
           IMMICH_CONFIG_FILE: &configLocation /usr/src/app/immich.json
           IMMICH_MEDIA_LOCATION: &mediaLocation /usr/src/app/upload
           IMMICH_ENV: production
