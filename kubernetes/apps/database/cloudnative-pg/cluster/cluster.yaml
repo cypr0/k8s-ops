@@ -7,7 +7,7 @@ metadata:
 spec:
   instances: 3
   # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.4@sha256:6138f19539304b585c6cafd1af82ca407f184139459a8e06f0880df4556d3588
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6@sha256:6d207b34e2859e55ee7653d57321ef28c86d9c4b42e9e66609756565f0cc5542
 
   enableSuperuserAccess: true
   superuserSecret:
