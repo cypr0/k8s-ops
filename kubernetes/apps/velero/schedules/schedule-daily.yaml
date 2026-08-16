@@ -15,6 +15,7 @@ spec:
       - paperless
       - open-webui
       - hermes-agent
+      - immich
     # Cluster-config CRDs are git-defined (Flux redeploys them) and some are
     # actively dangerous to restore: a restored HelmRelease/Kustomization is
     # picked up cluster-wide by helm-/kustomize-controller regardless of which
