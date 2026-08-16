@@ -1,0 +1,56 @@
+---
+name: "Docs Refresh"
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "OpenRouter model slug to draft with (see https://openrouter.ai/models)"
+        required: false
+        default: "anthropic/claude-sonnet-4.5"
+  push:
+    branches:
+      - "main"
+    paths:
+      - "kubernetes/apps/**"
+  schedule:
+    # Weekly backstop in case a push-triggered run was missed or failed.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  refresh:
+    name: Detect & Draft Missing App Docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job needs to push a branch and open a PR - deliberate, not an oversight.
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Run docs-refresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ inputs.model || 'anthropic/claude-sonnet-4.5' }}
+        run: |-
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "::error::OPENROUTER_API_KEY repo secret is not set - see docs/prompts/docs-refresh-bot.md for setup"
+            exit 1
+          fi
+          python3 .github/scripts/docs_refresh.py
