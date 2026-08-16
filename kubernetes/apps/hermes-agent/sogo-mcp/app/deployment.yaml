@@ -37,7 +37,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: install-deps
-          image: python:3.13-slim
+          image: python:3.14-slim
           command:
             - "sh"
             - "-c"
@@ -65,7 +65,7 @@ spec:
                 - "ALL"
       containers:
         - name: mcp-server
-          image: python:3.13-slim
+          image: python:3.14-slim
           command:
             - "python3"
             - "/app/owui_tool_mcp_bridge.py"
