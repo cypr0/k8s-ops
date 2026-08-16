@@ -19,6 +19,25 @@ entries:
             "groups": [group.name for group in request.user.ak_groups.all()],
         }
 
+  # ── Storage quota claim (docs.immich.app/administration/oauth) — a plain
+  # number in GiB, applied by Immich only at first-time auto-registration,
+  # not on later logins (see docs/apps/immich.md for that limitation).
+  # scope_name must be "quota" to match Immich's own requested OAuth scope
+  # string ("openid email profile quota") - Authentik only includes a scope
+  # mapping's claims when the client actually requests that scope, same as
+  # every app here requesting "groups" explicitly for the groups claim.
+  - model: authentik_providers_oauth2.scopemapping
+    id: immich-quota-mapping
+    identifiers:
+      name: immich-quota
+    attrs:
+      scope_name: quota
+      description: Default storage quota (GiB) for Immich
+      expression: |
+        return {
+            "quota": 500,
+        }
+
   # ── OAuth2 / OIDC Provider ────────────────────────────────────────────
   - model: authentik_providers_oauth2.oauth2provider
     id: immich-oidc-provider
@@ -77,6 +96,10 @@ entries:
           - authentik_providers_oauth2.scopemapping
           - - name
             - immich-groups
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - name
+            - immich-quota
   # ── Application ───────────────────────────────────────────────────────
   - #magic___^_^___line
     model: authentik_core.application
