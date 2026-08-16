@@ -15,6 +15,7 @@ spec:
       - paperless
       - open-webui
       - hermes-agent
+      - immich
     # See schedule-daily.yaml for why these are excluded.
     excludedResources:
       - jobs.batch
