@@ -1,7 +1,8 @@
 ---
 # Runs the Proxmox hardening + maintenance playbook daily at 03:15 UTC.
-# On the first run it creates the ansible OS user; subsequent runs are
-# idempotent (Ansible ensures desired state) and report available updates.
+# The playbook itself connects as root only to create/repair the `ansible`
+# OS user; every other task runs as `ansible` via sudo. Idempotent - Ansible
+# ensures desired state and reports available updates on every run.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -42,6 +43,9 @@ spec:
                     secretKeyRef:
                       name: proxmox-ansible-credentials
                       key: PROXMOX_ANSIBLE_SSH_PUBKEY
+                # Note: PROXMOX_ANSIBLE_SSH_KEY (the ansible user's own
+                # private key) is not an env var - it's mounted as a file
+                # below, same as PROXMOX_ROOT_SSH_KEY.
                 - name: FTP_SCANNER_PASSWORD
                   valueFrom:
                     secretKeyRef:
@@ -83,3 +87,5 @@ spec:
                 items:
                   - key: PROXMOX_ROOT_SSH_KEY
                     path: id_rsa
+                  - key: PROXMOX_ANSIBLE_SSH_KEY
+                    path: ansible_id_rsa

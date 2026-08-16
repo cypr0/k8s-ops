@@ -11,13 +11,19 @@ data:
     apk add --no-cache ansible openssh-client >/dev/null 2>&1
     echo "Ansible $(ansible --version | head -1)"
 
-    # Fix SSH key: 1Password collapses newlines to spaces in password fields.
-    # fix_key.py is a proper Python file (no shell quoting issues).
+    # Fix SSH keys: 1Password collapses newlines to spaces in password fields.
+    # fix_key.py is a proper Python file (no shell quoting issues). Applied to
+    # both keys - root's and the ansible user's own, separate keypair.
     mkdir -p /tmp/ssh-rw
     python3 /scripts/fix_key.py /tmp/ssh/id_rsa /tmp/ssh-rw/id_rsa
     chmod 600 /tmp/ssh-rw/id_rsa
-    echo "SSH key lines: $(wc -l < /tmp/ssh-rw/id_rsa)"
+    echo "root SSH key lines: $(wc -l < /tmp/ssh-rw/id_rsa)"
     head -1 /tmp/ssh-rw/id_rsa
+
+    python3 /scripts/fix_key.py /tmp/ssh/ansible_id_rsa /tmp/ssh-rw/ansible_id_rsa
+    chmod 600 /tmp/ssh-rw/ansible_id_rsa
+    echo "ansible SSH key lines: $(wc -l < /tmp/ssh-rw/ansible_id_rsa)"
+    head -1 /tmp/ssh-rw/ansible_id_rsa
 
     # $$$${VAR} -> Flux ignores and passes through as $${VAR} to the shell at
     # runtime. Without doubling, Flux's postBuild.substituteFrom would replace
@@ -25,8 +31,15 @@ data:
     # (Doubled again here vs. the actual usage below: this is a comment, and
     # Flux's substitution scans the whole rendered text, comments included --
     # a bare $${VAR} in prose is itself a live substitution attempt.)
-    echo "[proxmox]" > /tmp/inventory.ini
-    echo "proxmox-host ansible_host=$${PROXMOX_SSH_HOST} ansible_user=root ansible_ssh_private_key_file=/tmp/ssh-rw/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
+    # Two inventory entries for the same physical host, each with its OWN
+    # keypair: root (bootstrap only - creates/repairs the ansible user) and
+    # ansible (everything else, via passwordless sudo). Confirmed live
+    # 2026-08-16 these are genuinely separate keys, not one key shared
+    # across two accounts - see PROXMOX_ANSIBLE_SSH_KEY in externalsecret.yaml.
+    echo "[proxmox_root]" > /tmp/inventory.ini
+    echo "proxmox-host-root ansible_host=$${PROXMOX_SSH_HOST} ansible_user=root ansible_ssh_private_key_file=/tmp/ssh-rw/id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
+    echo "[proxmox_ansible]" >> /tmp/inventory.ini
+    echo "proxmox-host-ansible ansible_host=$${PROXMOX_SSH_HOST} ansible_user=ansible ansible_ssh_private_key_file=/tmp/ssh-rw/ansible_id_rsa ansible_ssh_common_args=\"-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30\"" >> /tmp/inventory.ini
     echo "Inventory written for host: $${PROXMOX_SSH_HOST}"
 
     export ANSIBLE_LOCAL_TMP=/tmp/ansible-local
@@ -68,19 +81,29 @@ data:
 
   hardening.yml: |-
     ---
-    - name: Proxmox Host — Hardening and Maintenance
-      hosts: proxmox
-      become: yes
-      gather_facts: yes
+    # Two plays, deliberately separate hosts/users:
+    #
+    #   1. "Ansible User Bootstrap" connects as root and does exactly one
+    #      thing: ensure the `ansible` OS user exists, has the right pubkey,
+    #      and has passwordless sudo. Nothing else runs as root.
+    #   2. "Hardening and Maintenance" connects as `ansible` (via sudo) and
+    #      does everything else. If the ansible account is broken or its key
+    #      isn't trusted, this play fails loudly (SSH/auth error) instead of
+    #      silently falling back to root - that failure IS the connection
+    #      check the root play doesn't otherwise perform. Because this is a
+    #      daily idempotent job with no persistent state between runs, this
+    #      re-verifies the handoff on every single run rather than a one-time
+    #      check - stronger than "verify once," since a later regression
+    #      (e.g. a manually edited sudoers file) surfaces the next morning.
+    - name: Proxmox Host — Ansible User Bootstrap
+      hosts: proxmox_root
+      become: no
+      gather_facts: no
 
       vars:
-        allowed_ip: "{{ allowed_ip }}"
-        proxmox_host: "{{ proxmox_host }}"
         ansible_pubkey: "{{ lookup('env', 'PROXMOX_ANSIBLE_SSH_PUBKEY') }}"
-        ftp_password: "{{ lookup('env', 'FTP_SCANNER_PASSWORD') }}"
 
       tasks:
-
         # ── Ansible OS User ──────────────────────────────────────────────────
         - name: Ensure ansible user exists
           ansible.builtin.user:
@@ -113,6 +136,17 @@ data:
             owner: root
             group: root
             mode: "0440"
+
+    - name: Proxmox Host — Hardening and Maintenance
+      hosts: proxmox_ansible
+      become: yes
+      gather_facts: yes
+
+      vars:
+        allowed_ip: "{{ allowed_ip }}"
+        ftp_password: "{{ lookup('env', 'FTP_SCANNER_PASSWORD') }}"
+
+      tasks:
 
         # ── System Package Updates ───────────────────────────────────────────
         - name: Refresh apt package cache
@@ -367,7 +401,9 @@ data:
 
               # ── Authentication ──────────────────────────────────────────────
               # CIS 5.2.10: prohibit-password keeps key-based root access for
-              # the Ansible CronJob; prevents password-based root logins.
+              # the Ansible CronJob's bootstrap play only (creating/repairing
+              # the ansible user) - all other automation connects as ansible
+              # via sudo. Prevents password-based root logins either way.
               PermitRootLogin prohibit-password
               AuthenticationMethods publickey
               PubkeyAuthentication yes
