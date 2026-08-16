@@ -40,26 +40,17 @@ spec:
       max_replication_slots: "10"
       # Storage (ZFS via NFS behaves closer to SSD for sequential reads)
       random_page_cost: "1.1"
-    # VectorChord (vchord.so) for Immich's smart search/facial recognition -
-    # loading this requires a rolling restart of the whole cluster (all
-    # instances, one at a time) since shared_preload_libraries isn't
-    # reloadable; expect a brief primary failover when this first applies.
-    shared_preload_libraries:
-      - "vchord.so"
-    extensions:
-      - name: vchord
-        image:
-          # No official CNPG-compatible VectorChord extension image exists
-          # upstream (unlike pgvector, which CNPG publishes directly) - this
-          # is repackaged from ghcr.io/tensorchord/vchord-scratch (upstream's
-          # own image, just with the wrong file layout for CNPG's
-          # extension_control_path/dynamic_library_path contract) into the
-          # flat /lib + /share/extension layout CNPG expects, mirroring
-          # cloudnative-pg/postgres-extensions-containers' own pgvector
-          # Dockerfile. Auto-rebuilt by .github/workflows/vchord-extension-rebuild.yaml
-          # whenever upstream publishes a new pg18 tag - see that workflow
-          # and .github/vchord-extension/Dockerfile for the build itself.
-          reference: ghcr.io/cypr0/cnpg-vchord-extension:pg18-v1.1.1
+      # VectorChord (vchord.so) extension-image REVERTED 2026-08-16: the
+      # repackaged ghcr.io/cypr0/cnpg-vchord-extension:pg18-v1.1.1 binary
+      # requires GLIBC_2.33+, but this cluster's postgresql:18.6 image is
+      # Debian 11 Bullseye (glibc 2.31) - confirmed live via
+      # "could not load library ... GLIBC_2.33' not found" crash-looping both
+      # replicas before the rolling restart ever reached the primary. See
+      # docs/incidents/ for the writeup and the actual fix path (either switch
+      # this cluster to a newer Debian-based image tag, or fall back to a
+      # dedicated cluster using tensorchord's all-in-one bundled image, which
+      # has no cross-image glibc mismatch since postgres+vchord are compiled
+      # together).
 
   resources:
     requests:
