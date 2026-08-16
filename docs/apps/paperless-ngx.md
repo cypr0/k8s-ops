@@ -84,9 +84,7 @@ The Deployment carries `reloader.stakater.com/auto`/`secret.reloader.stakater.co
 - Pause reconciliation: `flux suspend kustomization paperless -n flux-system` (main app) or `flux suspend kustomization paperless-stats -n flux-system` (stats exporter — independent lifecycle, per `ks.yaml`).
 
 ## TODOs / unknowns
-- Whether the disabled `paperless-cronjob-fix-ownership` CronJob is meant to be re-enabled or was permanently retired — the commit message only says "for now" (`8cdfe2b`); not resolved anywhere else in the repo.
 - The exact Workflow trigger condition ("Document Added" scope/tag filter) and the webhook payload contract live in Paperless's own database, not this repo — see `docs/apps/paperless-mcp.md`'s TODOs for the same gap from the consumer side.
-- Which Mail Account/Mail Rule is configured for IMAP ingestion, and whether it's actually enabled, isn't visible from any file here — GUI/DB-only config, not GitOps-tracked.
 - No `docs/incidents/` entry currently references `paperless-ngx` by name (checked via `grep -rl paperless docs/incidents/`) — notable given the OCR/AI/mail integration surface, but there may simply not have been a SEV yet.
 
 ---
