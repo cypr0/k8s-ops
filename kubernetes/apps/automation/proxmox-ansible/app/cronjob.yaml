@@ -1,7 +1,8 @@
 ---
 # Runs the Proxmox hardening + maintenance playbook daily at 03:15 UTC.
-# On the first run it creates the ansible OS user; subsequent runs are
-# idempotent (Ansible ensures desired state) and report available updates.
+# The playbook itself connects as root only to create/repair the `ansible`
+# OS user; every other task runs as `ansible` via sudo. Idempotent - Ansible
+# ensures desired state and reports available updates on every run.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
