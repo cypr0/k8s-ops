@@ -30,7 +30,7 @@ spec:
     capabilities:
       configurationScan: enable
       continuousScan: enable
-      vulnerabilityScan: disable  # handled by Trivy Operator
+      vulnerabilityScan: disable # handled by Trivy Operator
       nodeScan: enable
       networkPolicyService: disable
       runtimeObservability: disable
@@ -57,11 +57,21 @@ spec:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
+      # Confirmed live (2026-08-16): node-agent on k8s-wrk-0 was
+      # CrashLoopBackOff for 12+ hours (119 restarts), /readyz and /livez
+      # timing out ("context deadline exceeded") under CPU throttling --
+      # Alertmanager actively firing KubePodCrashLooping + CPUThrottlingHigh
+      # for this namespace. 10m was far too low a request for a process
+      # that does continuous eBPF-based node scanning; raised well above
+      # what a single node's worth of scanning needs, with a real CPU
+      # limit added so it can't starve other workloads on the same node
+      # either.
       resources:
         requests:
-          cpu: 10m
+          cpu: 150m
           memory: 128Mi
         limits:
+          cpu: 750m
           memory: 512Mi
 
     operator:
@@ -79,7 +89,8 @@ spec:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
         capabilities:
-          drop: ["ALL"]
+          drop:
+            - "ALL"
 
     kubescape:
       resources:
