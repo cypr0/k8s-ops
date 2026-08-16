@@ -134,3 +134,18 @@ spec:
         secretName: authentik-secret
         accountId: MAXMIND_ACCOUNT_ID
         licenseKey: MAXMIND_LICENSE_KEY
+      # The chart supports geoip.resources (templates/server & worker
+      # deployment.yaml) but ships no default -- confirmed live: without
+      # it, this sidecar has no CPU request at all, and the server/worker
+      # HPAs (targetCPUUtilizationPercentage above) fail outright with
+      # "missing request for cpu in container geoip", unable to compute
+      # utilization for either Deployment. geoipupdate only runs a
+      # periodic DB download (updateInterval: 48h), so a small request is
+      # plenty -- this isn't meant to size the container, just give the
+      # HPA a denominator to divide by.
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
