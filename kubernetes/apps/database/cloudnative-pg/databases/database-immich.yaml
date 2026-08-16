@@ -9,13 +9,15 @@ spec:
   owner: immichusr
   cluster:
     name: postgres
-  # Listed in dependency order rather than relying on CASCADE (the Database
-  # CRD's extensions field has no cascade option) - vector/cube must exist
-  # before vchord/earthdistance, which depend on them. Matches Immich's own
-  # documented setup (docs.immich.app/administration/postgres-standalone/):
-  # CREATE EXTENSION vchord CASCADE; CREATE EXTENSION earthdistance CASCADE;
+  # Immich supports two vector backends (DB_VECTOR_EXTENSION: "vectorchord" or
+  # "pgvector" - docs.immich.app/install/environment-variables). Uses plain
+  # pgvector deliberately: VectorChord needed a repackaged extension image
+  # that turned out to be GLIBC-incompatible with this cluster's Postgres
+  # image (see docs/incidents/2026-08-16-immich-vectorchord-glibc-mismatch.md)
+  # - pgvector is already bundled directly in this cluster's own
+  # postgresql:18.6 image, same as Open WebUI's RAG database, no extension
+  # image or cross-image compatibility risk at all.
   extensions:
     - name: vector
-    - name: vchord
     - name: cube
     - name: earthdistance

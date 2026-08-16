@@ -122,7 +122,8 @@ spec:
           DB_HOSTNAME: "postgres-rw.database.svc.cluster.local"
           DB_PORT: "5432"
           DB_DATABASE_NAME: "immichdb"
-          DB_VECTOR_EXTENSION: "vectorchord"
+          # pgvector, not vectorchord - see database-immich.yaml's comment
+          DB_VECTOR_EXTENSION: "pgvector"
     persistence:
       data:
         enabled: true
