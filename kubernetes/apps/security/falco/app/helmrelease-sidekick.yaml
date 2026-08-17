@@ -13,7 +13,6 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: falcosecurity
-        namespace: falco
   maxHistory: 2
   install:
     remediation:
@@ -55,21 +54,21 @@ spec:
         minimumpriority: critical
 
       extraEnv:
-      - name: PUSHOVER_APITOKEN
-        valueFrom:
-          secretKeyRef:
-            name: falcosidekick-pushover
-            key: PUSHOVER_APITOKEN
-      - name: PUSHOVER_USERKEY
-        valueFrom:
-          secretKeyRef:
-            name: falcosidekick-pushover
-            key: PUSHOVER_USERKEY
-      - name: ELASTICSEARCH_PASSWORD
-        valueFrom:
-          secretKeyRef:
-            name: falcosidekick-opensearch
-            key: ELASTICSEARCH_PASSWORD
+        - name: PUSHOVER_APITOKEN
+          valueFrom:
+            secretKeyRef:
+              name: falcosidekick-pushover
+              key: PUSHOVER_APITOKEN
+        - name: PUSHOVER_USERKEY
+          valueFrom:
+            secretKeyRef:
+              name: falcosidekick-pushover
+              key: PUSHOVER_USERKEY
+        - name: ELASTICSEARCH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: falcosidekick-opensearch
+              key: ELASTICSEARCH_PASSWORD
 
     resources:
       requests:
@@ -89,7 +88,8 @@ spec:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
       capabilities:
-        drop: ["ALL"]
+        drop:
+          - "ALL"
 
     autoscaling:
       enabled: true

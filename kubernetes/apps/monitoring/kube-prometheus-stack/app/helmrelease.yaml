@@ -53,12 +53,14 @@ spec:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
-            drop: ["ALL"]
+            drop:
+              - "ALL"
         storage:
           volumeClaimTemplate:
             spec:
               storageClassName: zfs-nfs
-              accessModes: ["ReadWriteOnce"]
+              accessModes:
+                - "ReadWriteOnce"
               resources:
                 requests:
                   storage: 1Gi
@@ -77,9 +79,9 @@ spec:
         resources:
           requests:
             cpu: 200m
-            memory: 512Mi
+            memory: 1Gi
           limits:
-            memory: 2Gi
+            memory: 3Gi
         podSecurityContext:
           runAsNonRoot: true
           seccompProfile:
@@ -88,12 +90,14 @@ spec:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
-            drop: ["ALL"]
+            drop:
+              - "ALL"
         storageSpec:
           volumeClaimTemplate:
             spec:
               storageClassName: zfs-nfs
-              accessModes: ["ReadWriteOnce"]
+              accessModes:
+                - "ReadWriteOnce"
               resources:
                 requests:
                   storage: 20Gi
@@ -111,7 +115,8 @@ spec:
       containerSecurityContext:
         allowPrivilegeEscalation: false
         capabilities:
-          drop: ["ALL"]
+          drop:
+            - "ALL"
 
     # kube-state-metrics
     kubeStateMetrics:
@@ -127,7 +132,8 @@ spec:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true
         capabilities:
-          drop: ["ALL"]
+          drop:
+            - "ALL"
 
     # Default alerting rules
     defaultRules:

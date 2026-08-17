@@ -13,7 +13,6 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: authentik
-        namespace: security
   maxHistory: 2
   install:
     remediation:

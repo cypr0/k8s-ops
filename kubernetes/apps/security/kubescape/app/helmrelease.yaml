@@ -23,7 +23,6 @@ spec:
       sourceRef:
         kind: HelmRepository
         name: kubescape
-        namespace: kubescape
   maxHistory: 2
   install:
     crds: CreateReplace
