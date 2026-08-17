@@ -151,11 +151,18 @@ Output ONLY the final markdown document - no preamble, no surrounding code fence
 
 
 def call_openrouter(prompt):
+    # Streamed (SSE), not a single json.load() of the full body: large docs
+    # (e.g. immich) take long enough to generate that a non-streaming request
+    # can get cut off mid-body by a gateway timeout between OpenRouter and the
+    # upstream provider, leaving json.load() to choke on a truncated response
+    # (observed: "Expecting value: line 265 column 1"). Streaming sidesteps
+    # that because each chunk is parsed as it arrives.
     body = json.dumps(
         {
             "model": OPENROUTER_MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.2,
+            "stream": True,
         }
     ).encode()
     req = urllib.request.Request(
@@ -169,9 +176,20 @@ def call_openrouter(prompt):
         },
         method="POST",
     )
+    chunks = []
     with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.load(resp)
-    return data["choices"][0]["message"]["content"]
+        for raw_line in resp:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line or not line.startswith("data: "):
+                continue
+            payload = line[len("data: ") :]
+            if payload == "[DONE]":
+                break
+            delta = json.loads(payload)["choices"][0].get("delta", {})
+            content = delta.get("content")
+            if content:
+                chunks.append(content)
+    return "".join(chunks)
 
 
 def parse_title(draft, fallback):
