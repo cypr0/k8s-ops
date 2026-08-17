@@ -98,6 +98,62 @@ def apps_with_open_pr():
     return apps
 
 
+def open_docs_bot_issues():
+    """List of (issue_number, {app_name: original_flag_line}) for open
+    docs-bot issues - lets us both skip re-flagging an app that's already
+    covered by an open issue and, once that app is later drafted
+    successfully, close (or shrink) the issue that flagged it."""
+    result = subprocess.run(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            "cypr0/k8s-ops",
+            "--state",
+            "open",
+            "--label",
+            "docs-bot",
+            "--json",
+            "number,body",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    issues = []
+    for issue in json.loads(result.stdout):
+        by_app = {}
+        for line in issue["body"].splitlines():
+            m = re.match(r"^- \*\*([^*]+)\*\*:", line)
+            if m:
+                by_app[m.group(1)] = line
+        if by_app:
+            issues.append((issue["number"], by_app))
+    return issues
+
+
+def close_resolved_issues(drafted_names):
+    """Once an app gets a successful draft, close (or shrink) any open
+    docs-bot issue that had previously flagged it as needing manual docs."""
+    if not drafted_names:
+        return
+    for number, by_app in open_docs_bot_issues():
+        resolved = drafted_names & by_app.keys()
+        if not resolved:
+            continue
+        remaining_lines = [line for app, line in by_app.items() if app not in resolved]
+        note = f"`{'`, `'.join(sorted(resolved))}` now ha{'s' if len(resolved) == 1 else 've'} a docs draft PR."
+        if not remaining_lines:
+            sh("gh", "issue", "close", str(number), "--comment", f"{note} Closing.")
+        else:
+            body = "The docs-refresh workflow could not safely auto-draft docs for:\n\n" + "\n".join(
+                remaining_lines
+            )
+            sh("gh", "issue", "edit", str(number), "--body", body)
+            sh("gh", "issue", "comment", str(number), "--body", f"{note} Removed from this issue.")
+
+
 def scan_for_secrets(text):
     hits = []
     for pat in SECRET_PATTERNS:
@@ -291,19 +347,24 @@ def main():
         sh("git", "commit", "-m", f"docs({doc_name}): auto-draft app README")
         drafted.append((parse_title(draft, doc_name), parse_namespace(draft), doc_name))
 
+    close_resolved_issues({name for _, _, name in drafted})
+
     if flagged:
-        body = "\n".join(f"- **{name}**: {reason}" for name, reason in flagged)
-        sh(
-            "gh",
-            "issue",
-            "create",
-            "--title",
-            "docs-refresh: app(s) needing manual documentation",
-            "--body",
-            f"The docs-refresh workflow could not safely auto-draft docs for:\n\n{body}",
-            "--label",
-            "docs-bot",
-        )
+        already_open = {app for _, by_app in open_docs_bot_issues() for app in by_app}
+        new_flags = [(name, reason) for name, reason in flagged if name not in already_open]
+        if new_flags:
+            body = "\n".join(f"- **{name}**: {reason}" for name, reason in new_flags)
+            sh(
+                "gh",
+                "issue",
+                "create",
+                "--title",
+                "docs-refresh: app(s) needing manual documentation",
+                "--body",
+                f"The docs-refresh workflow could not safely auto-draft docs for:\n\n{body}",
+                "--label",
+                "docs-bot",
+            )
 
     if not drafted:
         print("Nothing safely drafted this run.")
