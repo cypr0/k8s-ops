@@ -36,7 +36,7 @@ spec:
             image:
               repository: ghcr.io/firecrawl/firecrawl
               # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
-              tag: 2.11.209-production
+              tag: 2.11.223-production
             command:
               - "node"
             args:
@@ -99,7 +99,7 @@ spec:
             image:
               repository: ghcr.io/firecrawl/firecrawl
               # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
-              tag: 2.11.209-production
+              tag: 2.11.223-production
             command:
               - "node"
             args:
@@ -152,7 +152,7 @@ spec:
             image:
               repository: ghcr.io/firecrawl/firecrawl
               # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
-              tag: 2.11.209-production
+              tag: 2.11.223-production
             command:
               - "node"
             args:
