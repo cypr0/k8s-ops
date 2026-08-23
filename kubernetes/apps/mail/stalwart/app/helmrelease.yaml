@@ -122,6 +122,24 @@ spec:
         type: LoadBalancer
         annotations:
           lbipam.cilium.io/ips: "192.168.10.104"
+          # k8s-gateway (kubernetes/apps/network/k8s-gateway) is
+          # authoritative for ${SECRET_DOMAIN} internally and auto-derives
+          # "stalwart.mail.${SECRET_DOMAIN}" for this Service with zero
+          # config, but that's not the hostname anything expects (DNS/TLS/
+          # SystemSettings.defaultHostname/MX record are all
+          # "mail.${SECRET_DOMAIN}", see job-bootstrap.yaml). This
+          # annotation is k8s_gateway's own convention (see "resources
+          # Service" in https://github.com/k8s-gateway/k8s_gateway#description)
+          # for pinning an additional/explicit hostname onto a
+          # type: LoadBalancer Service so internal clients get an A record
+          # for the name that's actually used everywhere else. Note:
+          # cloudflare-dns (external-dns) does NOT also publish this
+          # externally — its `sources` list is [crd, gateway-httproute]
+          # only, deliberately excluding LoadBalancer Services, and
+          # 192.168.10.104 is a private LAN IP anyway (see docs/apps/
+          # stalwart.md's routing section for the public/DNS-record
+          # implications of self-hosted mail).
+          coredns.io/hostname: "mail.${SECRET_DOMAIN}"
         externalTrafficPolicy: Cluster
         ports:
           smtp:
