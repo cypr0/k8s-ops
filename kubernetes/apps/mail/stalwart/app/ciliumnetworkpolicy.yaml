@@ -1,0 +1,92 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: stalwart
+  namespace: mail
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: stalwart
+  ingress:
+    # Public mail protocols + WebUI/JMAP/CalDAV/CardDAV/WebDAV — this app is
+    # its own public ingress (LoadBalancer, not Envoy/Cloudflare Tunnel, see
+    # helmrelease.yaml), so "world" ingress on the mail ports is the point.
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "25"
+              protocol: TCP
+            - port: "587"
+              protocol: TCP
+            - port: "465"
+              protocol: TCP
+            - port: "143"
+              protocol: TCP
+            - port: "993"
+              protocol: TCP
+            - port: "110"
+              protocol: TCP
+            - port: "995"
+              protocol: TCP
+            - port: "4190"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    # kubelet TCP probes (liveness/readiness/startup all hit :443)
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # job-bootstrap.yaml's stalwart-cli container talks to the management
+    # API over the in-cluster Service, same port as the public https listener
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Prometheus metrics scraping
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # PostgreSQL (DataStore/BlobStore/SearchStore — see configmap.yaml)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    # External: Cloudflare DNS API (DNS-01 ACME challenge + MX/SPF/DKIM/DMARC
+    # record publication, see job-bootstrap.yaml), Let's Encrypt ACME
+    # directory, and outbound SMTP delivery to remote mail exchangers on the
+    # public internet.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "25"
+              protocol: TCP

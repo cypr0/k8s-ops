@@ -62,6 +62,7 @@ check here before assuming a gap means "not interesting."
 | Reloader | kube-system | [reloader.md](reloader.md) |
 | sogo-mcp | hermes-agent | [sogo-mcp.md](sogo-mcp.md) |
 | Spegel | kube-system | [spegel.md](spegel.md) |
+| Stalwart | mail | [stalwart.md](stalwart.md) |
 | Tika (open-webui) | open-webui | [open-webui-tika.md](open-webui-tika.md) |
 | Tika (Paperless) | paperless | [paperless-tika.md](paperless-tika.md) |
 | Trivy Operator | trivy-system | [trivy.md](trivy.md) |

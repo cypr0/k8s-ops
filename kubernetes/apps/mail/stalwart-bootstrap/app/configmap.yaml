@@ -1,0 +1,32 @@
+---
+# The *only* file Stalwart reads from disk (--config /etc/stalwart/config.json)
+# — everything else (domains, DKIM, TLS, listeners, directory, SystemSettings,
+# ...) lives in the database and is provisioned declaratively by
+# job-bootstrap.yaml via `stalwart-cli apply`, per
+# https://stalw.art/docs/configuration/declarative-deployments. Using
+# PostgreSQL (not RocksDB) for the main DataStore/BlobStore/SearchStore keeps
+# this app on the same CNPG cluster as every other app here (stalwartusr /
+# stalwartdb, see kubernetes/apps/database/cloudnative-pg/) instead of a
+# stateful PVC.
+#
+# Shared by both the stalwart-bootstrap Kustomization (job-bootstrap.yaml,
+# which needs it to run its own throwaway recovery-mode Stalwart instance)
+# and the stalwart Kustomization (helmrelease.yaml, the long-running server)
+# — see kubernetes/apps/mail/stalwart/ks.yaml's dependsOn.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stalwart-config
+data:
+  config.json: |-
+    {
+      "@type": "PostgreSql",
+      "host": "postgres-rw.database.svc.cluster.local",
+      "port": 5432,
+      "database": "stalwartdb",
+      "authUsername": "stalwartusr",
+      "authSecret": {
+        "@type": "EnvironmentVariable",
+        "variableName": "STALWART_POSTGRESQL_PASSWORD"
+      }
+    }

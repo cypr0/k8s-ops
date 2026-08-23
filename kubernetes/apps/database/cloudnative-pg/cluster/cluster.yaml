@@ -121,6 +121,15 @@ spec:
         inherit: true
         passwordSecret:
           name: immich-db-role
+      - name: stalwartusr
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        passwordSecret:
+          name: stalwart-db-role
 
   # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned -- see
   # kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml) were

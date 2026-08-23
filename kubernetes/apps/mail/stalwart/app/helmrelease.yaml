@@ -1,0 +1,151 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: stalwart
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    defaultPodOptions:
+      annotations:
+        # Watches both the config.json ConfigMap and the credentials Secret —
+        # config.json only changes on a deliberate DataStore migration, but a
+        # rotated STALWART_POSTGRESQL_PASSWORD/STALWART_CLOUDFLARE_API_TOKEN
+        # must restart the pod to take effect (everything *else* — domains,
+        # DKIM, listeners, TLS — reconfigures live via the JMAP API without a
+        # restart, per https://stalw.art/docs/configuration/#configuration-file).
+        reloader.stakater.com/auto: "true"
+        configmap.reloader.stakater.com/reload: stalwart-config
+        secret.reloader.stakater.com/reload: stalwart-secret
+      securityContext:
+        # Upstream image runs as the unprivileged "stalwart" user (UID 2000)
+        # and carries cap_net_bind_service so it can bind :25/:443/etc.
+        # without root — see https://stalw.art/docs/install/platform/docker/.
+        runAsNonRoot: true
+        runAsUser: 2000
+        runAsGroup: 2000
+        fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault
+    controllers:
+      main:
+        replicas: 1
+        strategy: RollingUpdate
+        containers:
+          app:
+            image:
+              repository: ghcr.io/stalwartlabs/stalwart
+              tag: v0.16.18
+            args:
+              - --config
+              - /etc/stalwart/config.json
+            envFrom:
+              - secretRef:
+                  name: stalwart-secret
+            probes:
+              # TCP-only: a TLS-level check would fail until the ACME
+              # certificate is first issued, but the self-signed fallback
+              # cert still completes a TCP+TLS handshake immediately, so a
+              # bare TCP accept on the https listener is a reliable signal
+              # regardless of ACME timing.
+              liveness:
+                enabled: true
+                type: TCP
+                port: 443
+                spec:
+                  initialDelaySeconds: 15
+                  periodSeconds: 15
+              readiness:
+                enabled: true
+                type: TCP
+                port: 443
+                spec:
+                  initialDelaySeconds: 10
+                  periodSeconds: 10
+              startup:
+                enabled: true
+                type: TCP
+                port: 443
+                spec:
+                  failureThreshold: 30
+                  periodSeconds: 5
+            resources:
+              requests:
+                cpu: 50m
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: false
+              capabilities:
+                drop:
+                  - ALL
+        pod:
+          # Every port below except 443 is a raw mail protocol (SMTP/IMAP/
+          # POP3/ManageSieve) that neither Envoy Gateway nor the Cloudflare
+          # Tunnel can carry — both are HTTP-only. Stalwart therefore gets
+          # its own dedicated LoadBalancer IP and manages its own ACME/TLS
+          # directly (see job-bootstrap.yaml), independent of the rest of
+          # the cluster's Envoy/tunnel ingress stack.
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+    service:
+      app:
+        controller: main
+        type: LoadBalancer
+        annotations:
+          lbipam.cilium.io/ips: "192.168.10.104"
+        externalTrafficPolicy: Cluster
+        ports:
+          smtp:
+            port: 25
+          submission:
+            port: 587
+          submissions:
+            port: 465
+          imap:
+            port: 143
+          imaps:
+            port: 993
+          pop3:
+            port: 110
+          pop3s:
+            port: 995
+          managesieve:
+            port: 4190
+          https:
+            port: 443
+    persistence:
+      config:
+        type: configMap
+        name: stalwart-config
+        globalMounts:
+          - path: /etc/stalwart/config.json
+            subPath: config.json
+            readOnly: true
+      # RocksDB's own data volume is unused (DataStore/BlobStore/SearchStore
+      # all point at the shared CNPG Postgres cluster — see configmap.yaml),
+      # but the binary still expects /var/lib/stalwart to exist and be
+      # writable for transient state; an emptyDir avoids provisioning a PVC
+      # for data that's never actually persisted here.
+      data:
+        type: emptyDir
+        globalMounts:
+          - path: /var/lib/stalwart

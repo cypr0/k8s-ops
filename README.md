@@ -20,6 +20,7 @@ Originally scaffolded from [onedr0p/cluster-template](https://github.com/onedr0p
 | Security | [Kyverno](https://kyverno.io/), [Falco](https://falco.org/), [Trivy Operator](https://github.com/aquasecurity/trivy-operator) |
 | Observability | [kube-prometheus-stack](https://github.com/prometheus-operator/kube-prometheus-stack), [Grafana](https://grafana.com/), [Loki](https://grafana.com/oss/loki/), [OpenSearch](https://opensearch.org/), [Gatus](https://gatus.io/) |
 | Identity | [Authentik](https://goauthentik.io/) — OIDC SSO in front of every user-facing app |
+| Mail | [Stalwart](https://stalw.art/) — SMTP/IMAP/JMAP mail + CalDAV/CardDAV, own public LoadBalancer IP (raw TCP mail protocols bypass Envoy/Cloudflare Tunnel) |
 | Dependency automation | [Renovate](https://www.mend.io/renovate) |
 
 ## 🖥️ Topology

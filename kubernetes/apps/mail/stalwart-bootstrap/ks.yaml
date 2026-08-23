@@ -1,0 +1,36 @@
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app stalwart-bootstrap
+  namespace: &namespace mail
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  dependsOn:
+    - name: cloudnative-pg-databases
+      namespace: database
+    - name: external-secrets-stores
+      namespace: security
+  interval: 1h
+  path: ./kubernetes/apps/mail/stalwart-bootstrap/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: *namespace
+  timeout: 15m
+  wait: true
+  healthChecks:
+    - apiVersion: batch/v1
+      kind: Job
+      name: stalwart-bootstrap
+      namespace: mail
