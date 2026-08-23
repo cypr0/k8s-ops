@@ -144,8 +144,12 @@ spec:
             - |
               set -eu
               echo "Waiting for recovery-mode Stalwart on :8080..."
+              # /api/schema (like every JMAP management endpoint) requires
+              # auth and answers 401 even once the server is fully up, so a
+              # plain "wget /api/schema" loop never succeeds. A bare TCP
+              # connect is enough to know the listener is ready.
               attempts=0
-              until wget -q -O /dev/null http://127.0.0.1:8080/api/schema 2>/dev/null; do
+              until nc -z -w2 127.0.0.1 8080 2>/dev/null; do
                 attempts=$((attempts + 1))
                 if [ "$attempts" -ge 60 ]; then echo "ERROR: Stalwart recovery API never came up"; exit 1; fi
                 sleep 2
