@@ -53,7 +53,7 @@ None. Stateless; findings live as `PolicyReport`/`ClusterPolicyReport` custom re
 | `restrict-default-namespace` | `clusterpolicy-default-namespace.yaml` | 5.6.3 / 5.6.4 | Audit | Denies workloads in the `default` namespace |
 | `require-security-context` | `clusterpolicy-security-context-required.yaml` | 5.6.2 | Audit | Literal check for the presence of a `securityContext` block |
 
-**Common namespace exemption set:** `pod-security-baseline`, `pod-security-restricted`, `add-default-seccomp`, `restrict-default-serviceaccount`, and `restrict-token-automount` all exclude the same five namespaces — `kube-system`, `falco`, `kubescape`, `monitoring`, `logging`. Per the comment in `clusterpolicy-pod-security.yaml`, this was "verified via live pod scan to be exactly the namespaces that legitimately run privileged/hostNetwork/hostPID/hostPath workloads."
+**Common namespace exemption set:** `pod-security-baseline`, `pod-security-restricted`, `add-default-seccomp`, `restrict-default-serviceaccount`, and `restrict-token-automount` all exclude the same four namespaces — `kube-system`, `falco`, `monitoring`, `logging` (the `kubescape` namespace was removed from this list when Kubescape was decommissioned). Per the comment in `clusterpolicy-pod-security.yaml`, this was "verified via live pod scan to be exactly the namespaces that legitimately run privileged/hostNetwork/hostPID/hostPath workloads."
 
 ## Known quirks
 - **Fails open cluster-wide by design.** `features.forceFailurePolicyIgnore.enabled: true` means an unreachable webhook never blocks resource creation.

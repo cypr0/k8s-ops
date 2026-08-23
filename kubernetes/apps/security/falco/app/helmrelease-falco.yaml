@@ -158,7 +158,7 @@ spec:
             open_write
             and container
             and fd.name startswith /etc
-            and not k8s.ns.name in (kube-system, falco, trivy-system, kubescape)
+            and not k8s.ns.name in (kube-system, falco, trivy-system)
           output: >
             Write to /etc in container
             (user=%user.name file=%fd.name pod=%k8s.pod.name

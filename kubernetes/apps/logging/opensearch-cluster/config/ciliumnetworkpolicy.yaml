@@ -28,7 +28,7 @@ spec:
           rules:
             dns:
               - matchPattern: "*"
-    # Kubernetes API (crd-to-opensearch reads Trivy/Kubescape CRDs)
+    # Kubernetes API (crd-to-opensearch reads Trivy CRDs)
     - toEntities:
         - kube-apiserver
     # OpenSearch REST API

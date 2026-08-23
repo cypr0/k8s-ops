@@ -101,11 +101,26 @@ data:
         })
 
     # ════════════════════════════════════════════════════════════════════════
+    # CLEANUP — Kubescape retired from the cluster: delete its dashboard,
+    # visualizations, and index-pattern left over from earlier job runs.
+    # ════════════════════════════════════════════════════════════════════════
+    print("Removing retired Kubescape dashboard objects...")
+    for obj_type, obj_id in (
+        [("dashboard", "kubescape-compliance")] +
+        [("visualization", vid) for vid in (
+            "ks-v1-total", "ks-v2-critical", "ks-v3-high", "ks-v4-ns",
+            "ks-v5-timeline", "ks-v6-rules", "ks-v7-ns", "ks-v8-sev", "ks-v9-kind",
+        )] +
+        [("index-pattern", "kubescape-idx")]
+    ):
+        r, s = osd("DELETE", "/api/saved_objects/" + obj_type + "/" + obj_id)
+        print("  " + obj_type + "/" + obj_id + ": " + ("deleted" if s < 300 else "not found/" + str(s)))
+
+    # ════════════════════════════════════════════════════════════════════════
     # INDEX PATTERNS  (create then refresh fields from actual indices)
     # ════════════════════════════════════════════════════════════════════════
     for idx_id, pattern, ts in [
         ("falco-idx",      "falco-*",      "@timestamp"),
-        ("kubescape-idx",  "kubescape-*",  "@timestamp"),
     ]:
         r, s = osd("POST", "/api/saved_objects/index-pattern/" + idx_id + "?overwrite=true",
                    {"attributes": {"title": pattern, "timeFieldName": ts, "fields": "[]"}})
@@ -171,63 +186,6 @@ data:
                    fp, refs_f2)
     print("  Dashboard Falco: " + str(s))
 
-    # ════════════════════════════════════════════════════════════════════════
-    # DASHBOARD 2 — Kubescape CIS Compliance
-    # CRD exporter sends: namespace, resource, kind, ruleName, severity,
-    #   scoreFactor, remediation, source=kubescape
-    # ════════════════════════════════════════════════════════════════════════
-    KI = "kubescape-idx"
-    ks_crit  = [{"term": {"severity": "Critical"}}]
-    ks_high  = [{"term": {"severity": "High"}}]
-
-    ks_vizs = [
-        mkv("ks-v1-total",    "📋 Total Violations",      "metric", METRIC_P, c(), KI),
-        mkv("ks-v2-critical", "🔴 Critical",              "metric", METRIC_P, c(), KI, ks_crit),
-        mkv("ks-v3-high",     "🟠 High",                  "metric", METRIC_P, c(), KI, ks_high),
-        mkv("ks-v4-ns",       "📁 Affected Namespaces",   "metric", METRIC_P,
-            [{"id":"1","enabled":True,"type":"cardinality","schema":"metric","params":{"field":"namespace.keyword"}}], KI),
-
-        mkv("ks-v5-timeline", "Violations Over Time",     "line", line_p(),
-            c() + [dh(), {"id":"3","enabled":True,"type":"terms","schema":"group","params":{"field":"severity","size":4,"order":"desc","orderBy":"1"}}], KI),
-
-        mkv("ks-v6-rules",    "Top Failing Rules",        "horizontal_bar", hbar_p(),
-            c() + [t("ruleName.keyword", 15)], KI),
-
-        mkv("ks-v7-ns",       "Violations by Namespace",  "horizontal_bar", hbar_p(),
-            c() + [t("namespace.keyword", 15)], KI),
-
-        mkv("ks-v8-sev",      "Severity Distribution",    "pie", pie_p(),
-            c() + [t("severity", 5)], KI),
-
-        mkv("ks-v9-kind",     "Violations by Resource Kind","horizontal_bar", hbar_p(),
-            c() + [t("kind.keyword", 10)], KI),
-    ]
-
-    print("\nCreating Kubescape visualizations...")
-    kp = [
-        {"id":"ks-v1-total",    "x":0,  "y":0,  "w":12, "h":9},
-        {"id":"ks-v2-critical", "x":12, "y":0,  "w":12, "h":9},
-        {"id":"ks-v3-high",     "x":24, "y":0,  "w":12, "h":9},
-        {"id":"ks-v4-ns",       "x":36, "y":0,  "w":12, "h":9},
-        {"id":"ks-v5-timeline", "x":0,  "y":9,  "w":48, "h":12},
-        {"id":"ks-v6-rules",    "x":0,  "y":21, "w":32, "h":14},
-        {"id":"ks-v8-sev",      "x":32, "y":21, "w":16, "h":14},
-        {"id":"ks-v7-ns",       "x":0,  "y":35, "w":24, "h":12},
-        {"id":"ks-v9-kind",     "x":24, "y":35, "w":24, "h":12},
-    ]
-    for viz in ks_vizs:
-        r, s = osd("POST", "/api/saved_objects/" + viz["type"] + "/" + viz["id"] + "?overwrite=true",
-                   {"attributes": viz["attributes"], "references": viz.get("references", [])})
-        ok = "OK" if s < 300 else ("ERR " + str(s) + ": " + str(r.get("message","?"))[:60])
-        print("  " + viz["attributes"]["title"] + ": " + ok)
-
-    refs_k = [{"name":"panel_"+str(i+1),"type":"visualization","id":p["id"]} for i,p in enumerate(kp)]
-    r, s = mkdash("kubescape-compliance", "Kubescape — CIS Compliance",
-                   "CIS benchmark violations from Kubescape: failing rules, severity breakdown, affected namespaces.",
-                   kp, refs_k)
-    print("  Dashboard Kubescape: " + str(s))
-
     print("\n=== Security Dashboards ready ===")
     print("  Falco:     <OSD>/app/dashboards#/view/falco-runtime")
-    print("  Kubescape: <OSD>/app/dashboards#/view/kubescape-compliance")
-    print("Note: Dashboards show 'No data' until Falco events fire and Kubescape scans at 02:00.")
+    print("Note: Dashboard shows 'No data' until Falco events fire.")

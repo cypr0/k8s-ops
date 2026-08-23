@@ -19,17 +19,6 @@ rules:
     verbs:
       - "get"
       - "list"
-  # Kubescape
-  - apiGroups:
-      - "spdx.softwarecomposition.kubescape.io"
-      - "kubescape.io"
-    resources:
-      - workloadconfigurationscans
-      - workloadconfigurationscansummaries
-      - configurationscansummaries
-    verbs:
-      - "get"
-      - "list"
   # Velero (backup evaluation dashboard)
   - apiGroups:
       - "velero.io"

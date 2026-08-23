@@ -35,7 +35,6 @@ spec:
               namespaces:
                 - kube-system
                 - falco
-                - kubescape
                 - monitoring
                 - logging
       validate:

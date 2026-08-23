@@ -7,8 +7,8 @@ data:
   export.py: |-
     #!/usr/bin/env python3
     """
-    Export Trivy VulnerabilityReports and Kubescape findings to OpenSearch.
-    Runs as a CronJob — indexes to trivy-YYYY.MM.DD and kubescape-YYYY.MM.DD.
+    Export Trivy VulnerabilityReports to OpenSearch.
+    Runs as a CronJob — indexes to trivy-YYYY.MM.DD.
     """
     import json
     import os
@@ -157,105 +157,6 @@ data:
     except Exception as e:
         print(f"  Trivy config audit error: {e}", file=sys.stderr)
 
-    # ── Kubescape WorkloadConfigurationScans ─────────────────────────────
-    # NOTE: The list API omits spec.controls — must GET each item individually.
-    # Individual GETs include full controls with status, severity, ruleName.
-    print("=== Kubescape WorkloadConfigurationScans ===")
-    ks_index = f"kubescape-{TODAY}"
-    ks_docs  = []
-    # Control exceptions — CIS host/control-plane controls that Kubescape's
-    # host-scanner reports as failing but were LIVE-VERIFIED compliant on Talos
-    # (2026-07-11, via talosctl). Talos's host-scanner support is imperfect: it
-    # can't read Talos's actual file ownership, so it false-flags these. Skipped
-    # here so the dashboards + the "Kubescape Critical CIS" alert monitor reflect
-    # real deviations only. See project_cis_talos_benchmark memory for the audit.
-    KUBESCAPE_CONTROL_EXCEPTIONS = {
-        "C-0167": "CIS-4.1.6 kubelet.conf ownership — verified root:root (0/0, -rw-------)",
-        "C-0169": "CIS-4.1.8 client-CA ownership — verified root:root (pki/ca.crt 0/0)",
-        "C-0171": "CIS-4.1.10 kubelet config.yaml ownership — verified root:root (0/0)",
-        "C-0110": "CIS-1.1.19 PKI dir ownership — verified root:root (0/0, drwx------)",
-        "C-0101": "CIS-1.1.10 CNI file ownership — verified root:root (0/0, -rw-------)",
-        "C-0183": "CIS-4.2.11 RotateKubeletServerCertificate — Talos manages the "
-                  "kubelet serving cert itself; rotateCertificates:true is set",
-    }
-    try:
-        import time as _time
-        token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
-        ca    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-        k8s_ctx = ssl.create_default_context(cafile=ca)
-
-        def k8s_get_one(path):
-            req = urllib.request.Request(
-                f"https://kubernetes.default.svc{path}",
-                headers={"Authorization": f"Bearer {token}"}
-            )
-            with urllib.request.urlopen(req, context=k8s_ctx) as r:
-                return json.loads(r.read())
-
-        # Step 1: list all scans (metadata only — controls absent from list response)
-        base = "/apis/spdx.softwarecomposition.kubescape.io/v1beta1/workloadconfigurationscans"
-        stubs = k8s_get_all(base)
-        print(f"  Found {len(stubs)} workload scans — fetching individually...")
-        seen_controls = set()  # deduplicate same control across namespaces
-        for i, stub in enumerate(stubs):
-            meta = stub.get("metadata", {})
-            ns   = meta.get("namespace", "")
-            name = meta.get("name", "")
-            kind = meta.get("labels", {}).get("kubescape.io/workload-kind", "Unknown")
-            wl   = meta.get("labels", {}).get("kubescape.io/workload-name", name)
-            try:
-                ns_path = f"/namespaces/{ns}" if ns else ""
-                item = k8s_get_one(f"/apis/spdx.softwarecomposition.kubescape.io/v1beta1{ns_path}/workloadconfigurationscans/{name}")
-            except Exception:
-                item = stub  # fall back to stub (no controls)
-            controls = item.get("spec", {}).get("controls", {}) or {}
-            for cid, ctrl in controls.items():
-                if cid in KUBESCAPE_CONTROL_EXCEPTIONS:
-                    continue  # verified-compliant on Talos — see exception list above
-                st = ctrl.get("status", {})
-                if not isinstance(st, dict) or st.get("status") != "failed":
-                    continue
-                sev_info = ctrl.get("severity", {})
-                sev_label = sev_info.get("severity", "Unknown")
-                sev_score = sev_info.get("scoreFactor", 0)
-                if sev_label not in ("Critical", "High", "Medium"):
-                    continue
-                # One doc per (namespace, workload, control) — deduplicate same ctrl id
-                dedup_key = f"{ns}/{wl}/{cid}"
-                if dedup_key in seen_controls:
-                    continue
-                seen_controls.add(dedup_key)
-                # Extract remediation from first rule's paths
-                remediation = ""
-                for rule in ctrl.get("rules", []) or []:
-                    for path in rule.get("paths", []) or []:
-                        if path and path.get("fixPath"):
-                            remediation = f"Set {path['fixPath']}={path.get('fixPathValue','<value>')}"
-                            break
-                    if remediation:
-                        break
-                ks_docs.append({
-                    "@timestamp":  ts,
-                    "namespace":   ns,
-                    "kind":        kind,
-                    "resource":    wl,
-                    "ruleID":      cid,
-                    "ruleName":    ctrl.get("name", cid),
-                    "severity":    sev_label,
-                    "scoreFactor": sev_score,
-                    "remediation": remediation,
-                    "source":      "kubescape"
-                })
-            if (i + 1) % 50 == 0:
-                print(f"  Processed {i+1}/{len(stubs)}, findings so far: {len(ks_docs)}")
-                _time.sleep(0.5)
-        indexed = os_bulk(ks_index, ks_docs)
-        print(f"  Indexed {indexed}/{len(ks_docs)} Kubescape findings to {ks_index}")
-    except Exception as e:
-        import traceback
-        print(f"  Kubescape export error: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-
     # ── Velero Backups ───────────────────────────────────────────────────
     # Single rolling index (not date-suffixed): each backup is indexed under
     # its own name as _id, so re-runs update phase/errors in place instead
@@ -295,4 +196,4 @@ data:
         print(f"  Velero backup export error: {e}", file=sys.stderr)
 
     print("=== CRD export complete ===")
-    print(f"  Trivy CVEs: {len(docs) + len(audit_docs)}, Kubescape: {len(ks_docs)}, Velero backups: {len(vb_docs)}")
+    print(f"  Trivy CVEs: {len(docs) + len(audit_docs)}, Velero backups: {len(vb_docs)}")

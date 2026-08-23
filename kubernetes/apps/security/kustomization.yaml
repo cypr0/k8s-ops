@@ -14,6 +14,5 @@ resources:
   - ./authentik/ks.yaml
   - ./trivy/ks.yaml
   - ./falco/ks.yaml
-  - ./kubescape/ks.yaml
   - ./kyverno/ks.yaml
   - ./oidc-rbac/ks.yaml

@@ -17,7 +17,7 @@ Originally scaffolded from [onedr0p/cluster-template](https://github.com/onedr0p
 | Storage | [csi-driver-nfs](https://github.com/kubernetes-csi/csi-driver-nfs) (ZFS-backed NFS) |
 | Databases | [CloudNativePG](https://cloudnative-pg.io/) (Postgres), [Dragonfly](https://github.com/dragonflydb/dragonfly) (Redis-compatible cache) |
 | Backups | [Velero](https://velero.io/) + Kopia, off-site to S3 |
-| Security | [Kyverno](https://kyverno.io/), [Falco](https://falco.org/), [Kubescape](https://kubescape.io/), [Trivy Operator](https://github.com/aquasecurity/trivy-operator) |
+| Security | [Kyverno](https://kyverno.io/), [Falco](https://falco.org/), [Trivy Operator](https://github.com/aquasecurity/trivy-operator) |
 | Observability | [kube-prometheus-stack](https://github.com/prometheus-operator/kube-prometheus-stack), [Grafana](https://grafana.com/), [Loki](https://grafana.com/oss/loki/), [OpenSearch](https://opensearch.org/), [Gatus](https://gatus.io/) |
 | Identity | [Authentik](https://goauthentik.io/) — OIDC SSO in front of every user-facing app |
 | Dependency automation | [Renovate](https://www.mend.io/renovate) |

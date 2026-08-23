@@ -42,9 +42,21 @@ data:
         }
       }" | python3 -c "import json,sys; r=json.load(sys.stdin); print('Channel:', r.get('config_id','ERROR: '+str(r)))" 2>/dev/null
 
+    # ── Cleanup: Kubescape retired from the cluster ────────────────────────
+    # Removes leftovers from before Kubescape was removed — the monitor and
+    # index template creation calls themselves were deleted below, but that
+    # never deletes objects OpenSearch already has from earlier runs.
+    echo "=== Removing retired Kubescape SIEM objects ==="
+    ${CURL} -X DELETE "${OS}/_index_template/kubescape-template" >/dev/null 2>&1 || true
+    KS_MONITOR_ID=$(${CURL} "${OS}/_plugins/_alerting/monitors/_search" \
+      -H "Content-Type: application/json" \
+      -d '{"query":{"term":{"monitor.name.keyword":"Kubescape Critical CIS"}}}' 2>/dev/null \
+      | python3 -c "import json,sys; r=json.load(sys.stdin); ids=r.get('hits',{}).get('hits',[]); print(ids[0]['_id'] if ids else '')" 2>/dev/null)
+    [ -n "${KS_MONITOR_ID}" ] && ${CURL} -X DELETE "${OS}/_plugins/_alerting/monitors/${KS_MONITOR_ID}" >/dev/null 2>&1 || true
+
     # ── 2. Index templates ─────────────────────────────────────────────────
     echo "=== Index templates ==="
-    for tpl in 'syslog:syslog-*' 'falco:falco-*' 'trivy:trivy-*' 'kubescape:kubescape-*'; do
+    for tpl in 'syslog:syslog-*' 'falco:falco-*' 'trivy:trivy-*'; do
       NAME="${tpl%%:*}"; PATTERN="${tpl##*:}"
       ${CURL} -X PUT "${OS}/_index_template/${NAME}-template" \
         -H "Content-Type: application/json" \
@@ -157,7 +169,7 @@ data:
     }"
 
     # ── 6. Trivy: CRITICAL CVEs (hourly) ───────────────────────────────────
-    echo "=== Trivy + Kubescape monitors ==="
+    echo "=== Trivy monitors ==="
     create_monitor "Trivy CRITICAL CVEs" "{
       \"type\": \"monitor\",
       \"name\": \"Trivy CRITICAL CVEs\",
@@ -186,34 +198,5 @@ data:
       }}]
     }"
 
-    # ── 7. Kubescape: CIS violations (hourly) ─────────────────────────────
-    create_monitor "Kubescape Critical CIS" "{
-      \"type\": \"monitor\",
-      \"name\": \"Kubescape Critical CIS\",
-      \"monitor_type\": \"query_level_monitor\",
-      \"enabled\": true,
-      \"schedule\": {\"period\": {\"interval\": 60, \"unit\": \"MINUTES\"}},
-      \"inputs\": [{\"search\": {
-        \"indices\": [\"kubescape-*\"],
-        \"query\": {
-          \"size\": 0,
-          \"query\": {\"bool\": {\"filter\": [
-            {\"term\": {\"severity\": \"Critical\"}},
-            {\"range\": {\"@timestamp\": {\"gte\": \"now-1h\"}}}
-          ]}},
-          \"aggs\": {\"count\": {\"value_count\": {\"field\": \"ruleName\"}}}
-        }
-      }}],
-      \"triggers\": [{\"query_level_trigger\": {
-        \"id\": \"ks-trigger\",
-        \"name\": \"Critical CIS Violation\",
-        \"severity\": \"2\",
-        \"condition\": {\"script\": {\"source\": \"ctx.results[0].aggregations.count.value > 0\", \"lang\": \"painless\"}},
-        \"actions\": [{\"name\": \"Pushover\", \"destination_id\": \"pushover-siem\",
-          \"message_template\": {\"source\": \"title=Kubescape+CIS+Violation&message=Critical+CIS+benchmark+violation+detected.&priority=0\"},
-          \"throttle_enabled\": true, \"throttle\": {\"value\": 60, \"unit\": \"MINUTES\"}}]
-      }}]
-    }"
-
     echo "=== SIEM setup complete ==="
-    echo "Monitors: Firewall Block Spike, SSH Brute Force, Falco Critical, Trivy CVE, Kubescape CIS"
+    echo "Monitors: Firewall Block Spike, SSH Brute Force, Falco Critical, Trivy CVE"

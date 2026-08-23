@@ -19,5 +19,4 @@ Severity scale (sized for a one-operator homelab, no on-call rotation):
 | 2026-08-16 | SEV1 | [CoreDNS AAAA template rule breaking internal service resolution](2026-08-16-coredns-aaaa-nxdomain-breaks-internal-dns.md) |
 | 2026-08-16 | SEV1 | [Authentik GeoIP sidecar crash-loop causing full SSO outage](2026-08-16-authentik-geoip-sidecar-sso-outage.md) |
 | 2026-08-16 | SEV2 | [hermes-agent restore-PVC ownership fix broke production](2026-08-16-hermes-agent-restore-pvc-chown-permission-denied.md) |
-| 2026-08-16 | SEV3 | [Kubescape node-agent rollout falsely marked failed by Helm's default wait timeout](2026-08-16-kubescape-helm-timeout-rollback-loop.md) |
 | 2026-08-16 | SEV3 | [Immich VectorChord extension-image GLIBC mismatch on the shared CNPG cluster](2026-08-16-immich-vectorchord-glibc-mismatch.md) |

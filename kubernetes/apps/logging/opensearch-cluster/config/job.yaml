@@ -5,7 +5,7 @@ metadata:
   name: opensearch-config-setup
   annotations:
     # Re-run by changing this value
-    setup-version: "1"
+    setup-version: "2"
 spec:
   backoffLimit: 5
   template:

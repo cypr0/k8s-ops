@@ -43,7 +43,6 @@ check here before assuming a gap means "not interesting."
 | Immich | immich | [immich.md](immich.md) |
 | k8s-gateway | network | [k8s-gateway.md](k8s-gateway.md) |
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
-| Kubescape | security | [kubescape.md](kubescape.md) |
 | Kyverno | kyverno | [kyverno.md](kyverno.md) |
 | Loki | monitoring | [loki.md](loki.md) |
 | Metrics Server | kube-system | [metrics-server.md](metrics-server.md) |

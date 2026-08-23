@@ -7,8 +7,8 @@ cluster:
   # workload memory *limits* overcommitted to 137-160% of allocatable, this
   # caused recurring cgroup-level OOM kills and node-wide reclaim stalls that
   # cascaded into probe timeouts across every namespace (2026-08-15 incident —
-  # see barman-cloud/CNPG symptom that started the investigation). falco,
-  # kubescape node-agent, and alloy already exclude themselves from
+  # see barman-cloud/CNPG symptom that started the investigation). falco
+  # and alloy already exclude themselves from
   # control-plane via nodeAffinity for the same reason (see
   # kubernetes/apps/security/falco/app/helmrelease-falco.yaml); this is the
   # cluster-wide version of that same fix via the standard
@@ -40,7 +40,6 @@ cluster:
             # too causes a duplicate entry in the rendered config.
             namespaces:
               - falco
-              - kubescape
               - monitoring
               - logging
     extraArgs:

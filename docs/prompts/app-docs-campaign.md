@@ -101,14 +101,12 @@ Before the first full app README or incident postmortem, produce one of each as 
 1. `authentik` (security)
 2. `coredns` (kube-system)
 3. `nextcloud` (nextcloud)
-4. `kubescape` (security)
-5. `hermes-agent` (hermes-agent)
+4. `hermes-agent` (hermes-agent)
 ... then the remaining ~50 apps, no fixed order — pick by what's most likely to be touched again soon, or ask the operator.
 
 **Incidents**, same date:
 1. `2026-08-16-authentik-geoip-sidecar-sso-outage.md`
 2. `2026-08-16-coredns-aaaa-nxdomain-breaks-internal-dns.md`
 3. `2026-08-16-hermes-agent-restore-pvc-chown-permission-denied.md`
-4. `2026-08-16-kubescape-helm-timeout-rollback-loop.md`
 
 If an app or incident isn't in this seed list, add it and continue — this queue is not exhaustive, just a starting point.

@@ -6,10 +6,10 @@
 # a PolicyException allow-list instead of the other way around.
 #
 # Namespace exemptions mirror the ones in talos/patches/controller/cluster.yaml
-# (kube-system, falco, kubescape, monitoring, logging) — verified via live
+# (kube-system, falco, monitoring, logging) — verified via live
 # pod scan to be exactly the namespaces that legitimately run
 # privileged/hostNetwork/hostPID/hostPath workloads (Cilium, csi-driver-nfs,
-# Falco, Kubescape node-agent, node-exporter, OpenSearch, fluent-bit, spegel).
+# Falco, node-exporter, OpenSearch, fluent-bit, spegel).
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -30,7 +30,6 @@ spec:
               namespaces:
                 - kube-system
                 - falco
-                - kubescape
                 - monitoring
                 - logging
       validate:
@@ -62,7 +61,6 @@ spec:
               namespaces:
                 - kube-system
                 - falco
-                - kubescape
                 - monitoring
                 - logging
       validate:

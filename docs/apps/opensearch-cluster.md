@@ -5,11 +5,13 @@
 > **Hostname**   `logs.${SECRET_DOMAIN}` (Dashboards) — internal-only via the `envoy-internal` gateway, requires VPN, not exposed through the Cloudflare tunnel
 
 ## What it does here
-The actual 3-node OpenSearch data cluster + Dashboards backing this cluster's centralized logging and lightweight SIEM. It ingests syslog (OPNsense, Proxmox, fail2ban via Fluent Bit), Falco runtime alerts, Trivy/Kubescape scan findings, Nextcloud/Paperless stats-exporter output, and Velero backup/restore-test results, then serves them through pre-built OpenSearch Dashboards visualizations and a handful of Security Analytics alerting monitors (firewall block spikes, SSH brute force, Falco criticals, Trivy CRITICAL CVEs, Kubescape critical CIS violations) that page out via Pushover. This doc covers only this app's own CR/config; operator installation, CRDs, and operator-level behavior are documented separately under `opensearch-operator`.
+The actual 3-node OpenSearch data cluster + Dashboards backing this cluster's centralized logging and lightweight SIEM. It ingests syslog (OPNsense, Proxmox, fail2ban via Fluent Bit), Falco runtime alerts, Trivy scan findings, Nextcloud/Paperless stats-exporter output, and Velero backup/restore-test results, then serves them through pre-built OpenSearch Dashboards visualizations and a handful of Security Analytics alerting monitors (firewall block spikes, SSH brute force, Falco criticals, Trivy CRITICAL CVEs) that page out via Pushover. This doc covers only this app's own CR/config; operator installation, CRDs, and operator-level behavior are documented separately under `opensearch-operator`.
+
+> **Note:** Kubescape (CIS compliance scanner) was removed from the cluster. Its `kubescape-*` index template/data, the `kubescape-idx` index-pattern, the "Kubescape — CIS Compliance" dashboard/visualizations, the "Kubescape Critical CIS" alert monitor, and its CRD-export/RBAC were all removed alongside it — see `config/configmap-setup.yaml`, `config/configmap-security-dashboards.yaml`, `config/configmap-exporter.yaml`, `config/crd-exporter-rbac.yaml`.
 
 ## Architecture at a glance
 - **Depends on:** `opensearch-operator` Kustomization (CRDs + controller) and `external-secrets-stores`/`onepassword` ClusterSecretStore — both declared as `dependsOn` in `kubernetes/apps/logging/opensearch-cluster/ks.yaml`; Authentik OIDC provider for Dashboards + Security Plugin login (blueprint `kubernetes/apps/security/authentik/app/blueprints/02-opensearch-oidc.yaml`); `zfs-nfs` StorageClass for master node PVCs.
-- **Depended on by:** `fluent-bit` (ships logs in), `falco`'s falcosidekick, the Nextcloud/Paperless stats-exporter CronJobs, the Velero restore-test CronJob, and Gatus health checks. The `crd-to-opensearch` CronJob defined *inside this app* also reads Trivy/Kubescape/Velero CRDs cluster-wide via its own ClusterRole.
+- **Depended on by:** `fluent-bit` (ships logs in), `falco`'s falcosidekick, the Nextcloud/Paperless stats-exporter CronJobs, the Velero restore-test CronJob, and Gatus health checks. The `crd-to-opensearch` CronJob defined *inside this app* also reads Trivy/Velero CRDs cluster-wide via its own ClusterRole.
 
 ## Repo layout
 Two Flux Kustomizations, both in `kubernetes/apps/logging/opensearch-cluster/ks.yaml`: `opensearch-cluster` (the CR + secrets + routing, path `app/`) and `opensearch-config` (post-install setup Jobs/CronJobs, path `config/`, `dependsOn: opensearch-cluster`).
@@ -23,9 +25,9 @@ Two Flux Kustomizations, both in `kubernetes/apps/logging/opensearch-cluster/ks.
 | `kubernetes/apps/logging/opensearch-cluster/app/ciliumnetworkpolicy.yaml` | CNPs for masters + Dashboards pods |
 | `kubernetes/apps/logging/opensearch-cluster/config/externalsecret.yaml` | Credentials for the setup/dashboard/pipeline Jobs |
 | `kubernetes/apps/logging/opensearch-cluster/config/job.yaml` + `configmap-setup.yaml` | One-shot SIEM setup: Pushover notification channel, index templates, alerting monitors |
-| `kubernetes/apps/logging/opensearch-cluster/config/job-*-dashboard.yaml` + matching `configmap-*-dashboard.yaml` | One-shot Jobs creating index-patterns/visualizations/dashboards: Trivy, Proxmox, OPNsense, security (Falco+Kubescape), Talos, apps (Nextcloud/Paperless generic), apps-stats, Velero |
+| `kubernetes/apps/logging/opensearch-cluster/config/job-*-dashboard.yaml` + matching `configmap-*-dashboard.yaml` | One-shot Jobs creating index-patterns/visualizations/dashboards: Trivy, Proxmox, OPNsense, security (Falco), Talos, apps (Nextcloud/Paperless generic), apps-stats, Velero |
 | `kubernetes/apps/logging/opensearch-cluster/config/job-proxmox-pipeline.yaml`, `job-opnsense.yaml` + matching configmaps | One-shot ingest-pipeline setup for Proxmox/OPNsense syslog enrichment |
-| `kubernetes/apps/logging/opensearch-cluster/config/cronjob-exporter.yaml` + `configmap-exporter.yaml` + `crd-exporter-rbac.yaml` | Hourly export of Trivy/Kubescape/Velero CRs into `trivy-*`/`kubescape-*` daily indices |
+| `kubernetes/apps/logging/opensearch-cluster/config/cronjob-exporter.yaml` + `configmap-exporter.yaml` + `crd-exporter-rbac.yaml` | Hourly export of Trivy/Velero CRs into `trivy-*` daily indices |
 | `kubernetes/apps/logging/opensearch-cluster/config/cronjob-refresh-fields.yaml` + `configmap-refresh-fields.yaml` | Hourly refresh of every Dashboards index-pattern's field list from the live mapping |
 | `kubernetes/apps/logging/opensearch-cluster/config/ciliumnetworkpolicy.yaml` | CNP for the one-shot/CronJob pods (`opensearch-config-jobs`) |
 

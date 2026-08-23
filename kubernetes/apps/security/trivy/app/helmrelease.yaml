@@ -38,8 +38,9 @@ spec:
       excludeNamespaces: "kube-system,flux-system,*-restore-test"
       metricsFindingsEnabled: true
       metricsVulnIdEnabled: true
-      # Talos: immutable filesystem — node-collector can't access /etc/systemd
-      # CIS node benchmarks are handled by Kubescape instead
+      # Talos: immutable filesystem — node-collector can't access /etc/systemd.
+      # (Kubescape used to cover CIS node benchmarks; it has since been removed
+      # from the cluster, so this remains disabled with no replacement.)
       infraAssessmentScannerEnabled: false
 
     trivy:

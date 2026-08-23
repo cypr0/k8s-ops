@@ -34,7 +34,7 @@ spec:
         - ports:
             - port: "9200"
               protocol: TCP
-    # REST API from security (falcosidekick, trivy, kubescape)
+    # REST API from security (falcosidekick, trivy)
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": security

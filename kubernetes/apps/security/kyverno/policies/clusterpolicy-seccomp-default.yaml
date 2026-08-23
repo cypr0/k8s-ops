@@ -7,7 +7,7 @@
 #
 # Same namespace exemptions as the pod-security policies: Falco needs
 # unrestricted syscall access for its eBPF probe, Cilium/csi-driver-nfs need
-# host-level access, Kubescape's node-agent inspects other containers.
+# host-level access.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -27,7 +27,6 @@ spec:
               namespaces:
                 - kube-system
                 - falco
-                - kubescape
                 - monitoring
                 - logging
       mutate:
