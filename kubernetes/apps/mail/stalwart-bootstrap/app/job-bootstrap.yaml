@@ -18,12 +18,26 @@
 # configMap's content, since that's inlined as an env/volume hash — see
 # kubernetes/apps/open-webui/open-webui/app/tools/job-sync-tools.yaml for the
 # same pattern), so pushing a bootstrap-plan change re-runs it automatically.
+#
+# reloader.stakater.com/auto: "true" additionally makes Reloader (kube-system
+# /reloader) delete+recreate this Job whenever any Secret/ConfigMap it
+# actually references changes CONTENT without a spec change — e.g. a
+# password rotation in the 1Password "stalwart" item flowing through
+# ExternalSecret into stalwart-secret, or a config.json/plan edit. Reloader
+# auto-discovers stalwart-secret (envFrom on stalwart-recovery),
+# stalwart-config and stalwart-bootstrap-plan (mounted volumes) — no named
+# secret.reloader.stakater.com/reload annotations needed. Unlike Deployments,
+# Reloader recreates Jobs (ReCreateJobFromjob: delete then create with the
+# same spec, stripping resourceVersion/uid/status/controller labels) rather
+# than patching a pod template, since Jobs are immutable — this re-run is
+# always safe because the bootstrap plan uses upsert/matchOn semantics.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: stalwart-bootstrap
   annotations:
     kustomize.toolkit.fluxcd.io/force: "enabled"
+    reloader.stakater.com/auto: "true"
 spec:
   backoffLimit: 3
   activeDeadlineSeconds: 900
