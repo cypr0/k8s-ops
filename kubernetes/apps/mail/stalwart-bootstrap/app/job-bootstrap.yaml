@@ -204,6 +204,16 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # stalwart-cli caches the downloaded JMAP schema under
+            # $XDG_CACHE_HOME (~/.cache/stalwart-cli/<server-hash>/, see
+            # https://stalw.art/docs/management/cli/#schema-cache) and the
+            # image's own docs recommend mounting a volume there. The
+            # image runs as /home/nonroot (per its distroless nonroot
+            # base), and with readOnlyRootFilesystem: true that directory
+            # isn't writable by default ("Read-only file system (os error
+            # 30)" on first run without this mount).
+            - name: cli-cache
+              mountPath: /home/nonroot/.cache
       volumes:
         - name: config
           configMap:
@@ -214,4 +224,6 @@ spec:
         - name: data
           emptyDir: {}
         - name: tmp
+          emptyDir: {}
+        - name: cli-cache
           emptyDir: {}
