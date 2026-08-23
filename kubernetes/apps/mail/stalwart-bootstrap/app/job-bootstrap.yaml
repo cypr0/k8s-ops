@@ -58,6 +58,18 @@ spec:
             capabilities:
               drop:
                 - ALL
+              # The stalwart binary carries a cap_net_bind_service *file*
+              # capability (setcap) to bind :443/etc. without root — see
+              # https://stalw.art/docs/install/platform/docker/. Dropping
+              # ALL removes it from the container's bounding set, which
+              # makes the kernel refuse to honor the file capability at
+              # exec time ("operation not permitted"), per that same page:
+              # "Starting the container with --cap-drop NET_BIND_SERVICE
+              # causes the binary to fail at exec time." Must be added back
+              # explicitly even though this recovery sidecar itself never
+              # binds a listener (recovery mode only serves :8080).
+              add:
+                - NET_BIND_SERVICE
           resources:
             requests:
               cpu: 50m

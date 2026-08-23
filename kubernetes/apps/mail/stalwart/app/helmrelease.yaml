@@ -92,6 +92,16 @@ spec:
               capabilities:
                 drop:
                   - ALL
+                # The stalwart binary carries a cap_net_bind_service *file*
+                # capability (setcap) to bind :25/:443/etc. without root —
+                # see https://stalw.art/docs/install/platform/docker/.
+                # Dropping ALL removes it from the container's bounding set,
+                # which makes the kernel refuse to honor the file
+                # capability at exec time ("operation not permitted"), per
+                # that same page: "Starting the container with --cap-drop
+                # NET_BIND_SERVICE causes the binary to fail at exec time."
+                add:
+                  - NET_BIND_SERVICE
         pod:
           # Every port below except 443 is a raw mail protocol (SMTP/IMAP/
           # POP3/ManageSieve) that neither Envoy Gateway nor the Cloudflare
