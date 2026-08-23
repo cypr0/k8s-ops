@@ -103,21 +103,20 @@ spec:
               readOnly: true
             - name: data
               mountPath: /var/lib/stalwart
-      containers:
-        - name: apply
-          # Official stalwart-cli image — speaks JMAP only, no separate
-          # install step needed (see https://stalw.art/docs/management/cli/#installation).
-          image: ghcr.io/stalwartlabs/cli:1.0.12
+        # ghcr.io/stalwartlabs/cli is distroless (gcr.io/distroless/static
+        # -debian12:nonroot per https://github.com/stalwartlabs/cli/blob/main
+        # /Dockerfile) — no shell, no wget, ENTRYPOINT is the binary itself.
+        # A wait-loop + sed password substitution can't run inside it, so
+        # this regular (non-restartable) init container does that prep work
+        # with busybox — same tool the repo already uses for similar
+        # shell-script init steps, see kubernetes/apps/nextcloud/nextcloud/
+        # app/helmrelease.yaml's extraInitContainers. It runs after the
+        # stalwart-recovery sidecar has started (regular init containers run
+        # in order following native sidecars) and writes the rendered plan
+        # to the shared "tmp" emptyDir for the "apply" container to consume.
+        - name: wait-and-render
+          image: busybox:1.38.0
           env:
-            - name: STALWART_URL
-              value: "http://127.0.0.1:8080"
-            - name: STALWART_USER
-              value: "admin"
-            - name: STALWART_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: stalwart-secret
-                  key: STALWART_RECOVERY_PASSWORD
             - name: STALWART_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -137,7 +136,7 @@ spec:
               cpu: 10m
               memory: 32Mi
             limits:
-              memory: 128Mi
+              memory: 64Mi
           command:
             - "sh"
             - "-c"
@@ -153,13 +152,52 @@ spec:
               done
               echo "Stalwart recovery API is up. Rendering plan..."
               sed "s/__STALWART_ADMIN_PASSWORD__/$STALWART_ADMIN_PASSWORD/" /plan/plan.ndjson > /tmp/plan.ndjson
-              echo "Applying declarative plan..."
-              stalwart-cli apply --file /tmp/plan.ndjson --json
-              echo "Bootstrap plan applied successfully."
+              echo "Plan rendered to /tmp/plan.ndjson."
           volumeMounts:
             - name: plan
               mountPath: /plan
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: apply
+          # Official stalwart-cli image — speaks JMAP only, no separate
+          # install step needed (see https://stalw.art/docs/management/cli/#installation).
+          # Distroless: ENTRYPOINT is already /usr/local/bin/stalwart-cli,
+          # so command/args below are passed directly to the binary — no
+          # shell involved (see wait-and-render init container above for why).
+          image: ghcr.io/stalwartlabs/cli:1.0.12
+          env:
+            - name: STALWART_URL
+              value: "http://127.0.0.1:8080"
+            - name: STALWART_USER
+              value: "admin"
+            - name: STALWART_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: stalwart-secret
+                  key: STALWART_RECOVERY_PASSWORD
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          args:
+            - "apply"
+            - "--file"
+            - "/tmp/plan.ndjson"
+            - "--json"
+          volumeMounts:
             - name: tmp
               mountPath: /tmp
       volumes:
