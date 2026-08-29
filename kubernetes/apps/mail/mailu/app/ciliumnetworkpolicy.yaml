@@ -49,9 +49,18 @@ spec:
     # mailu-front-ext), so LAN clients don't round-trip through Cloudflare —
     # restricted to the actual client CIDRs rather than `world`, since
     # nothing stops that Service's IP from being routable from anywhere that
-    # can reach 192.168.10.0/24 (192.168.40.0/24 is the office LAN, reached
-    # over a WireGuard site-to-site tunnel into the Proxmox network that
-    # 192.168.10.0/24 itself is).
+    # can reach 192.168.10.0/24.
+    #
+    # 10.10.0.2/32 is NOT the office LAN's own 192.168.40.0/24 range — it's
+    # the WireGuard tunnel interface's own address on the OPNsense side.
+    # OPNsense is masquerading office-LAN clients' traffic to that address
+    # before it enters the site-to-site tunnel into the Proxmox network,
+    # rather than routing it through with the original 192.168.40.x source
+    # preserved. Confirmed live via `cilium monitor --to <mailu-front
+    # endpoint>`: connections showed up as 10.10.0.2, not 192.168.40.x, and
+    # were dropped until this was added. If OPNsense's WireGuard config ever
+    # changes (more peers, a different masquerade address, routing instead
+    # of NAT), this needs updating to match.
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
@@ -62,7 +71,7 @@ spec:
               protocol: TCP
     - fromCIDR:
         - "192.168.10.0/24"
-        - "192.168.40.0/24"
+        - "10.10.0.2/32"
       toPorts:
         - ports:
             - port: "443"
