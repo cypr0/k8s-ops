@@ -30,13 +30,16 @@ spec:
       - "gateway-httproute"
     txtPrefix: k8s.
     txtOwnerId: default
-    # philipp-rosch.de added for the portfolio site (separate apex domain,
-    # same Cloudflare account). Requires the CF_API_TOKEN below to also have
-    # Zone:DNS:Edit on that zone -- widen the token's zone scope in the
-    # Cloudflare dashboard if it's currently restricted to ${SECRET_DOMAIN}.
+    # ${SECRET_PORTFOLIO_DOMAIN} added for the portfolio site (separate apex
+    # domain, same Cloudflare account) -- the domain string itself lives in
+    # kubernetes/components/sops/cluster-secrets.sops.yaml
+    # (SECRET_PORTFOLIO_DOMAIN) rather than as a plaintext literal here.
+    # Requires the CF_API_TOKEN below to also have Zone:DNS:Edit on that
+    # zone -- widen the token's zone scope in the Cloudflare dashboard if
+    # it's currently restricted to ${SECRET_DOMAIN}.
     domainFilters:
       - "${SECRET_DOMAIN}"
-      - "philipp-rosch.de"
+      - "${SECRET_PORTFOLIO_DOMAIN}"
     resources:
       requests:
         cpu: 10m

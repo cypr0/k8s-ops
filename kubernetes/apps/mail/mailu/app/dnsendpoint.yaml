@@ -1,7 +1,6 @@
 ---
 # Direct-to-tunnel DNS record for webmail.${SECRET_DOMAIN} — same pattern as
-# kubernetes/apps/network/cloudflare-tunnel/app/dnsendpoint.yaml and
-# kubernetes/apps/portfolio/philipp-rosch-site/app/dnsendpoint.yaml (CNAME
+# kubernetes/apps/network/cloudflare-tunnel/app/dnsendpoint.yaml (CNAME
 # straight to the tunnel). Needed because this hostname doesn't go through
 # envoy-external (see ciliumnetworkpolicy.yaml's cloudflare-tunnel ingress
 # rule and cloudflare-tunnel's helmrelease.yaml routing it straight to
