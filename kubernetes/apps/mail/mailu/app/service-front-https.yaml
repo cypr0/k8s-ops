@@ -9,12 +9,19 @@
 # can't go through Envoy Gateway/Cloudflare Tunnel anyway (same reasoning as
 # every other mail port), this Service just adds the missing port onto the
 # same dedicated LoadBalancer IP the chart's own front-ext Service uses.
+#
+# Cilium's LB-IPAM refuses to hand the same IP to a second Service unless
+# both carry a matching `io.cilium/lb-ipam-sharing-key` annotation (verified
+# live: without it, this Service's status showed "already_allocated" and
+# never got an external IP) — the matching key is set on the chart's own
+# front-ext Service via helmrelease.yaml's front.externalService.annotations.
 apiVersion: v1
 kind: Service
 metadata:
   name: mailu-front-https
   annotations:
     lbipam.cilium.io/ips: "192.168.10.104"
+    io.cilium/lb-ipam-sharing-key: mailu-front
 spec:
   type: LoadBalancer
   externalTrafficPolicy: Local

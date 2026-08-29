@@ -146,6 +146,11 @@ spec:
         annotations:
           # Reuses the LB IP freed up by Stalwart's removal.
           lbipam.cilium.io/ips: "192.168.10.104"
+          # Matches service-front-https.yaml's own Service (port 443, which
+          # this chart's front.externalService has no toggle for at all) —
+          # Cilium's LB-IPAM refuses to hand the same IP to a second Service
+          # without a matching sharing key on both (verified live).
+          io.cilium/lb-ipam-sharing-key: mailu-front
           # k8s-gateway (kubernetes/apps/network/k8s-gateway) auto-derives a
           # hostname from the Service name, but the hostname everything else
           # expects (DNS/TLS/MX) is "mail.${SECRET_DOMAIN}" — see
