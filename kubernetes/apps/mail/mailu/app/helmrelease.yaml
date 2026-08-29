@@ -21,17 +21,18 @@ spec:
     remediation:
       retries: 3
   values:
-    # Every component pod gets these two annotations (there's no single
-    # "defaultPodOptions"-style knob in this chart, unlike app-template) so
-    # Reloader (kube-system/reloader) restarts them whenever mailu-secret's
-    # content changes — e.g. a future 1Password password rotation — instead
-    # of silently running with a stale/rejected credential until the next
-    # unrelated rollout. Cheap to over-apply: a component that doesn't
-    # actually read the secret just never triggers on it.
-    commonAnnotations:
-      reloader.stakater.com/auto: "true"
-      secret.reloader.stakater.com/reload: mailu-secret
-
+    # NOT wiring up Reloader (kube-system/reloader) here: this chart's only
+    # blanket annotation knob is `commonAnnotations`, which — unlike other
+    # charts in this repo that expose a narrower `deploymentAnnotations`
+    # (e.g. kubernetes/apps/security/authentik/app/helmrelease.yaml) —
+    # applies to *every* templated resource, including the `clamav`
+    # StatefulSet's `volumeClaimTemplates[].metadata`. Kubernetes forbids
+    # changing volumeClaimTemplates after creation, so setting
+    # commonAnnotations here permanently breaks every future `helm upgrade`
+    # (confirmed live: "Forbidden: updates to statefulset spec for fields
+    # other than 'replicas', ..."). A future 1Password password rotation in
+    # mailu-secret needs a manual `kubectl rollout restart` for the affected
+    # component(s) instead of an automatic one.
     hostnames:
       - "mail.${SECRET_DOMAIN}"
     domain: "${SECRET_DOMAIN}"
