@@ -39,16 +39,30 @@ spec:
               protocol: TCP
             - port: "4190"
               protocol: TCP
-    # webmail.${SECRET_DOMAIN} (443/HTTPS only): routed through the
-    # Cloudflare Tunnel instead of the public LoadBalancer — gets Cloudflare's
-    # DDoS/WAF protection in front of the admin UI/webmail login, and keeps
-    # the origin IP (this cluster's public IP) out of DNS for that hostname.
-    # See kubernetes/apps/network/cloudflare-tunnel/app/helmrelease.yaml's
-    # config.yaml ingress list and that app's ciliumnetworkpolicy.yaml.
+    # webmail.${SECRET_DOMAIN} (443/HTTPS): two parallel paths, both terminate
+    # at this same pod. From the public internet: the Cloudflare Tunnel
+    # (gets Cloudflare's DDoS/WAF protection, keeps this cluster's public IP
+    # out of DNS for that hostname) — see kubernetes/apps/network/
+    # cloudflare-tunnel/app/helmrelease.yaml's config.yaml ingress list and
+    # that app's ciliumnetworkpolicy.yaml. From the home/office LAN: directly
+    # via service-front-webmail-lan.yaml's LoadBalancer Service (same IP as
+    # mailu-front-ext), so LAN clients don't round-trip through Cloudflare —
+    # restricted to the actual client CIDRs rather than `world`, since
+    # nothing stops that Service's IP from being routable from anywhere that
+    # can reach 192.168.10.0/24 (192.168.40.0/24 is the office LAN, reached
+    # over a WireGuard site-to-site tunnel into the Proxmox network that
+    # 192.168.10.0/24 itself is).
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
             app.kubernetes.io/name: cloudflare-tunnel
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    - fromCIDR:
+        - "192.168.10.0/24"
+        - "192.168.40.0/24"
       toPorts:
         - ports:
             - port: "443"

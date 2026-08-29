@@ -1,0 +1,37 @@
+---
+# LAN-only path to webmail/admin, alongside the public Cloudflare-Tunnel path
+# (see ciliumnetworkpolicy.yaml's cloudflare-tunnel ingress rule and
+# cloudflare-tunnel's helmrelease.yaml). Needed because k8s-gateway (the
+# in-cluster authoritative resolver for ${SECRET_DOMAIN}, used by the split-DNS
+# setup on the home/office LAN) only ever generates internal DNS records from
+# Gateway API HTTPRoutes or a Service's `coredns.io/hostname` annotation —
+# webmail.${SECRET_DOMAIN} has neither (it bypasses Envoy Gateway entirely,
+# same reasoning as the raw mail ports: front terminates TLS itself, and
+# Envoy's HTTPRoute model expects plain-HTTP backends, requiring an extra
+# BackendTLSPolicy to route HTTPS backends — not worth it for one hostname).
+# This Service is the other half: it exists purely so k8s-gateway has
+# something to generate an internal A record from, letting LAN clients reach
+# webmail directly instead of round-tripping through Cloudflare.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailu-front-webmail-lan
+  annotations:
+    # Shares mailu-front-ext's IP (see helmrelease.yaml's
+    # front.externalService.annotations) — Cilium's LB-IPAM requires a
+    # matching sharing key on both Services for this (verified live).
+    lbipam.cilium.io/ips: "192.168.10.104"
+    io.cilium/lb-ipam-sharing-key: mailu-front
+    coredns.io/hostname: "webmail.${SECRET_DOMAIN}"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: mailu
+    app.kubernetes.io/instance: mailu
+    app.kubernetes.io/component: front
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
