@@ -150,14 +150,14 @@ spec:
         # source IPs at front, which rspamd/postfix need for RBL lookups and
         # rate-limiting — Stalwart used `Cluster` and lost this.
         annotations:
-          # Reuses the LB IP freed up by Stalwart's removal. Only the raw
-          # mail ports live here now — webmail/admin (443) moved behind the
-          # Cloudflare Tunnel (see cloudflare-tunnel's helmrelease.yaml and
-          # this app's ciliumnetworkpolicy.yaml), so there's no second
-          # Service sharing this IP anymore (a prior version of this file
-          # had one, plus the io.cilium/lb-ipam-sharing-key dance that
-          # required — removed together with service-front-https.yaml).
+          # Reuses the LB IP freed up by Stalwart's removal.
           lbipam.cilium.io/ips: "192.168.10.104"
+          # Matches service-front-webmail-lan.yaml's own Service (port 443,
+          # the LAN-only path to webmail.${SECRET_DOMAIN} — see that file and
+          # ciliumnetworkpolicy.yaml) — Cilium's LB-IPAM refuses to hand the
+          # same IP to a second Service without a matching sharing key on
+          # both (verified live: "already_allocated_incompatible_service").
+          io.cilium/lb-ipam-sharing-key: mailu-front
           # k8s-gateway (kubernetes/apps/network/k8s-gateway) auto-derives a
           # hostname from the Service name, but the hostname everything else
           # expects (DNS/TLS/MX) is "mail.${SECRET_DOMAIN}" — see
