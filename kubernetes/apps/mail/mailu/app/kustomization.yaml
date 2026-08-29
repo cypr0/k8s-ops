@@ -8,6 +8,7 @@ resources:
   - ./ocirepository.yaml
   - ./externalsecret.yaml
   - ./certificate.yaml
+  - ./dnsendpoint.yaml
   - ./helmrelease-redis.yaml
   - ./ciliumnetworkpolicy-redis.yaml
   - ./helmrelease.yaml

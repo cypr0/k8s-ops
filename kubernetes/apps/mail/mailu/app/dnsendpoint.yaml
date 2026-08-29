@@ -1,0 +1,21 @@
+---
+# Direct-to-tunnel DNS record for webmail.${SECRET_DOMAIN} — same pattern as
+# kubernetes/apps/network/cloudflare-tunnel/app/dnsendpoint.yaml and
+# kubernetes/apps/portfolio/philipp-rosch-site/app/dnsendpoint.yaml (CNAME
+# straight to the tunnel). Needed because this hostname doesn't go through
+# envoy-external (see ciliumnetworkpolicy.yaml's cloudflare-tunnel ingress
+# rule and cloudflare-tunnel's helmrelease.yaml routing it straight to
+# mailu-front), so it never picks up a DNS record automatically the way an
+# HTTPRoute-based hostname on envoy-external would (external-dns's
+# "gateway-httproute" source) — the "crd" source (this DNSEndpoint) is the
+# other half of that same external-dns instance, for exactly this case.
+apiVersion: externaldns.k8s.io/v1alpha1
+kind: DNSEndpoint
+metadata:
+  name: mailu
+spec:
+  endpoints:
+    - dnsName: "webmail.${SECRET_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "f768b542-3a28-4fa6-b132-daa8e38b2658.cfargotunnel.com"
