@@ -34,7 +34,13 @@ spec:
     # mailu-secret needs a manual `kubectl rollout restart` for the affected
     # component(s) instead of an automatic one.
     hostnames:
+      # First entry is the primary mail hostname (MX/SMTP/IMAP) — keep it
+      # first. webmail.${SECRET_DOMAIN} is the Cloudflare-Tunnel-routed
+      # hostname for webmail/admin (see cloudflare-tunnel's helmrelease.yaml
+      # and this app's ciliumnetworkpolicy.yaml); front's nginx needs it
+      # listed here to actually serve that Host header.
       - "mail.${SECRET_DOMAIN}"
+      - "webmail.${SECRET_DOMAIN}"
     domain: "${SECRET_DOMAIN}"
     timezone: "Europe/Berlin"
 
@@ -144,13 +150,14 @@ spec:
         # source IPs at front, which rspamd/postfix need for RBL lookups and
         # rate-limiting — Stalwart used `Cluster` and lost this.
         annotations:
-          # Reuses the LB IP freed up by Stalwart's removal.
+          # Reuses the LB IP freed up by Stalwart's removal. Only the raw
+          # mail ports live here now — webmail/admin (443) moved behind the
+          # Cloudflare Tunnel (see cloudflare-tunnel's helmrelease.yaml and
+          # this app's ciliumnetworkpolicy.yaml), so there's no second
+          # Service sharing this IP anymore (a prior version of this file
+          # had one, plus the io.cilium/lb-ipam-sharing-key dance that
+          # required — removed together with service-front-https.yaml).
           lbipam.cilium.io/ips: "192.168.10.104"
-          # Matches service-front-https.yaml's own Service (port 443, which
-          # this chart's front.externalService has no toggle for at all) —
-          # Cilium's LB-IPAM refuses to hand the same IP to a second Service
-          # without a matching sharing key on both (verified live).
-          io.cilium/lb-ipam-sharing-key: mailu-front
           # k8s-gateway (kubernetes/apps/network/k8s-gateway) auto-derives a
           # hostname from the Service name, but the hostname everything else
           # expects (DNS/TLS/MX) is "mail.${SECRET_DOMAIN}" — see

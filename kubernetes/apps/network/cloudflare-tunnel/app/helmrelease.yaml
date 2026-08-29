@@ -71,6 +71,23 @@ spec:
         data:
           config.yaml: |-
             ingress:
+              # Mailu webmail/admin — must come before the "*.${SECRET_DOMAIN}"
+              # catch-all below (cloudflared matches top-to-bottom, first
+              # wins), otherwise this hostname would fall through to
+              # envoy-external instead. Routes straight to Mailu's own
+              # ClusterIP Service rather than through envoy-external, since
+              # `front` (kubernetes/apps/mail/mailu/app/helmrelease.yaml)
+              # terminates TLS itself with its own cert
+              # (kubernetes/apps/mail/mailu/app/certificate.yaml) — same
+              # "backend already does its own TLS" pattern as the
+              # envoy-external routes below, just a different backend.
+              # originServerName must match one of that cert's SANs, or
+              # cloudflared's TLS validation of the origin fails.
+              - hostname: "webmail.${SECRET_DOMAIN}"
+                originRequest:
+                  http2Origin: true
+                  originServerName: webmail.${SECRET_DOMAIN}
+                service: https://mailu-front.mail.svc.cluster.local:443
               - hostname: "*.${SECRET_DOMAIN}"
                 originRequest:
                   http2Origin: true

@@ -6,6 +6,7 @@ metadata:
 spec:
   dnsNames:
     - "mail.${SECRET_DOMAIN}"
+    - "webmail.${SECRET_DOMAIN}"
   issuerRef:
     name: letsencrypt-production
     kind: ClusterIssuer

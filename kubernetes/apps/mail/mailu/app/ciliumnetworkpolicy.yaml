@@ -17,13 +17,14 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mailu
   ingress:
-    # Public mail protocols + HTTPS (webmail/admin) — front is this app's own
-    # public ingress (dedicated LoadBalancer IP, see helmrelease.yaml's
-    # front.externalService), not Envoy Gateway/Cloudflare Tunnel, so "world"
-    # ingress on these ports is the point. Matches
-    # front.externalService.ports: smtp/smtps/submission/imaps/manageSieve
-    # enabled, pop3/pop3s/imap deliberately left off (see helmrelease.yaml's
-    # comment on that choice).
+    # Raw mail protocols only — front is this app's own public ingress
+    # (dedicated LoadBalancer IP, see helmrelease.yaml's
+    # front.externalService) since these aren't HTTP and can't go through
+    # Envoy Gateway/Cloudflare Tunnel, so "world" ingress on these ports is
+    # the point. Matches front.externalService.ports:
+    # smtp/smtps/submission/imaps/manageSieve enabled, pop3/pop3s/imap
+    # deliberately left off (see helmrelease.yaml's comment on that choice).
+    # 443 (webmail/admin) is NOT here — see the cloudflare-tunnel rule below.
     - fromEntities:
         - world
       toPorts:
@@ -38,6 +39,18 @@ spec:
               protocol: TCP
             - port: "4190"
               protocol: TCP
+    # webmail.${SECRET_DOMAIN} (443/HTTPS only): routed through the
+    # Cloudflare Tunnel instead of the public LoadBalancer — gets Cloudflare's
+    # DDoS/WAF protection in front of the admin UI/webmail login, and keeps
+    # the origin IP (this cluster's public IP) out of DNS for that hostname.
+    # See kubernetes/apps/network/cloudflare-tunnel/app/helmrelease.yaml's
+    # config.yaml ingress list and that app's ciliumnetworkpolicy.yaml.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: cloudflare-tunnel
+      toPorts:
+        - ports:
             - port: "443"
               protocol: TCP
     # Same namespace: front<->postfix/dovecot/admin proxying, rspamd<->clamav

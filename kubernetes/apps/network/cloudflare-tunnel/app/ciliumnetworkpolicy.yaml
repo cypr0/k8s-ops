@@ -44,3 +44,15 @@ spec:
               protocol: TCP
             - port: "10080"
               protocol: TCP
+    # webmail.${SECRET_DOMAIN} -> Mailu's front Service directly (see
+    # helmrelease.yaml's config.yaml ingress list) instead of via
+    # envoy-external, since front does its own TLS termination.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+            app.kubernetes.io/component: front
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

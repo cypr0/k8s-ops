@@ -2,7 +2,7 @@
 
 > **Namespace**  mail
 > **Source**     Helm chart `mailu/mailu` v2.7.3 (app version `2024.06.55`) from `https://mailu.github.io/helm-charts/` — `kubernetes/apps/mail/mailu/app/helmrepository.yaml`, `helmrelease.yaml`; dedicated Redis via `bjw-s-labs/helm/app-template` — `helmrelease-redis.yaml`
-> **Hostname**   `mail.${SECRET_DOMAIN}` — public, own dedicated LoadBalancer IP (not Envoy Gateway, not the Cloudflare Tunnel)
+> **Hostname**   `mail.${SECRET_DOMAIN}` (mail protocols, dedicated LoadBalancer IP) + `webmail.${SECRET_DOMAIN}` (webmail/admin, via the Cloudflare Tunnel) — see Routing & access below
 
 ## What it does here
 
@@ -26,8 +26,8 @@ Unlike Stalwart, **domains/mailboxes/aliases are not infra-as-code**: there is n
 | `kubernetes/apps/mail/mailu/app/helmrelease.yaml` | The Mailu chart itself — hostnames, external DB/Redis wiring, TLS, front's LoadBalancer Service, per-component resources |
 | `kubernetes/apps/mail/mailu/app/helmrelease-redis.yaml` | Dedicated unauthenticated Redis (`app-template` chart) for rspamd/admin |
 | `kubernetes/apps/mail/mailu/app/externalsecret.yaml` | `mailu-secret` — Flask secret key, initial admin password, both CNPG role passwords |
-| `kubernetes/apps/mail/mailu/app/certificate.yaml` | `cert-manager` `Certificate` for `mail.${SECRET_DOMAIN}` → `mailu-tls` Secret |
-| `kubernetes/apps/mail/mailu/app/ciliumnetworkpolicy.yaml` | Ingress from `world` on the enabled mail ports + `443`; same-namespace trust for the chart's internal component-to-component traffic; egress to Postgres, DNS, and `world` (outbound SMTP delivery + ClamAV virus-DB updates) |
+| `kubernetes/apps/mail/mailu/app/certificate.yaml` | `cert-manager` `Certificate` for `mail.${SECRET_DOMAIN}` + `webmail.${SECRET_DOMAIN}` → `mailu-tls` Secret |
+| `kubernetes/apps/mail/mailu/app/ciliumnetworkpolicy.yaml` | Ingress from `world` on the enabled mail ports, from the `cloudflare-tunnel` pod (namespace `network`) on `443`; same-namespace trust for the chart's internal component-to-component traffic; egress to Postgres, DNS, and `world` (outbound SMTP delivery + ClamAV virus-DB updates) |
 | `kubernetes/apps/mail/mailu/app/ciliumnetworkpolicy-redis.yaml` | Locks the unauthenticated Redis to same-namespace ingress only, zero egress |
 
 ## Secrets
@@ -43,10 +43,16 @@ The matching CNPG role passwords in the `database` namespace (`mailu-db-role`, `
 
 ## Routing & access
 
-- **No Envoy Gateway, no Cloudflare Tunnel** — same reasoning as Stalwart: SMTP/IMAP/ManageSieve are raw TCP, not HTTP. `front` gets its own dedicated Cilium `LoadBalancer` IP (`192.168.10.104`, reused from Stalwart's removal — see `helmrelease.yaml`'s `front.externalService.annotations`), `externalTrafficPolicy: Local` (preserves real client source IPs for rspamd/postfix rate-limiting/RBL — an improvement over Stalwart's `Cluster` policy).
-- **Exposed ports are narrower than Stalwart's**: `smtp` (25), `submission` (587), `smtps` (465), `imaps` (993), `manageSieve` (4190), and `443` (webmail/admin). Plaintext-capable `pop3`/`pop3s`/`imap` (110/995/143) are deliberately left disabled — see `helmrelease.yaml`'s `front.externalService.ports`.
-- **TLS is cert-manager's, not Mailu's.** A dedicated `Certificate` (`certificate.yaml`) issues via the existing `letsencrypt-production` `ClusterIssuer` (DNS-01/Cloudflare); `front` mounts that Secret directly via `ingress.existingSecret` + `ingress.tlsFlavorOverride: mail` — no chart-managed `Ingress` object, no ACME logic inside Mailu at all.
+Two separate public paths, split by protocol — unlike Stalwart, which put everything (mail ports + webmail/admin) on one dedicated LoadBalancer IP:
+
+- **Raw mail protocols (SMTP/IMAPS/Submission/SMTPS/ManageSieve) — dedicated LoadBalancer, no Envoy/Tunnel.** These aren't HTTP, so they can't go through Envoy Gateway or the Cloudflare Tunnel. `front` gets its own dedicated Cilium `LoadBalancer` IP (`192.168.10.104`, reused from Stalwart's removal — see `helmrelease.yaml`'s `front.externalService.annotations`), `externalTrafficPolicy: Local` (preserves real client source IPs for rspamd/postfix rate-limiting/RBL — an improvement over Stalwart's `Cluster` policy). Exposed ports are narrower than Stalwart's: `smtp` (25), `submission` (587), `smtps` (465), `imaps` (993), `manageSieve` (4190) — plaintext-capable `pop3`/`pop3s`/`imap` (110/995/143) are deliberately left disabled. `mail.${SECRET_DOMAIN}` has a plain (non-Cloudflare-proxied) DNS `A` record pointing at this cluster's public IP — required for the MX record, since Cloudflare's proxy can't carry raw SMTP.
+- **Webmail/admin UI (443/HTTPS) — through the Cloudflare Tunnel instead**, on a *separate* hostname (`webmail.${SECRET_DOMAIN}`), exactly like every other web app in this cluster: `kubernetes/apps/network/cloudflare-tunnel/app/helmrelease.yaml`'s `config.yaml` routes that hostname straight to `mailu-front.mail.svc.cluster.local:443` (ahead of the `*.${SECRET_DOMAIN}` catch-all, which would otherwise send it to `envoy-external` — cloudflared matches top-to-bottom). Gets Cloudflare's DDoS/WAF protection in front of the admin UI and webmail login, and keeps this cluster's public IP out of DNS for that hostname. `front` still terminates TLS itself (same cert as the mail ports, now covering both hostnames — see below), so cloudflared connects via HTTPS with `originServerName: webmail.${SECRET_DOMAIN}` pinned to match. `ciliumnetworkpolicy.yaml` only allows this on 443 from the `cloudflare-tunnel` pod (namespace `network`) — not from `world` the way the mail ports are.
+- **TLS is cert-manager's, not Mailu's, for both paths.** One `Certificate` (`certificate.yaml`) with both hostnames as SANs (`mail.${SECRET_DOMAIN}`, `webmail.${SECRET_DOMAIN}`) issues via the existing `letsencrypt-production` `ClusterIssuer` (DNS-01/Cloudflare); `front` mounts that Secret directly via `ingress.existingSecret` + `ingress.tlsFlavorOverride: mail` — no chart-managed `Ingress` object, no ACME logic inside Mailu at all. Both hostnames are also listed in `helmrelease.yaml`'s `hostnames` so `front`'s nginx actually serves both Host headers.
 - No SSO — internal directory only (see Architecture at a glance above).
+
+## Public DNS / router configuration required
+
+Since `mail.${SECRET_DOMAIN}` bypasses Cloudflare's proxy (see above), this app — unlike everything else in the cluster — needs manual router-level port forwarding: WAN ports `25`/`465`/`587`/`993`/`4190` → `192.168.10.104` on whatever edge router/firewall sits in front of this cluster (e.g. OPNsense's Destination NAT, one rule per port, same target port on both sides, with "Add associated filter rule" left on). Port `443` does **not** need forwarding — that's the Cloudflare Tunnel path. Outbound port 25 may also be blocked by the hosting/ISP provider (Hetzner does this by default for abuse prevention) — needs a support ticket to lift, or (not yet configured here) Mailu's `externalRelay` values block routing outbound mail through an authenticated third-party SMTP relay on port 587 instead.
 
 ## Storage
 
