@@ -1,0 +1,29 @@
+---
+# The chart's own `front.externalService` LoadBalancer (see helmrelease.yaml)
+# deliberately has no `https`/443 port at all — Mailu's chart expects
+# webmail/admin HTTPS to go through its own `ingress.yaml` (a plain
+# Kubernetes `Ingress`) fronted by an ingress-nginx-style controller, which
+# this cluster doesn't run (Gateway API/Envoy Gateway only, no IngressClass
+# bridging classic Ingress objects). Since `front` already terminates TLS
+# itself on :443 directly (mounts `mailu-tls`, see certificate.yaml) and
+# can't go through Envoy Gateway/Cloudflare Tunnel anyway (same reasoning as
+# every other mail port), this Service just adds the missing port onto the
+# same dedicated LoadBalancer IP the chart's own front-ext Service uses.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailu-front-https
+  annotations:
+    lbipam.cilium.io/ips: "192.168.10.104"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: mailu
+    app.kubernetes.io/instance: mailu
+    app.kubernetes.io/component: front
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP

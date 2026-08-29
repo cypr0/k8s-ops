@@ -21,6 +21,17 @@ spec:
     remediation:
       retries: 3
   values:
+    # Every component pod gets these two annotations (there's no single
+    # "defaultPodOptions"-style knob in this chart, unlike app-template) so
+    # Reloader (kube-system/reloader) restarts them whenever mailu-secret's
+    # content changes — e.g. a future 1Password password rotation — instead
+    # of silently running with a stale/rejected credential until the next
+    # unrelated rollout. Cheap to over-apply: a component that doesn't
+    # actually read the secret just never triggers on it.
+    commonAnnotations:
+      reloader.stakater.com/auto: "true"
+      secret.reloader.stakater.com/reload: mailu-secret
+
     hostnames:
       - "mail.${SECRET_DOMAIN}"
     domain: "${SECRET_DOMAIN}"

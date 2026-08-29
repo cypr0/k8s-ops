@@ -11,4 +11,5 @@ resources:
   - ./helmrelease-redis.yaml
   - ./ciliumnetworkpolicy-redis.yaml
   - ./helmrelease.yaml
+  - ./service-front-https.yaml
   - ./ciliumnetworkpolicy.yaml
