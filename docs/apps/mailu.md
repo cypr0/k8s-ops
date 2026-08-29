@@ -1,0 +1,84 @@
+# Mailu
+
+> **Namespace**  mail
+> **Source**     Helm chart `mailu/mailu` v2.7.3 (app version `2024.06.55`) from `https://mailu.github.io/helm-charts/` — `kubernetes/apps/mail/mailu/app/helmrepository.yaml`, `helmrelease.yaml`; dedicated Redis via `bjw-s-labs/helm/app-template` — `helmrelease-redis.yaml`
+> **Hostname**   `mail.${SECRET_DOMAIN}` — public, own dedicated LoadBalancer IP (not Envoy Gateway, not the Cloudflare Tunnel)
+
+## What it does here
+
+[Mailu](https://mailu.io) is the cluster's mail server, replacing Stalwart (see git history / this file's previous revision for that deployment). It's a multi-component stack — `front` (nginx, the single public entrypoint for all mail protocols + HTTPS), `admin` (Flask app: domains/mailboxes/aliases/DKIM, its own database), `postfix` (SMTP), `dovecot` (IMAP/POP3/ManageSieve), `rspamd` (spam/DKIM-signing/DMARC/greylisting), `clamav` (antivirus), and `webmail` (Roundcube) — all deployed from one Helm release.
+
+Unlike Stalwart, **domains/mailboxes/aliases are not infra-as-code**: there is no declarative-apply layer for mailbox content. They're managed through the Admin web UI (`https://mail.${SECRET_DOMAIN}/admin`) or `flask mailu ...` CLI inside the `admin` pod, after this platform-level deployment is up.
+
+## Architecture at a glance
+
+- **Depends on:** CNPG cluster `postgres` (namespace `database`) via two roles/databases — `mailuusr`/`mailudb` for the `admin` component, `roundcubeusr`/`roundcubedb` for Roundcube's own address-book/preferences store (`kubernetes/apps/database/cloudnative-pg/databases/database-mailu.yaml`, `database-roundcube.yaml`); a dedicated in-namespace Redis (`helmrelease-redis.yaml`) for rspamd greylisting/admin quota+ratelimit counters; `cert-manager`'s `letsencrypt-production` `ClusterIssuer` for TLS (`certificate.yaml`); ExternalSecret → 1Password item `mailu`.
+- **Depended on by:** nothing else in the cluster. Authentik's own outbound mail (`kubernetes/apps/security/authentik/app/helmrelease.yaml`'s `authentik.email.host: ${SECRET_MAIL_SERVER}`) points at a *different*, pre-existing mail server, not at this Mailu instance — same as it did with Stalwart.
+- **Not integrated with Authentik SSO** — Mailu has no OIDC-backed mail-client login path in general use (mainstream IMAP/SMTP clients don't do browser-redirect auth), so this uses Mailu's own internal accounts, same reasoning as Stalwart before it.
+- **Not given a Cloudflare API token.** Deliberate: unlike Stalwart, Mailu's Helm chart has no DNS-provider integration to hand a token to in the first place, and DKIM/MX/SPF/DMARC record publication for each domain is a manual step (see DNS runbook below) — a smaller blast radius if this app is ever compromised.
+
+## Repo layout
+
+| File | Purpose |
+| --- | --- |
+| `kubernetes/apps/mail/mailu/ks.yaml` | Flux Kustomization — `dependsOn` `cloudnative-pg-databases`, `csi-driver-nfs`, `external-secrets-stores` |
+| `kubernetes/apps/mail/mailu/app/helmrepository.yaml` | Classic Helm `HelmRepository` pointing at `https://mailu.github.io/helm-charts/` |
+| `kubernetes/apps/mail/mailu/app/helmrelease.yaml` | The Mailu chart itself — hostnames, external DB/Redis wiring, TLS, front's LoadBalancer Service, per-component resources |
+| `kubernetes/apps/mail/mailu/app/helmrelease-redis.yaml` | Dedicated unauthenticated Redis (`app-template` chart) for rspamd/admin |
+| `kubernetes/apps/mail/mailu/app/externalsecret.yaml` | `mailu-secret` — Flask secret key, initial admin password, both CNPG role passwords |
+| `kubernetes/apps/mail/mailu/app/certificate.yaml` | `cert-manager` `Certificate` for `mail.${SECRET_DOMAIN}` → `mailu-tls` Secret |
+| `kubernetes/apps/mail/mailu/app/ciliumnetworkpolicy.yaml` | Ingress from `world` on the enabled mail ports + `443`; same-namespace trust for the chart's internal component-to-component traffic; egress to Postgres, DNS, and `world` (outbound SMTP delivery + ClamAV virus-DB updates) |
+| `kubernetes/apps/mail/mailu/app/ciliumnetworkpolicy-redis.yaml` | Locks the unauthenticated Redis to same-namespace ingress only, zero egress |
+
+## Secrets
+
+One ExternalSecret (`mailu`, in `kubernetes/apps/mail/mailu/app/externalsecret.yaml`), pulling from 1Password item `mailu`, producing the `mailu-secret` Kubernetes Secret with:
+
+- `secret-key` — Flask session-cookie signing key (`MAILU_SECRET_KEY` in 1Password).
+- `initial-admin-password` — the `admin@${SECRET_DOMAIN}` mailbox's password, created once (`initialAccount.mode: ifmissing`, so a later password change via the UI survives reconciles).
+- `mailu-db-database` / `mailu-db-username` / `mailu-db-password` — the `admin` component's CNPG role (`mailuusr`/`mailudb`); password sourced from `MAILU_POSTGRESQL_PASSWORD`.
+- `roundcube-db-password` — Roundcube's CNPG role (`roundcubeusr`/`roundcubedb`); sourced from `ROUNDCUBE_POSTGRESQL_PASSWORD`.
+
+The matching CNPG role passwords in the `database` namespace (`mailu-db-role`, `roundcube-db-role` Secrets) are separate ExternalSecrets reading the *same* 1Password item — see `kubernetes/apps/database/cloudnative-pg/databases/externalsecret-mailu.yaml` / `externalsecret-roundcube.yaml`. Required 1Password fields: `MAILU_SECRET_KEY`, `MAILU_INITIAL_ADMIN_PASSWORD`, `MAILU_POSTGRESQL_PASSWORD`, `ROUNDCUBE_POSTGRESQL_PASSWORD`.
+
+## Routing & access
+
+- **No Envoy Gateway, no Cloudflare Tunnel** — same reasoning as Stalwart: SMTP/IMAP/ManageSieve are raw TCP, not HTTP. `front` gets its own dedicated Cilium `LoadBalancer` IP (`192.168.10.104`, reused from Stalwart's removal — see `helmrelease.yaml`'s `front.externalService.annotations`), `externalTrafficPolicy: Local` (preserves real client source IPs for rspamd/postfix rate-limiting/RBL — an improvement over Stalwart's `Cluster` policy).
+- **Exposed ports are narrower than Stalwart's**: `smtp` (25), `submission` (587), `smtps` (465), `imaps` (993), `manageSieve` (4190), and `443` (webmail/admin). Plaintext-capable `pop3`/`pop3s`/`imap` (110/995/143) are deliberately left disabled — see `helmrelease.yaml`'s `front.externalService.ports`.
+- **TLS is cert-manager's, not Mailu's.** A dedicated `Certificate` (`certificate.yaml`) issues via the existing `letsencrypt-production` `ClusterIssuer` (DNS-01/Cloudflare); `front` mounts that Secret directly via `ingress.existingSecret` + `ingress.tlsFlavorOverride: mail` — no chart-managed `Ingress` object, no ACME logic inside Mailu at all.
+- No SSO — internal directory only (see Architecture at a glance above).
+
+## Storage
+
+Single `ReadWriteMany` PVC (`persistence.single_pvc: true`, `zfs-nfs` StorageClass, 20Gi) shared via subPaths across postfix/dovecot/admin/rspamd/clamav/webmail — this is the chart's own default architecture, just with RWX instead of the chart's default RWO. The chart's default RWO would node-lock every Mailu pod to whichever node first claims the PVC; `zfs-nfs` already serves RWX to several other apps in this cluster (Nextcloud, Immich, Paperless, Open-WebUI), so this avoids that node-pinning without any affinity configuration.
+
+## Known limitations (accepted trade-offs, not bugs)
+
+- **No fail2ban-equivalent IP banning.** Containers can't touch host `iptables`. Brute-force mitigation is rspamd's rate-limiting/greylisting plus `limits.authRatelimit`/`limits.messageRatelimit` in `helmrelease.yaml` (chart defaults, not overridden — 60 auth attempts/hour/IP, 100/day/user, 200 messages/day/sender).
+- **MTA-STS / DANE (TLSA) / TLS-RPT are not configured.** `${SECRET_DOMAIN}` (`cisotop.de`) is already DNSSEC-signed (verified live: `DNSKEY`/`DS` present, validating resolvers return the `AD` flag), which makes DANE feasible, but publishing `TLSA`/MTA-STS DNS records is additional manual work best done as a follow-up once base mail flow is confirmed working. MTA-STS specifically has a ready-made hook: `front.overrides` in `helmrelease.yaml` can inject an nginx location block serving `/.well-known/mta-sts.txt` (see the chart's own `values.yaml` comment for the exact snippet) — nothing else needs to change.
+- **DNSSEC-validation pre-flight risk.** Mailu's `admin` component has been known (Mailu/Mailu#147) to refuse to start if it can't confirm DNSSEC validation through its configured DNS resolver, and this chart bundles no validating resolver of its own (unlike Mailu's docker-compose bundle, which ships an Unbound sidecar). This cluster's CoreDNS just forwards upstream without validating. If `admin`'s logs show a DNSSEC-validation failure on first deploy, `admin.dnsConfig` in `helmrelease.yaml` (currently unset) is the fix — point it at a validating resolver (e.g. `1.1.1.1`).
+
+## DNS runbook (manual — not infra-as-code)
+
+For each of the 4-5 domains Mailu will serve mail for, after creating the `Domain` object in the Admin UI:
+
+1. **MX record**: `<domain> MX 10 mail.${SECRET_DOMAIN}`.
+2. **SPF** (TXT on `<domain>`): `v=spf1 mx ~all` (adjust if any other systems send as that domain).
+3. **DKIM**: Admin UI → Domain → DKIM shows the generated public key/selector — publish the TXT record it gives you at `<selector>._domainkey.<domain>`. Mailu generates and stores the private key itself; nothing publishes this automatically (see Architecture at a glance above — no Cloudflare token is given to Mailu, unlike Stalwart).
+4. **DMARC** (TXT at `_dmarc.<domain>`): start permissive, e.g. `v=DMARC1; p=none; rua=mailto:postmaster@${SECRET_DOMAIN}`, tighten to `p=quarantine`/`p=reject` once SPF/DKIM alignment is confirmed working across all sending paths.
+5. **PTR record** for `192.168.10.104`'s public-facing IP, matching `mail.${SECRET_DOMAIN}` — needed for deliverability regardless of how many domains route through this one server.
+
+## Common operations
+
+- Force reconcile: `flux reconcile kustomization mailu -n mail --with-source`.
+- Add a domain/mailbox/alias: Admin UI (`https://mail.${SECRET_DOMAIN}/admin`) with the `admin@${SECRET_DOMAIN}` account, or `kubectl exec` into the `admin` pod and use `flask mailu ...`.
+- Upgrade the chart: bump `spec.chart.spec.version` in `helmrelease.yaml`.
+
+## TODOs / unknowns
+
+- Whether `${SECRET_MAIL_SERVER}` (used by Authentik and other apps for outbound notification mail) should eventually be repointed at this Mailu instance's SMTP submission port has not been decided — inherited unresolved from the Stalwart deployment.
+- No Velero backup schedule includes the `mail` namespace's PVC (mailbox Maildir data). The two Postgres databases (`mailudb`, `roundcubedb`) are covered indirectly by the cluster-wide CNPG `postgres` cluster's Barman Cloud WAL archiving, same as every other app's database on that shared cluster — but actual mail *content* lives on the `zfs-nfs` PVC, not Postgres, and currently has no backup coverage.
+- MTA-STS/DANE/TLS-RPT rollout (see Known limitations above) — deferred, not scheduled.
+
+---
+_Cite every non-obvious claim with a repo-root-relative file path (e.g. `kubernetes/apps/security/authentik/app/helmrelease.yaml`), not a bare filename — this doc lives under `docs/apps/`, so relative paths must resolve from there._

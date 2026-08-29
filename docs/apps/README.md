@@ -45,6 +45,7 @@ check here before assuming a gap means "not interesting."
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
 | Kyverno | kyverno | [kyverno.md](kyverno.md) |
 | Loki | monitoring | [loki.md](loki.md) |
+| Mailu | mail | [mailu.md](mailu.md) |
 | Metrics Server | kube-system | [metrics-server.md](metrics-server.md) |
 | Nextcloud | nextcloud | [nextcloud.md](nextcloud.md) |
 | nextcloud-exporter | nextcloud | [nextcloud-exporter.md](nextcloud-exporter.md) |
@@ -62,7 +63,6 @@ check here before assuming a gap means "not interesting."
 | Reloader | kube-system | [reloader.md](reloader.md) |
 | sogo-mcp | hermes-agent | [sogo-mcp.md](sogo-mcp.md) |
 | Spegel | kube-system | [spegel.md](spegel.md) |
-| Stalwart | mail | [stalwart.md](stalwart.md) |
 | Tika (open-webui) | open-webui | [open-webui-tika.md](open-webui-tika.md) |
 | Tika (Paperless) | paperless | [paperless-tika.md](paperless-tika.md) |
 | Trivy Operator | trivy-system | [trivy.md](trivy.md) |

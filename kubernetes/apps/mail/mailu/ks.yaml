@@ -3,7 +3,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app stalwart-bootstrap
+  name: &app mailu
   namespace: &namespace mail
 spec:
   commonMetadata:
@@ -12,10 +12,12 @@ spec:
   dependsOn:
     - name: cloudnative-pg-databases
       namespace: database
+    - name: csi-driver-nfs
+      namespace: kube-system
     - name: external-secrets-stores
       namespace: security
   interval: 1h
-  path: ./kubernetes/apps/mail/stalwart-bootstrap/app
+  path: ./kubernetes/apps/mail/mailu/app
   postBuild:
     substituteFrom:
       - name: cluster-secrets
@@ -29,8 +31,3 @@ spec:
   targetNamespace: *namespace
   timeout: 15m
   wait: true
-  healthChecks:
-    - apiVersion: batch/v1
-      kind: Job
-      name: stalwart-bootstrap
-      namespace: mail

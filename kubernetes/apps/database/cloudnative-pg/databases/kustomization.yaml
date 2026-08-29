@@ -18,5 +18,7 @@ resources:
   - ./database-portfolio.yaml
   - ./externalsecret-immich.yaml
   - ./database-immich.yaml
-  - ./externalsecret-stalwart.yaml
-  - ./database-stalwart.yaml
+  - ./externalsecret-mailu.yaml
+  - ./database-mailu.yaml
+  - ./externalsecret-roundcube.yaml
+  - ./database-roundcube.yaml

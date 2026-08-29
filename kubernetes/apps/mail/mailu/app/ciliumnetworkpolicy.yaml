@@ -1,0 +1,88 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mailu
+  namespace: mail
+spec:
+  # Every Mailu-chart pod (front/admin/postfix/dovecot/rspamd/clamav/webmail)
+  # carries this label regardless of its `app.kubernetes.io/component` value
+  # (chart's templates/_labels.tpl: `app.kubernetes.io/name` is the chart
+  # name, `app.kubernetes.io/instance` is the Helm release name — both fixed
+  # as "mailu" here). All probes across every component are exec-based
+  # (curl-to-127.0.0.1 from inside the container, see e.g.
+  # templates/front/deployment.yaml), so unlike Stalwart's TCP probes this
+  # needs no `fromEntities: host` allowance for kubelet.
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailu
+  ingress:
+    # Public mail protocols + HTTPS (webmail/admin) — front is this app's own
+    # public ingress (dedicated LoadBalancer IP, see helmrelease.yaml's
+    # front.externalService), not Envoy Gateway/Cloudflare Tunnel, so "world"
+    # ingress on these ports is the point. Matches
+    # front.externalService.ports: smtp/smtps/submission/imaps/manageSieve
+    # enabled, pop3/pop3s/imap deliberately left off (see helmrelease.yaml's
+    # comment on that choice).
+    - fromEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "25"
+              protocol: TCP
+            - port: "587"
+              protocol: TCP
+            - port: "465"
+              protocol: TCP
+            - port: "993"
+              protocol: TCP
+            - port: "4190"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    # Same namespace: front<->postfix/dovecot/admin proxying, rspamd<->clamav
+    # milter/antivirus calls, admin/rspamd<->mailu-redis, dovecot<->rspamd
+    # (Sieve), etc. — the chart wires these components together internally
+    # and enumerating every internal port precisely isn't worth the
+    # fragility; same pattern as nextcloud's own CiliumNetworkPolicy for its
+    # multi-container release.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # PostgreSQL (admin + roundcube databases, see
+    # kubernetes/apps/database/cloudnative-pg/databases/database-mailu.yaml
+    # and database-roundcube.yaml)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": database
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    # Same namespace (see ingress rule above for rationale)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+    # External: outbound SMTP delivery to remote mail exchangers, and
+    # ClamAV's freshclam virus-database updates (HTTP/HTTPS mirrors).
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "25"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP

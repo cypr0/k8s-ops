@@ -1,0 +1,74 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mailu-redis
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controllers:
+      mailu-redis:
+        replicas: 1
+        containers:
+          app:
+            image:
+              repository: redis
+              tag: 7.4.2-alpine
+            args:
+              # No password: Mailu's admin/rspamd Redis integration doesn't
+              # support authentication at all (upstream chart's
+              # externalRedis has no password/auth field) — network
+              # isolation via ciliumnetworkpolicy.yaml is the only control
+              # here, same trust model the chart's own bundled Redis has.
+              - --save
+              - ""
+              - --appendonly
+              - "no"
+            resources:
+              requests:
+                cpu: 10m
+                memory: 32Mi
+              limits:
+                memory: 128Mi
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 999
+              runAsGroup: 999
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+            probes:
+              liveness:
+                enabled: true
+                type: TCP
+                port: 6379
+              readiness:
+                enabled: true
+                type: TCP
+                port: 6379
+    service:
+      app:
+        controller: mailu-redis
+        ports:
+          redis:
+            port: 6379
+    persistence:
+      # Greylisting/quota/ratelimit counters only — disposable, resets to
+      # empty (fail-open, not fail-closed) on a pod restart.
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /data

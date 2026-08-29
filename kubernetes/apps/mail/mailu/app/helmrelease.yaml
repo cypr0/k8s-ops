@@ -1,0 +1,215 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mailu
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: mailu
+      version: 2.7.3
+      sourceRef:
+        kind: HelmRepository
+        name: mailu
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    hostnames:
+      - "mail.${SECRET_DOMAIN}"
+    domain: "${SECRET_DOMAIN}"
+    timezone: "Europe/Berlin"
+
+    # Flask session-cookie signing key — see externalsecret.yaml.
+    existingSecret: mailu-secret
+
+    initialAccount:
+      enabled: true
+      username: admin
+      domain: "${SECRET_DOMAIN}"
+      existingSecret: mailu-secret
+      existingSecretPasswordKey: initial-admin-password
+      # "ifmissing" (not the chart's default "update"): only ever creates
+      # this account once. "update" would reset admin@${SECRET_DOMAIN}'s
+      # password back to this secret's value on every reconcile/upgrade,
+      # clobbering a password changed later via the admin UI.
+      mode: ifmissing
+
+    limits:
+      # Defaults (60/hour per IP, 100/day per user, 200/day per message
+      # sender) are already a reasonable brute-force/compromised-account
+      # baseline — left unchanged.
+      messageSizeLimitInMegabytes: 50
+
+    tls:
+      # Defer instead of silently falling back to plaintext when an
+      # opportunistic-TLS negotiation fails outbound — the message is
+      # retried later rather than sent in the clear. outboundLevel/
+      # inboundEnforce are deliberately left at chart defaults ("may"):
+      # forcing strict inbound TLS would bounce mail from correspondents
+      # whose servers don't speak TLS reliably, which is a deliverability
+      # regression, not a security win, for a small self-hosted domain.
+      deferOnError: true
+
+    # Two CNPG-backed Postgres databases (mailuusr/mailudb, roundcubeusr/
+    # roundcubedb — see kubernetes/apps/database/cloudnative-pg/databases/)
+    # instead of the chart's optional bundled MariaDB/PostgreSQL, which pull
+    # `bitnamilegacy/*` images (Bitnami's Aug-2025 registry restructuring) —
+    # matches every other app in this repo.
+    mariadb:
+      enabled: false
+    postgresql:
+      enabled: false
+    externalDatabase:
+      enabled: true
+      type: postgresql
+      host: postgres-rw.database.svc.cluster.local
+      port: 5432
+      database: mailudb
+      username: mailuusr
+      existingSecret: mailu-secret
+      existingSecretDatabaseKey: mailu-db-database
+      existingSecretUsernameKey: mailu-db-username
+      existingSecretPasswordKey: mailu-db-password
+    global:
+      database:
+        roundcube:
+          database: roundcubedb
+          username: roundcubeusr
+          existingSecret: mailu-secret
+          existingSecretPasswordKey: roundcube-db-password
+
+    # Dedicated, unauthenticated Redis (helmrelease-redis.yaml) instead of
+    # the chart's bundled Bitnami Redis subchart — same `bitnamilegacy`
+    # image-provenance reasoning as the database above. Mailu's own
+    # `externalRedis` has no password/auth field at all (confirmed against
+    # the chart's values.yaml), so this Redis is only as safe as the
+    # CiliumNetworkPolicy locking it to the mail namespace
+    # (ciliumnetworkpolicy-redis.yaml) — same trust model the chart's own
+    # bundled Redis would have had.
+    redis:
+      enabled: false
+    externalRedis:
+      enabled: true
+      host: mailu-redis.mail.svc.cluster.local
+      port: 6379
+
+    persistence:
+      # Chart default is a single RWO PVC, which node-locks every Mailu pod
+      # to whichever node first claims it. zfs-nfs (NFS-backed) already
+      # serves ReadWriteMany to several other apps in this cluster, so using
+      # it here avoids that node-pinning entirely.
+      single_pvc: true
+      size: 20Gi
+      accessModes:
+        - ReadWriteMany
+      storageClass: zfs-nfs
+
+    # No chart-managed Ingress: mail protocols aren't HTTP, so this can't go
+    # through Envoy Gateway/Cloudflare Tunnel like the rest of the cluster —
+    # same reasoning Stalwart's own dedicated LoadBalancer had. cert-manager
+    # (not Mailu) owns the ACME flow; front mounts that secret directly
+    # regardless of `ingress.enabled` (chart's `certificatesSecretName`
+    # helper resolves `ingress.existingSecret` unconditionally).
+    ingress:
+      enabled: false
+      existingSecret: mailu-tls
+      tlsFlavorOverride: mail
+
+    front:
+      hostPort:
+        enabled: false
+      externalService:
+        enabled: true
+        type: LoadBalancer
+        # externalTrafficPolicy: Local (chart default) preserves real client
+        # source IPs at front, which rspamd/postfix need for RBL lookups and
+        # rate-limiting — Stalwart used `Cluster` and lost this.
+        annotations:
+          # Reuses the LB IP freed up by Stalwart's removal.
+          lbipam.cilium.io/ips: "192.168.10.104"
+          # k8s-gateway (kubernetes/apps/network/k8s-gateway) auto-derives a
+          # hostname from the Service name, but the hostname everything else
+          # expects (DNS/TLS/MX) is "mail.${SECRET_DOMAIN}" — see
+          # certificate.yaml. This is k8s_gateway's own convention for
+          # pinning an explicit hostname onto a LoadBalancer Service.
+          coredns.io/hostname: "mail.${SECRET_DOMAIN}"
+        ports:
+          # Deliberately narrower than Stalwart: plaintext-capable pop3/imap
+          # (110/143) are left off entirely — only the implicit-TLS/STARTTLS
+          # ports clients actually need are exposed.
+          pop3: false
+          pop3s: false
+          imap: false
+          imaps: true
+          smtp: true
+          smtps: true
+          submission: true
+          manageSieve: true
+
+    admin:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+
+    postfix:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+
+    dovecot:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          memory: 512Mi
+
+    rspamd:
+      enabled: true
+      # High-confidence virus hits are rejected at SMTP time (sender gets a
+      # bounce) rather than silently discarded — avoids quietly losing a
+      # legitimate-but-infected message without anyone noticing.
+      antivirusAction: reject
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+
+    clamav:
+      enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 1Gi
+        limits:
+          memory: 2Gi
+
+    webmail:
+      enabled: true
+      type: roundcube
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+
+    webdav:
+      enabled: false
+    fetchmail:
+      enabled: false

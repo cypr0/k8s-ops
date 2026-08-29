@@ -8,5 +8,4 @@ components:
 
 resources:
   - ./namespace.yaml
-  - ./stalwart-bootstrap/ks.yaml
-  - ./stalwart/ks.yaml
+  - ./mailu/ks.yaml

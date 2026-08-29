@@ -1,0 +1,25 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mailu-redis
+  namespace: mail
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailu-redis
+  ingress:
+    # Same namespace only (admin/rspamd) — this Redis has no auth at all (see
+    # helmrelease-redis.yaml's comment), so network isolation to the mail
+    # namespace is the only control protecting it.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+  # No egress rules at all: this Redis only ever accepts connections, it
+  # never initiates any (no DNS lookups, no upstream calls) — deny-all is
+  # correct, not an oversight.
+  egress: []

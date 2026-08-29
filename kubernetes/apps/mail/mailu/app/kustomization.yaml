@@ -4,8 +4,11 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: mail
 resources:
-  - ./configmap.yaml
-  - ./configmap-bootstrap-plan.yaml
+  - ./helmrepository.yaml
+  - ./ocirepository.yaml
   - ./externalsecret.yaml
-  - ./job-bootstrap.yaml
+  - ./certificate.yaml
+  - ./helmrelease-redis.yaml
+  - ./ciliumnetworkpolicy-redis.yaml
+  - ./helmrelease.yaml
   - ./ciliumnetworkpolicy.yaml

@@ -121,7 +121,7 @@ spec:
         inherit: true
         passwordSecret:
           name: immich-db-role
-      - name: stalwartusr
+      - name: mailuusr
         ensure: present
         login: true
         superuser: false
@@ -129,13 +129,29 @@ spec:
         createrole: false
         inherit: true
         passwordSecret:
-          name: stalwart-db-role
+          name: mailu-db-role
+      - name: roundcubeusr
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        passwordSecret:
+          name: roundcube-db-role
 
   # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned -- see
   # kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml) were
   # removed from managed.roles above on 2026-08-12, and the "trading"
   # database + both roles were fully DROPPED the same day (not just
   # unmanaged) -- nothing left to clean up if this ever comes up again.
+  #
+  # stalwartusr (Stalwart mail server, replaced by Mailu -- see
+  # kubernetes/apps/mail/mailu/ and docs/apps/mailu.md) was removed from
+  # managed.roles above on 2026-08-29, and "stalwartdb" + the role were
+  # fully DROPPED the same day (DROP DATABASE ... WITH (FORCE) while
+  # Stalwart was still live, per explicit user confirmation of the resulting
+  # outage) -- nothing left to clean up if this ever comes up again.
   monitoring:
     enablePodMonitor: true
 
