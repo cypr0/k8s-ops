@@ -85,6 +85,21 @@ spec:
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": mail
+    # paperless-ngx's IMAP mail-fetch integration (kubernetes/apps/paperless/
+    # paperless-ngx/), migrated off its old external Netcup mailbox onto this
+    # in-cluster instance. CoreDNS resolves mail.${SECRET_DOMAIN} straight to
+    # this Service's ClusterIP for in-cluster clients (see
+    # kubernetes/apps/kube-system/coredns/app/helmrelease.yaml), which is a
+    # real cluster-internal identity, not `world` — needs its own rule
+    # despite the fromEntities:world rule above already covering 993.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
