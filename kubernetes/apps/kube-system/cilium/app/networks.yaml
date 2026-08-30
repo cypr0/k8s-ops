@@ -18,6 +18,22 @@ spec:
   # interfaces:
   #   - ^eno[0-9]+
   #   - ^eth[0-9]+
+  #
+  # Excludes control-plane nodes: they carry a NoSchedule taint, so they can
+  # never host the actual backend pod for an externalTrafficPolicy: Local
+  # Service -- but this nodeSelector alone doesn't stop them from winning
+  # the per-Service L2-announcement leader-election lease anyway. When that
+  # happens, the node holding the lease answers ARP for the Service's IP but
+  # has no local endpoint to forward to, silently blackholing all traffic to
+  # it. Confirmed live: kubernetes/apps/mail/mailu/app's
+  # mailu-front-webmail-lan Service had its lease on k8s-cp-0 while its only
+  # backend pod ran on k8s-wrk-1 -- cluster-wide bug, not Mailu-specific,
+  # simply hadn't hit any other Service by luck yet.
   nodeSelector:
-    matchLabels:
-      kubernetes.io/os: linux
+    matchExpressions:
+      - key: kubernetes.io/os
+        operator: In
+        values:
+          - "linux"
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
