@@ -31,6 +31,22 @@
 # override, and external-dns then looped re-issuing an identical no-op
 # UPDATE every reconcile forever, since its computed desired state and
 # Cloudflare's actual state never converged.
+#
+# ${SECRET_PORTFOLIO_DOMAIN}'s mail records (MX/SPF/DKIM/DMARC/autoconfig/
+# autodiscover) live here too, generated from Mailu's own Admin UI DNS
+# tab for that domain (Domain > Details). These replace the old Netcup/
+# webhosting.systems MX+SPF+DKIM-CNAME records for that domain, which were
+# deleted directly via the Cloudflare API (real conflicts: a second MX would
+# split-brain inbound delivery, and a second SPF TXT is invalid per RFC 7208
+# -- with adkim=s/aspf=s strict DMARC alignment already set, that could have
+# caused ALL mail to be rejected). The SRV records Mailu also recommends
+# (_submission._tcp etc.) are NOT here: external-dns v0.21.0's Cloudflare
+# provider has no working SRV support at all (confirmed live against
+# Cloudflare's API directly -- it requires structured priority/weight/port/
+# target fields, but this provider version only ever sends a flat content
+# string, which Cloudflare rejects). Those were created directly via the
+# Cloudflare API instead, deliberately outside GitOps -- they're static
+# client-autoconfig records that essentially never change.
 apiVersion: externaldns.k8s.io/v1alpha1
 kind: DNSEndpoint
 metadata:
@@ -48,3 +64,36 @@ spec:
       providerSpecific:
         - name: external-dns.alpha.kubernetes.io/cloudflare-proxied
           value: "false"
+    - dnsName: "${SECRET_PORTFOLIO_DOMAIN}"
+      recordType: MX
+      targets:
+        - "10 mail.${SECRET_DOMAIN}"
+    - dnsName: "${SECRET_PORTFOLIO_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=spf1 mx a:mail.${SECRET_DOMAIN} ~all"
+    - dnsName: "dkim._domainkey.${SECRET_PORTFOLIO_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArjSLKC6m1F2rfvKfaPnTAAXW4KBGo60NKhn8uwQtpyWKzsBNrFT0hxXnval5sdHkPla6p4YtrQd32/hd6/0srYmvSge7Y1zJNxl6U+DIc/ShkaVdj/thvy0CnhIKH+Leu1ZLdnh4Nr/1sz9RDTUbk622rilpbl+g4c84h1Bs4h3WvCORd0rz2gaTD94rftoAHFLxBw+JpL4xDqlKlLqWEf8RfI2AnNSixVpz0BGOtnXhkLgSKel8g259ZmmIDafFCKzRDYCJvn9HVmBUrwOJE4Nkvrjb2pKXhMPP+Axyss/dBrAbD/2u8PFXnQ9nkRaMP1A1nD6Wo+w1shwRPfZCaQIDAQAB"
+    - dnsName: "_dmarc.${SECRET_PORTFOLIO_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+    # Cross-domain DMARC reporting authorization -- lives under
+    # ${SECRET_DOMAIN}'s own zone (it's *this* domain authorizing reports
+    # for ${SECRET_PORTFOLIO_DOMAIN} to reference it), not the portfolio
+    # domain's zone. Only meaningful once a rua= is actually set, but Mailu
+    # generates it defensively regardless.
+    - dnsName: "${SECRET_PORTFOLIO_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1;"
+    - dnsName: "autoconfig.${SECRET_PORTFOLIO_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
+    - dnsName: "autodiscover.${SECRET_PORTFOLIO_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
