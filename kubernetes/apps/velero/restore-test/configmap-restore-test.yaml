@@ -76,6 +76,28 @@ data:
         "ciliumnetworkpolicies.cilium.io",
     ]
 
+    # Some namespaces have a PVC that's statically bound to a fixed PV (so a
+    # physical device -- e.g. paperless's scanner -- can write to a known
+    # NFS path) and is therefore excluded from Velero backups entirely
+    # (velero.io/exclude-from-backup on the PVC itself, see e.g.
+    # kubernetes/apps/paperless/paperless-ngx/app/pvc.yaml): the static PV's
+    # claimRef always points back at the real namespace, so restoring the
+    # PVC into a namespaceMapping-renamed scratch namespace could never
+    # bind anyway, and its contents (a transient inbox) aren't worth
+    # backing up. But since it's excluded, Velero's restore never creates
+    # it here either -- so a restored Pod that still references it by name
+    # would sit Pending forever waiting on a PVC that will never appear,
+    # permanently failing this test for a reason unrelated to whether the
+    # real data (the other PVC) restored correctly. Give each one a
+    # disposable, dynamically-provisioned stand-in purely so the Pod can
+    # start -- this never touches the real, statically-bound PVC/PV.
+    PLACEHOLDER_PVCS = {
+        "paperless": [
+            {"name": "paperless-consume-pvc", "storageClassName": "zfs-nfs",
+             "accessModes": ["ReadWriteMany"], "size": "1Gi"},
+        ],
+    }
+
     SCHEDULE_NAME     = os.environ.get("SCHEDULE_NAME", "daily")
     NAMESPACES        = [n.strip() for n in os.environ.get("NAMESPACES", "").split(",") if n.strip()]
     PUSHOVER_TOKEN    = os.environ.get("PUSHOVER_TOKEN", "")
@@ -240,6 +262,29 @@ data:
             time.sleep(poll)
         return False, last_detail
 
+    def ensure_placeholder_pvcs(namespace, scratch_namespace):
+        pvcs = PLACEHOLDER_PVCS.get(namespace)
+        if not pvcs:
+            return
+        print(f"=== Provisioning placeholder PVC(s) for '{namespace}' ===")
+        if k8s("GET", f"/api/v1/namespaces/{scratch_namespace}") is None:
+            k8s("POST", "/api/v1/namespaces", {
+                "apiVersion": "v1", "kind": "Namespace",
+                "metadata": {"name": scratch_namespace},
+            })
+        for spec in pvcs:
+            body = {
+                "apiVersion": "v1", "kind": "PersistentVolumeClaim",
+                "metadata": {"name": spec["name"], "namespace": scratch_namespace},
+                "spec": {
+                    "accessModes": spec["accessModes"],
+                    "storageClassName": spec["storageClassName"],
+                    "resources": {"requests": {"storage": spec["size"]}},
+                },
+            }
+            print(f"  {spec['name']} ({spec['storageClassName']}, {spec['size']})")
+            k8s("POST", f"/api/v1/namespaces/{scratch_namespace}/persistentvolumeclaims", body)
+
     def cleanup(restore_name, scratch_namespaces):
         print(f"=== Cleanup: restore={restore_name}, namespaces={scratch_namespaces} ===")
         # Each delete is its own try/except: an unhandled exception here
@@ -275,6 +320,12 @@ data:
         if k8s("GET", f"/api/v1/namespaces/{scratch_ns}") is not None:
             print(f"  Deleting leftover namespace {scratch_ns}")
             k8s("DELETE", f"/api/v1/namespaces/{scratch_ns}")
+            for _ in range(30):
+                if k8s("GET", f"/api/v1/namespaces/{scratch_ns}") is None:
+                    break
+                time.sleep(2)
+
+        ensure_placeholder_pvcs(target_ns, scratch_ns)
 
         backup = latest_completed_backup(SCHEDULE_NAME)
         if backup is None:

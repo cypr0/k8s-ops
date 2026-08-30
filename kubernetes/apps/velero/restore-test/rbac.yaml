@@ -72,10 +72,20 @@ rules:
       - ""
     resources:
       - "pods"
+    verbs:
+      - "get"
+      - "list"
+  - apiGroups:
+      - ""
+    resources:
       - "persistentvolumeclaims"
     verbs:
       - "get"
       - "list"
+      # Lets the script provision a disposable stand-in PVC for namespaces
+      # whose real PVC is excluded from backup (see PLACEHOLDER_PVCS in
+      # velero-restore-test-script) -- never touches production PVCs.
+      - "create"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
