@@ -85,6 +85,13 @@ spec:
                 drop:
                   - "ALL"
         pod:
+          # No PVC anywhere in this app (see persistence: below -- every
+          # entry is a plain emptyDir). Exclude from Velero's kopia
+          # fs-backup (default cluster-wide, --default-volumes-to-fs-backup):
+          # nothing worth keeping, just restore-test flakiness for zero DR
+          # value.
+          annotations:
+            backup.velero.io/backup-volumes-excludes: api-tmp
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -137,6 +144,8 @@ spec:
                 drop:
                   - "ALL"
         pod:
+          annotations:
+            backup.velero.io/backup-volumes-excludes: worker-tmp
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -201,6 +210,8 @@ spec:
                 drop:
                   - "ALL"
         pod:
+          annotations:
+            backup.velero.io/backup-volumes-excludes: nuq-worker-tmp
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -243,6 +254,8 @@ spec:
                 drop:
                   - "ALL"
         pod:
+          annotations:
+            backup.velero.io/backup-volumes-excludes: playwright-cache,playwright-tmp,playwright-dshm
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000

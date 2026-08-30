@@ -31,6 +31,13 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: hermes-agent
+      annotations:
+        # Opt-in list: only "data" (the real HERMES_HOME PVC) is worth
+        # backing up. tmp/dshm/kubeconfig-dir are all plain emptyDirs with
+        # nothing but per-pod scratch state -- backing them up via kopia
+        # (default cluster-wide, --default-volumes-to-fs-backup) just adds
+        # restore-test flakiness for zero DR value.
+        backup.velero.io/backup-volumes: data
     spec:
       serviceAccountName: hermes-agent
       automountServiceAccountToken: true

@@ -31,6 +31,12 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: nextcloud-mcp
+      annotations:
+        # No PVC here at all -- both volumes are plain emptyDirs (pip cache,
+        # scratch /tmp). Exclude from Velero's kopia fs-backup (default
+        # cluster-wide, --default-volumes-to-fs-backup): nothing worth
+        # keeping, just restore-test flakiness for zero DR value.
+        backup.velero.io/backup-volumes-excludes: pylibs,tmp
     spec:
       securityContext:
         runAsNonRoot: true
