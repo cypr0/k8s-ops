@@ -17,7 +17,10 @@
 # — Cloudflare's proxy can't carry raw SMTP, and the MX record needs a real
 # A record pointing at this cluster's actual public IP. Verified live:
 # PTR for that IP already correctly resolves to mail.${SECRET_DOMAIN}; only
-# the forward A record was missing.
+# the forward A record was missing. The IP itself lives in
+# kubernetes/components/sops/cluster-secrets.sops.yaml
+# (SECRET_MAIL_PUBLIC_IP) rather than as a plaintext literal here, same
+# treatment as SECRET_PORTFOLIO_DOMAIN.
 apiVersion: externaldns.k8s.io/v1alpha1
 kind: DNSEndpoint
 metadata:
@@ -31,7 +34,7 @@ spec:
     - dnsName: "mail.${SECRET_DOMAIN}"
       recordType: A
       targets:
-        - "95.216.8.94"
+        - "${SECRET_MAIL_PUBLIC_IP}"
       providerSpecific:
         - name: external-dns.kubernetes.io/cloudflare-proxied
           value: "false"
