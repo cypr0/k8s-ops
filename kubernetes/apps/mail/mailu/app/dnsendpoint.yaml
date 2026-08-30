@@ -8,6 +8,16 @@
 # HTTPRoute-based hostname on envoy-external would (external-dns's
 # "gateway-httproute" source) — the "crd" source (this DNSEndpoint) is the
 # other half of that same external-dns instance, for exactly this case.
+#
+# mail.${SECRET_DOMAIN}'s own A record is declared here too, for the same
+# reason: it doesn't go through Envoy/the Tunnel either (raw mail ports, see
+# ciliumnetworkpolicy.yaml's world-facing rule), so nothing else creates it.
+# Deliberately NOT proxied (cloudflare-proxied: "false" providerSpecific
+# override) despite cloudflare-dns's chart-wide --cloudflare-proxied default
+# — Cloudflare's proxy can't carry raw SMTP, and the MX record needs a real
+# A record pointing at this cluster's actual public IP. Verified live:
+# PTR for that IP already correctly resolves to mail.${SECRET_DOMAIN}; only
+# the forward A record was missing.
 apiVersion: externaldns.k8s.io/v1alpha1
 kind: DNSEndpoint
 metadata:
@@ -18,3 +28,10 @@ spec:
       recordType: CNAME
       targets:
         - "f768b542-3a28-4fa6-b132-daa8e38b2658.cfargotunnel.com"
+    - dnsName: "mail.${SECRET_DOMAIN}"
+      recordType: A
+      targets:
+        - "95.216.8.94"
+      providerSpecific:
+        - name: external-dns.kubernetes.io/cloudflare-proxied
+          value: "false"
