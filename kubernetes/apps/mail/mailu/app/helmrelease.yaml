@@ -249,6 +249,17 @@ spec:
           memory: 256Mi
 
     webdav:
-      enabled: false
+      # Radicale (CalDAV/CardDAV) — no separate hostname/routing needed: it's
+      # reached via fixed /.well-known/caldav and /.well-known/carddav paths
+      # proxied by `front` on the existing mail/webmail hostnames, so it
+      # rides on the cert, DaemonSet, and CiliumNetworkPolicy already in
+      # place for those.
+      enabled: true
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
     fetchmail:
       enabled: false
