@@ -139,13 +139,21 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
-    # External IMAP mail server for mail-fetch integration. ndots:5 in the
-    # pod's resolv.conf makes the resolver try the namespace-suffixed search
-    # domain before the absolute name, so Cilium learns the IP under that
-    # suffixed FQDN - allowlist both forms.
-    - toFQDNs:
-        - matchName: "${SECRET_PAPERLESS_IMAP_SERVER}"
-        - matchName: "${SECRET_PAPERLESS_IMAP_SERVER}.paperless.svc.cluster.local"
+    # IMAP mail-fetch integration, now against the in-cluster Mailu instance
+    # (kubernetes/apps/mail/mailu/) instead of the old external Netcup
+    # mailbox this rule used to point at via toFQDNs. The mail account's
+    # server field is mail.${SECRET_DOMAIN} -- CoreDNS's static hosts
+    # override (kubernetes/apps/kube-system/coredns/app/helmrelease.yaml)
+    # resolves that in-cluster straight to mailu-front's ClusterIP rather
+    # than the public IP (avoids NAT-hairpinning back in through
+    # Proxmox/OPNsense, confirmed live that path times out), so this is a
+    # same-cluster call and a toEndpoints rule -- not toFQDNs -- is the
+    # correct policy shape.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+            app.kubernetes.io/component: front
       toPorts:
         - ports:
             - port: "993"

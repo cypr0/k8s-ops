@@ -61,10 +61,23 @@ spec:
           # surfacing to the user as "Unauthorised WOPI host". The nextcloud
           # HTTPRoute is attached to envoy-internal too, so in-cluster callers
           # land inside the pod CIDR the allowlist already permits.
+          #
+          # mail.${SECRET_DOMAIN} (Mailu) isn't HTTP/Gateway-based -- raw mail
+          # ports, no HTTPRoute -- so it never went through the envoy-internal
+          # split-horizon path above. Its public A record (mailu's own
+          # DNSEndpoint) resolves in-cluster clients straight to the public
+          # IP, which requires NAT hairpinning back in through
+          # Proxmox/OPNsense; confirmed live this doesn't work (paperless-ngx
+          # timed out connecting to mail.${SECRET_DOMAIN}:993 for its IMAP
+          # mail-fetch integration). Pointed straight at the `mailu-front`
+          # ClusterIP instead -- keeps the hostname (and therefore TLS SNI /
+          # cert validation against Mailu's real mail.${SECRET_DOMAIN} cert)
+          # intact for in-cluster clients, just skips the public hop.
           - name: hosts
             configBlock: |-
               10.43.38.197 id.${SECRET_DOMAIN}
               10.43.38.197 cloud.${SECRET_DOMAIN}
+              10.43.146.117 mail.${SECRET_DOMAIN}
               fallthrough
           - name: kubernetes
             parameters: cluster.local in-addr.arpa ip6.arpa
