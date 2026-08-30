@@ -12,16 +12,24 @@
 # This Service is the other half: it exists purely so k8s-gateway has
 # something to generate an internal A record from, letting LAN clients reach
 # webmail directly instead of round-tripping through Cloudflare.
+#
+# Deliberately its OWN dedicated IP, NOT shared with mailu-front-ext via
+# io.cilium/lb-ipam-sharing-key (an earlier version of this file did that).
+# Cilium's L2-announcement leader election runs independently per Service,
+# so two Services sharing one VIP can end up announced (ARP) by two
+# different nodes at once — a genuine Layer-2 conflict, not just a
+# CiliumNetworkPolicy/routing question. Confirmed live: right after this
+# Service's lease briefly moved between nodes, mailu-front-ext's own port
+# (993, unrelated to this Service, unchanged, previously working) started
+# getting connection-refused too, consistent with switches on the LAN
+# segment holding conflicting/stale MAC-address-table entries for the
+# shared IP. A dedicated IP per Service sidesteps the conflict entirely.
 apiVersion: v1
 kind: Service
 metadata:
   name: mailu-front-webmail-lan
   annotations:
-    # Shares mailu-front-ext's IP (see helmrelease.yaml's
-    # front.externalService.annotations) — Cilium's LB-IPAM requires a
-    # matching sharing key on both Services for this (verified live).
-    lbipam.cilium.io/ips: "192.168.10.104"
-    io.cilium/lb-ipam-sharing-key: mailu-front
+    lbipam.cilium.io/ips: "192.168.10.105"
     coredns.io/hostname: "webmail.${SECRET_DOMAIN}"
 spec:
   type: LoadBalancer
