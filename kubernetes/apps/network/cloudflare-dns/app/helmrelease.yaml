@@ -23,6 +23,19 @@ spec:
       - --crd-source-apiversion=externaldns.k8s.io/v1alpha1
       - --crd-source-kind=DNSEndpoint
       - --gateway-name=envoy-external
+      # Default managed types are only A/AAAA/CNAME (confirmed against
+      # pkg/apis/externaldns/types.go at the v0.21.0 tag this cluster runs)
+      # -- MX/TXT DNSEndpoint entries (mail/mailu's SPF/DKIM/DMARC/MX
+      # records) were silently skipped with zero log output, no error,
+      # until this was added. NS and SRV deliberately excluded: this
+      # instance doesn't manage zone delegation, and this version's
+      # Cloudflare provider has no working SRV support at all anyway (see
+      # kubernetes/apps/mail/mailu/app/dnsendpoint.yaml's comment).
+      - --managed-record-types=A
+      - --managed-record-types=AAAA
+      - --managed-record-types=CNAME
+      - --managed-record-types=MX
+      - --managed-record-types=TXT
     triggerLoopOnEvent: true
     policy: sync
     sources:
