@@ -32,21 +32,39 @@
 # UPDATE every reconcile forever, since its computed desired state and
 # Cloudflare's actual state never converged.
 #
-# ${SECRET_PORTFOLIO_DOMAIN}'s mail records (MX/SPF/DKIM/DMARC/autoconfig/
-# autodiscover) live here too, generated from Mailu's own Admin UI DNS
-# tab for that domain (Domain > Details). These replace the old Netcup/
+# ${SECRET_PORTFOLIO_DOMAIN}'s mail records (DKIM/DMARC/autoconfig/
+# autodiscover below) were generated from Mailu's own Admin UI DNS tab for
+# that domain (Domain > Details). They replace the old Netcup/
 # webhosting.systems MX+SPF+DKIM-CNAME records for that domain, which were
 # deleted directly via the Cloudflare API (real conflicts: a second MX would
 # split-brain inbound delivery, and a second SPF TXT is invalid per RFC 7208
 # -- with adkim=s/aspf=s strict DMARC alignment already set, that could have
-# caused ALL mail to be rejected). The SRV records Mailu also recommends
-# (_submission._tcp etc.) are NOT here: external-dns v0.21.0's Cloudflare
-# provider has no working SRV support at all (confirmed live against
-# Cloudflare's API directly -- it requires structured priority/weight/port/
-# target fields, but this provider version only ever sends a flat content
-# string, which Cloudflare rejects). Those were created directly via the
-# Cloudflare API instead, deliberately outside GitOps -- they're static
-# client-autoconfig records that essentially never change.
+# caused ALL mail to be rejected).
+#
+# Two categories of that same record set are deliberately NOT declared here,
+# both confirmed live against this exact external-dns v0.21.0 + Cloudflare
+# + crd-source combination, both created directly via the Cloudflare API
+# instead as one-off exceptions to GitOps:
+#   - MX and the bare-apex SPF TXT (both at "${SECRET_PORTFOLIO_DOMAIN}"
+#     itself, no subdomain): silently never applied, zero log output, no
+#     error. Isolated via a standalone throwaway DNSEndpoint containing only
+#     the MX entry -- still nothing. The reproducible pattern: every record
+#     at a bare zone apex of a *secondary* filtered domain (this zone's
+#     apex, not ${SECRET_DOMAIN}'s) failed silently, while every subdomain
+#     record (DKIM, DMARC, both CNAMEs) succeeded normally. Consistent with
+#     a known category of external-dns domain-filter bugs where suffix
+#     matching requires a leading "." and so never matches the bare filtered
+#     domain itself -- not confirmed against this version's exact source,
+#     but the apex-vs-subdomain split is unambiguous from what was observed.
+#   - The SRV records Mailu also recommends (_submission._tcp etc.):
+#     external-dns v0.21.0's Cloudflare provider has no working SRV support
+#     at all (confirmed live against Cloudflare's API directly -- it
+#     requires structured priority/weight/port/target fields, but this
+#     provider version only ever sends a flat content string, which
+#     Cloudflare rejects).
+# All of the above are static records that essentially never change, so
+# living outside GitOps is an acceptable one-off trade-off rather than
+# something to keep re-litigating.
 apiVersion: externaldns.k8s.io/v1alpha1
 kind: DNSEndpoint
 metadata:
@@ -64,14 +82,6 @@ spec:
       providerSpecific:
         - name: external-dns.alpha.kubernetes.io/cloudflare-proxied
           value: "false"
-    - dnsName: "${SECRET_PORTFOLIO_DOMAIN}"
-      recordType: MX
-      targets:
-        - "10 mail.${SECRET_DOMAIN}"
-    - dnsName: "${SECRET_PORTFOLIO_DOMAIN}"
-      recordType: TXT
-      targets:
-        - "v=spf1 mx a:mail.${SECRET_DOMAIN} ~all"
     - dnsName: "dkim._domainkey.${SECRET_PORTFOLIO_DOMAIN}"
       recordType: TXT
       targets:
