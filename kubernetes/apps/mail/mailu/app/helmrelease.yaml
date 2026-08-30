@@ -141,6 +141,22 @@ spec:
       tlsFlavorOverride: mail
 
     front:
+      # DaemonSet (one front pod per worker node), not the chart's default
+      # single-replica Deployment. Required for externalTrafficPolicy: Local
+      # (see below) to actually work: Cilium's L2-announcement leader
+      # election for the LoadBalancer IPs picks a node independently of
+      # where front's pod(s) run, and with only one replica, "Local" policy
+      # correctly refuses to forward external traffic to whatever node gets
+      # elected unless that happens to be the same node the single pod landed
+      # on — confirmed live (front-ext/front-webmail-lan both got elected to
+      # k8s-wrk-3 while the only pod ran on k8s-wrk-1: ClusterIP/NodePort
+      # access worked, but the actual external LoadBalancer IPs didn't — no
+      # firewall/ARP/routing issue anywhere in the path, just this). A
+      # DaemonSet guarantees every schedulable node has a local pod, so
+      # whichever node wins the election always has one. Safe here: `front`
+      # is stateless nginx, and RWX storage (persistence.storageClass:
+      # zfs-nfs, see below) already lets multiple pods mount the same volume.
+      kind: DaemonSet
       hostPort:
         enabled: false
       externalService:
