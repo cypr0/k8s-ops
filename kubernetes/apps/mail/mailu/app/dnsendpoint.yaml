@@ -82,6 +82,14 @@ spec:
       providerSpecific:
         - name: external-dns.alpha.kubernetes.io/cloudflare-proxied
           value: "false"
+    # ${SECRET_DOMAIN}'s own DKIM, from Mailu's Admin UI DNS tab for this
+    # (primary) domain -- was missing entirely, unlike MX/SPF/DMARC/PTR
+    # which predate this Mailu deployment. A subdomain of the *primary*
+    # filtered domain, so unaffected by the bare-apex bug described below.
+    - dnsName: "dkim._domainkey.${SECRET_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApewTY6qRVh1I18zHoN7xixh4L/kYZMti9awQ5BC1InB60Yw95dxlr5SbFbeVMmW3miIrrwneibTnx210kvxfQj0NXPVoWZXXtTLP9rb+/2lTk2tL+BSJ78AKHhoH9hUmIYSpN0uEMXsMlHnGq+PGK0Cr9tzOX0Wdhdhfq0xBWJJ/iyzny4BL/SN1r6jRfkDHcQp32fnhu+WxaJVhauGxJNeU8A7EiOOQck5OQsBvK5IPRkD941x2YMYsQJHASyDTqiz0VnvLDHwdDxAR6Cuiy/T9Q986NPWVRB8hiHUMHG76Hmdnk/tgFUP8PFwzypx/7/XwKJ6GGLT3AU00+DyxsQIDAQAB"
     - dnsName: "dkim._domainkey.${SECRET_PORTFOLIO_DOMAIN}"
       recordType: TXT
       targets:
