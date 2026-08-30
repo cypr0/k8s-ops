@@ -5,7 +5,7 @@
 > **Hostname**   none of its own — not exposed via HTTPRoute. It *creates* DNS records for other apps' public hostnames.
 
 ## What it does here
-Runs upstream `external-dns` against the Cloudflare API to keep public DNS records in sync with two sources: HTTPRoutes parented to the `envoy-external` Gateway, and explicit `DNSEndpoint` CRDs (`extraArgs: --gateway-name=envoy-external`, `sources: [crd, gateway-httproute]`). It manages two Cloudflare zones in the same account — `${SECRET_DOMAIN}` and the separate apex `philipp-rosch.de` (added for the portfolio site) — and is deliberately scoped to public-facing routes only; internal-only apps behind the `envoy-internal` Gateway are resolved instead by `k8s-gateway`'s split-horizon DNS, not by this controller.
+Runs upstream `external-dns` against the Cloudflare API to keep public DNS records in sync with two sources: HTTPRoutes parented to the `envoy-external` Gateway, and explicit `DNSEndpoint` CRDs (`extraArgs: --gateway-name=envoy-external`, `sources: [crd, gateway-httproute]`). It manages two Cloudflare zones in the same account — `${SECRET_DOMAIN}` and the separate apex `${SECRET_SECOND_DOMAIN}` (added for the portfolio site) — and is deliberately scoped to public-facing routes only; internal-only apps behind the `envoy-internal` Gateway are resolved instead by `k8s-gateway`'s split-horizon DNS, not by this controller.
 
 ## Architecture at a glance
 - **Depends on:**
@@ -14,7 +14,7 @@ Runs upstream `external-dns` against the Cloudflare API to keep public DNS recor
   - The public Cloudflare API (`toEntities: [world]`, port 443 only) — this is the one app in `network` whose CNP intentionally allows egress to the whole internet, scoped to 443.
 - **Depended on by:**
   - HTTPRoutes parented to Gateway `envoy-external`: `nextcloud`, `whiteboard`, `collabora`, `flux-instance`, `authentik`, `philipp-rosch-site`, and `echo`'s inline HTTPRoute.
-  - `DNSEndpoint` CRDs: `cloudflare-tunnel`'s (the tunnel's CNAME record) and `philipp-rosch-site`'s (same tunnel, `philipp-rosch.de` zone). If `cloudflare-dns`'s `domainFilters` doesn't include a CRD's zone, `external-dns` silently ignores that `DNSEndpoint` — no error, just no record.
+  - `DNSEndpoint` CRDs: `cloudflare-tunnel`'s (the tunnel's CNAME record) and `philipp-rosch-site`'s (same tunnel, `${SECRET_SECOND_DOMAIN}` zone). If `cloudflare-dns`'s `domainFilters` doesn't include a CRD's zone, `external-dns` silently ignores that `DNSEndpoint` — no error, just no record.
   - **Not** depended on by anything behind `envoy-internal` (`open-webui`, `gatus`, `grafana`, `opensearch-cluster`, `paperless-ngx`, and `nextcloud`'s internal listener) — those resolve via `k8s-gateway` instead, a separate internal-only DNS path this app has no role in.
 
 ## Repo layout
@@ -44,7 +44,7 @@ Rotation goes through `sops` re-encryption of this file directly, not a 1Passwor
 No PVCs — fully stateless. Source of truth is the Kubernetes API and the Cloudflare zone itself; nothing here needs Velero coverage.
 
 ## Known quirks
-- **Two zones, one shared token.** `domainFilters` covers both `${SECRET_DOMAIN}` and `philipp-rosch.de`, added in commit `90f7366` for the portfolio site. The single `CF_API_TOKEN` must have `Zone:DNS:Edit` scope on *both* zones in the Cloudflare dashboard — this can't be verified from the repo (a Cloudflare-side scope, not tracked by git), so if a new zone is ever added to `domainFilters` without widening the token's scope, records for that zone will silently fail to create/update.
+- **Two zones, one shared token.** `domainFilters` covers both `${SECRET_DOMAIN}` and `${SECRET_SECOND_DOMAIN}`, added in commit `90f7366` for the portfolio site. The single `CF_API_TOKEN` must have `Zone:DNS:Edit` scope on *both* zones in the Cloudflare dashboard — this can't be verified from the repo (a Cloudflare-side scope, not tracked by git), so if a new zone is ever added to `domainFilters` without widening the token's scope, records for that zone will silently fail to create/update.
 - **Scoped by `--gateway-name=envoy-external`, not by namespace.** Any HTTPRoute anywhere in the cluster parented to the `envoy-external` Gateway gets a public DNS record automatically; anything on `envoy-internal` is invisible to this controller by design. Easy to mis-diagnose as "DNS not syncing" when the real issue is the HTTPRoute is parented to the wrong Gateway.
 - **Not the repo's usual secret pattern.** Unlike most other apps' `ExternalSecret` + 1Password, this app's Cloudflare token is a directly SOPS-encrypted `Secret` — rotation is a `sops`/git operation, not a 1Password-item change.
 - **`resources.limits` has no `cpu` key**, only `memory: 128Mi` — per commit `f4172f8`'s message, this is intentional repo-wide policy ("No CPU limits set intentionally — avoid throttling on nodes with free capacity"), not an oversight specific to this app.
@@ -57,7 +57,7 @@ No PVCs — fully stateless. Source of truth is the Kubernetes API and the Cloud
 - Check what a new public HTTPRoute needs to get a DNS record: parent it to the `envoy-external` Gateway — no per-app cloudflare-dns config required.
 
 ## TODOs / unknowns
-- Whether the `CF_API_TOKEN` currently has `Zone:DNS:Edit` scope on the `philipp-rosch.de` zone cannot be verified from the repo — it's a Cloudflare dashboard-side setting.
+- Whether the `CF_API_TOKEN` currently has `Zone:DNS:Edit` scope on the `${SECRET_SECOND_DOMAIN}` zone cannot be verified from the repo — it's a Cloudflare dashboard-side setting.
 - No entry in `docs/incidents/` references `cloudflare-dns` by name — no known past outage tied to this app as of this writing.
 - Whether the CNP's lack of an explicit ingress allow-list is intentional or an oversight relative to sibling apps like `reloader` that do allowlist Prometheus ingress explicitly — not documented anywhere in the repo.
 

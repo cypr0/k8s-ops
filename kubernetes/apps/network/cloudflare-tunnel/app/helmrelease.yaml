@@ -93,21 +93,21 @@ spec:
                   http2Origin: true
                   originServerName: external.${SECRET_DOMAIN}
                 service: https://envoy-external.{{ .Release.Namespace }}.svc.cluster.local:443
-              # ${SECRET_PORTFOLIO_DOMAIN}: separate apex domain (portfolio
+              # ${SECRET_SECOND_DOMAIN}: separate apex domain (portfolio
               # site), same tunnel/backend as above. The domain string itself
               # lives in kubernetes/components/sops/cluster-secrets.sops.yaml
-              # (SECRET_PORTFOLIO_DOMAIN) rather than as a plaintext literal
+              # (SECRET_SECOND_DOMAIN) rather than as a plaintext literal
               # here. originServerName stays pinned to external.${SECRET_DOMAIN}
               # -- that's just the origin-side TLS SNI cloudflared presents to
               # Envoy Gateway's existing wildcard cert; Envoy still routes by
               # the real HTTP Host header to the philipp-rosch-site HTTPRoute
               # regardless.
-              - hostname: "${SECRET_PORTFOLIO_DOMAIN}"
+              - hostname: "${SECRET_SECOND_DOMAIN}"
                 originRequest:
                   http2Origin: true
                   originServerName: external.${SECRET_DOMAIN}
                 service: https://envoy-external.{{ .Release.Namespace }}.svc.cluster.local:443
-              - hostname: "www.${SECRET_PORTFOLIO_DOMAIN}"
+              - hostname: "www.${SECRET_SECOND_DOMAIN}"
                 originRequest:
                   http2Origin: true
                   originServerName: external.${SECRET_DOMAIN}

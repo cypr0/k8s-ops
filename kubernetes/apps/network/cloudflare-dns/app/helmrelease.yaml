@@ -43,16 +43,24 @@ spec:
       - "gateway-httproute"
     txtPrefix: k8s.
     txtOwnerId: default
-    # ${SECRET_PORTFOLIO_DOMAIN} added for the portfolio site (separate apex
+    # ${SECRET_SECOND_DOMAIN} added for the portfolio site (separate apex
     # domain, same Cloudflare account) -- the domain string itself lives in
     # kubernetes/components/sops/cluster-secrets.sops.yaml
-    # (SECRET_PORTFOLIO_DOMAIN) rather than as a plaintext literal here.
+    # (SECRET_SECOND_DOMAIN) rather than as a plaintext literal here.
     # Requires the CF_API_TOKEN below to also have Zone:DNS:Edit on that
     # zone -- widen the token's zone scope in the Cloudflare dashboard if
     # it's currently restricted to ${SECRET_DOMAIN}.
+    #
+    # ${SECRET_THIRD_DOMAIN} / ${SECRET_FOURTH_DOMAIN} added for further
+    # Mailu-hosted personal domains, same "Rosch Domains" Cloudflare account
+    # -- confirmed live the existing CF_API_TOKEN already has
+    # dns_records:edit on each of these zones too, no token-scope widening
+    # needed.
     domainFilters:
       - "${SECRET_DOMAIN}"
-      - "${SECRET_PORTFOLIO_DOMAIN}"
+      - "${SECRET_SECOND_DOMAIN}"
+      - "${SECRET_THIRD_DOMAIN}"
+      - "${SECRET_FOURTH_DOMAIN}"
     resources:
       requests:
         cpu: 10m

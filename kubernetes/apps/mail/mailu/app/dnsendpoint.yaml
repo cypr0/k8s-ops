@@ -20,7 +20,7 @@
 # the forward A record was missing. The IP itself lives in
 # kubernetes/components/sops/cluster-secrets.sops.yaml
 # (SECRET_MAIL_PUBLIC_IP) rather than as a plaintext literal here, same
-# treatment as SECRET_PORTFOLIO_DOMAIN.
+# treatment as SECRET_SECOND_DOMAIN.
 #
 # providerSpecific key prefix is "external-dns.alpha.kubernetes.io/", NOT
 # "external-dns.kubernetes.io/" (the latter is master/HEAD's renamed
@@ -32,7 +32,7 @@
 # UPDATE every reconcile forever, since its computed desired state and
 # Cloudflare's actual state never converged.
 #
-# ${SECRET_PORTFOLIO_DOMAIN}'s mail records (DKIM/DMARC/autoconfig/
+# ${SECRET_SECOND_DOMAIN}'s mail records (DKIM/DMARC/autoconfig/
 # autodiscover below) were generated from Mailu's own Admin UI DNS tab for
 # that domain (Domain > Details). They replace the old Netcup/
 # webhosting.systems MX+SPF+DKIM-CNAME records for that domain, which were
@@ -45,7 +45,7 @@
 # both confirmed live against this exact external-dns v0.21.0 + Cloudflare
 # + crd-source combination, both created directly via the Cloudflare API
 # instead as one-off exceptions to GitOps:
-#   - MX and the bare-apex SPF TXT (both at "${SECRET_PORTFOLIO_DOMAIN}"
+#   - MX and the bare-apex SPF TXT (both at "${SECRET_SECOND_DOMAIN}"
 #     itself, no subdomain): silently never applied, zero log output, no
 #     error. Isolated via a standalone throwaway DNSEndpoint containing only
 #     the MX entry -- still nothing. The reproducible pattern: every record
@@ -90,28 +90,77 @@ spec:
       recordType: TXT
       targets:
         - "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApewTY6qRVh1I18zHoN7xixh4L/kYZMti9awQ5BC1InB60Yw95dxlr5SbFbeVMmW3miIrrwneibTnx210kvxfQj0NXPVoWZXXtTLP9rb+/2lTk2tL+BSJ78AKHhoH9hUmIYSpN0uEMXsMlHnGq+PGK0Cr9tzOX0Wdhdhfq0xBWJJ/iyzny4BL/SN1r6jRfkDHcQp32fnhu+WxaJVhauGxJNeU8A7EiOOQck5OQsBvK5IPRkD941x2YMYsQJHASyDTqiz0VnvLDHwdDxAR6Cuiy/T9Q986NPWVRB8hiHUMHG76Hmdnk/tgFUP8PFwzypx/7/XwKJ6GGLT3AU00+DyxsQIDAQAB"
-    - dnsName: "dkim._domainkey.${SECRET_PORTFOLIO_DOMAIN}"
+    - dnsName: "dkim._domainkey.${SECRET_SECOND_DOMAIN}"
       recordType: TXT
       targets:
         - "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArjSLKC6m1F2rfvKfaPnTAAXW4KBGo60NKhn8uwQtpyWKzsBNrFT0hxXnval5sdHkPla6p4YtrQd32/hd6/0srYmvSge7Y1zJNxl6U+DIc/ShkaVdj/thvy0CnhIKH+Leu1ZLdnh4Nr/1sz9RDTUbk622rilpbl+g4c84h1Bs4h3WvCORd0rz2gaTD94rftoAHFLxBw+JpL4xDqlKlLqWEf8RfI2AnNSixVpz0BGOtnXhkLgSKel8g259ZmmIDafFCKzRDYCJvn9HVmBUrwOJE4Nkvrjb2pKXhMPP+Axyss/dBrAbD/2u8PFXnQ9nkRaMP1A1nD6Wo+w1shwRPfZCaQIDAQAB"
-    - dnsName: "_dmarc.${SECRET_PORTFOLIO_DOMAIN}"
+    - dnsName: "_dmarc.${SECRET_SECOND_DOMAIN}"
       recordType: TXT
       targets:
         - "v=DMARC1; p=reject; adkim=s; aspf=s"
     # Cross-domain DMARC reporting authorization -- lives under
     # ${SECRET_DOMAIN}'s own zone (it's *this* domain authorizing reports
-    # for ${SECRET_PORTFOLIO_DOMAIN} to reference it), not the portfolio
+    # for ${SECRET_SECOND_DOMAIN} to reference it), not the portfolio
     # domain's zone. Only meaningful once a rua= is actually set, but Mailu
     # generates it defensively regardless.
-    - dnsName: "${SECRET_PORTFOLIO_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
+    - dnsName: "${SECRET_SECOND_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
       recordType: TXT
       targets:
         - "v=DMARC1;"
-    - dnsName: "autoconfig.${SECRET_PORTFOLIO_DOMAIN}"
+    - dnsName: "autoconfig.${SECRET_SECOND_DOMAIN}"
       recordType: CNAME
       targets:
         - "mail.${SECRET_DOMAIN}"
-    - dnsName: "autodiscover.${SECRET_PORTFOLIO_DOMAIN}"
+    - dnsName: "autodiscover.${SECRET_SECOND_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
+    # ${SECRET_THIRD_DOMAIN} -- second personal domain added to Mailu,
+    # same treatment as ${SECRET_SECOND_DOMAIN} above: generated from
+    # Mailu's own Admin UI DNS tab for this domain. Same two record
+    # categories (MX + bare-apex SPF TXT, and the _submission/_submissions/
+    # _imaps SRV records) are deliberately NOT declared here for the same
+    # reasons documented in the header comment, and were created directly
+    # via the Cloudflare API instead.
+    - dnsName: "dkim._domainkey.${SECRET_THIRD_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAof0ciLer0E+uogIMifTPxmvRVFeUXx+SvN9ETedjmw6s8EyABAgP63YKBS5enxeI8FUdeVDiI4XfMLos70G7r+/fT+OYsxPDzwJuKUjMJjZ7nBiQB7ZfzKXalAENjThCDA1Ocu0LUYUP/JkY7poCokRQxYBjXg+T0hERs8ui3P5RyGiwDeBC7r5CRyCcTM2dAgkNX2Rb1K/MhQ7jrhvP3TfsRbAu/ZV7SU78dNGQkLStkPCRFz2O1KsXAV0mWoC5VgrPZYzKv1vNmYhevjHWj1gB3W5BoBiPXrnxKOOaIJvYPJ3x0kKlh5xPSTJQa3e8565Q8zBuo+GguUau/qYxIwIDAQAB"
+    - dnsName: "_dmarc.${SECRET_THIRD_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+    - dnsName: "${SECRET_THIRD_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1;"
+    - dnsName: "autoconfig.${SECRET_THIRD_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
+    - dnsName: "autodiscover.${SECRET_THIRD_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
+    # ${SECRET_FOURTH_DOMAIN} -- third personal domain added to Mailu, same
+    # treatment as ${SECRET_SECOND_DOMAIN}/${SECRET_THIRD_DOMAIN} above.
+    - dnsName: "dkim._domainkey.${SECRET_FOURTH_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs+/KI5lOs6yW89yGOfC2MKPhmXFpeZiShoMmJWJJlk9brDHi0CVidv6fsDOU//H7mqZXelteB1/VLA2PoRBDR1YPRfZiiRcT/SvdB8CDiMq2SsyXItnKgeC7Pb/JBWvO0gMh+TC8HToPZHBIp77EzXrZaR4B4U63UTlJVU0k95tihHS0CeANPofG4f3BWeGpW6g/RFC+rtK1cDczPciEhQp90kcSQeVN5WDX5s8rNt3Ib87YFhtKsqF4m+vTubcQQJn/uon6zYjyK4azMlxf9OStG1SCNObVT5WeM7xalzMMcnUn8bPAmESfDXRPwCRknOaYkLimVcoDQgewIYw6jQIDAQAB"
+    - dnsName: "_dmarc.${SECRET_FOURTH_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+    - dnsName: "${SECRET_FOURTH_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1;"
+    - dnsName: "autoconfig.${SECRET_FOURTH_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
+    - dnsName: "autodiscover.${SECRET_FOURTH_DOMAIN}"
       recordType: CNAME
       targets:
         - "mail.${SECRET_DOMAIN}"
