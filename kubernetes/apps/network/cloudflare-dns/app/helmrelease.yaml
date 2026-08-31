@@ -51,16 +51,17 @@ spec:
     # zone -- widen the token's zone scope in the Cloudflare dashboard if
     # it's currently restricted to ${SECRET_DOMAIN}.
     #
-    # ${SECRET_THIRD_DOMAIN} / ${SECRET_FOURTH_DOMAIN} added for further
-    # Mailu-hosted personal domains, same "Rosch Domains" Cloudflare account
-    # -- confirmed live the existing CF_API_TOKEN already has
-    # dns_records:edit on each of these zones too, no token-scope widening
-    # needed.
+    # ${SECRET_THIRD_DOMAIN} / ${SECRET_FOURTH_DOMAIN} / ${SECRET_FIFTH_DOMAIN}
+    # added for further Mailu-hosted personal domains, same "Rosch Domains"
+    # Cloudflare account -- confirmed live the existing CF_API_TOKEN already
+    # has dns_records:edit on each of these zones too, no token-scope
+    # widening needed.
     domainFilters:
       - "${SECRET_DOMAIN}"
       - "${SECRET_SECOND_DOMAIN}"
       - "${SECRET_THIRD_DOMAIN}"
       - "${SECRET_FOURTH_DOMAIN}"
+      - "${SECRET_FIFTH_DOMAIN}"
     resources:
       requests:
         cpu: 10m

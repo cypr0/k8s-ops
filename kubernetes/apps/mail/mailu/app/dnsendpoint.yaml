@@ -164,3 +164,26 @@ spec:
       recordType: CNAME
       targets:
         - "mail.${SECRET_DOMAIN}"
+    # ${SECRET_FIFTH_DOMAIN} -- fourth personal domain added to Mailu, same
+    # treatment as ${SECRET_SECOND_DOMAIN}/${SECRET_THIRD_DOMAIN}/
+    # ${SECRET_FOURTH_DOMAIN} above.
+    - dnsName: "dkim._domainkey.${SECRET_FIFTH_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyYqcKDigC0F1Blcsmb7uQUyVK+KLbVPdtiBeFDhI946I/xW8MOOUJMurmX/ZKsbSxRmq6V0gfwREAXlnXlfwjZdOg8XTKJ2coBnsAod8VLRCbubpoCidzUjaPxlGIOZIYXQ7x1Nqf+WhYu0amyTtluUGysEnIqU5aVVsHXAZPFUE060rE2XSlVO9Tqr7WsnnhJ0FMGxkPx+eNUbLvr4tXLvGWj1QpR1ovKRv7mzOvZ7FPpeJcTpd22mYAEOhotHc8zTwA/cy4elekj0qP6xTWYVa3MdV88KJG/2DcWqEVSGqC9WhJ2bSQs77O41MOyK4+PzgHlbAlhBO113RHHeeNwIDAQAB"
+    - dnsName: "_dmarc.${SECRET_FIFTH_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+    - dnsName: "${SECRET_FIFTH_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1;"
+    - dnsName: "autoconfig.${SECRET_FIFTH_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
+    - dnsName: "autodiscover.${SECRET_FIFTH_DOMAIN}"
+      recordType: CNAME
+      targets:
+        - "mail.${SECRET_DOMAIN}"
