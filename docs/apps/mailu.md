@@ -89,7 +89,7 @@ For each of the 4-5 domains Mailu will serve mail for, after creating the `Domai
 ## TODOs / unknowns
 
 - Whether `${SECRET_MAIL_SERVER}` (used by Authentik and other apps for outbound notification mail) should eventually be repointed at this Mailu instance's SMTP submission port has not been decided — inherited unresolved from the Stalwart deployment.
-- No Velero backup schedule includes the `mail` namespace's PVC (mailbox Maildir data). The two Postgres databases (`mailudb`, `roundcubedb`) are covered indirectly by the cluster-wide CNPG `postgres` cluster's Barman Cloud WAL archiving, same as every other app's database on that shared cluster — but actual mail *content* lives on the `zfs-nfs` PVC, not Postgres, and currently has no backup coverage.
+- `mail` is now in Velero's GFS schedules (`kubernetes/apps/velero/schedules/schedule-{daily,weekly,monthly}.yaml`), so the `zfs-nfs` PVC (mailbox Maildir data) gets kopia fs-backup like every other app's volume. The two Postgres databases (`mailudb`, `roundcubedb`) remain covered separately by the cluster-wide CNPG `postgres` cluster's Barman Cloud WAL archiving. `mailu-redis`'s `tmp` emptyDir (disposable greylisting/quota counters) is excluded via `backup.velero.io/backup-volumes-excludes` in `helmrelease-redis.yaml`. Not yet exercised by an actual restore-test run or verified against Velero's node-agent on this namespace's RWX PVC — worth confirming on the first `mail-restore-test` cycle.
 - MTA-STS/DANE/TLS-RPT rollout (see Known limitations above) — deferred, not scheduled.
 
 ---

@@ -20,6 +20,13 @@ spec:
     controllers:
       mailu-redis:
         replicas: 1
+        pod:
+          annotations:
+            # Greylisting/quota/ratelimit counters only -- disposable,
+            # already documented below as fail-open on a pod restart. Not
+            # worth Velero's fs-backup time/storage, same reasoning as
+            # hermes-agent's scratch emptyDirs.
+            backup.velero.io/backup-volumes-excludes: tmp
         containers:
           app:
             image:

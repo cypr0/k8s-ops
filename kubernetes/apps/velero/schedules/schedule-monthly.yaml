@@ -16,6 +16,7 @@ spec:
       - open-webui
       - hermes-agent
       - immich
+      - mail
     # See schedule-daily.yaml for why these are excluded.
     excludedResources:
       - jobs.batch

@@ -49,7 +49,7 @@ spec:
                 - name: SCHEDULE_NAME
                   value: "daily"
                 - name: NAMESPACES
-                  value: "nextcloud,paperless,open-webui,hermes-agent,immich"
+                  value: "nextcloud,paperless,open-webui,hermes-agent,immich,mail"
                 - name: PUSHOVER_TOKEN
                   valueFrom:
                     secretKeyRef:

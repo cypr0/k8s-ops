@@ -10,7 +10,7 @@ Three Flux Kustomizations under one logical app (`kubernetes/apps/velero/ks.yaml
 - **`schedules/`** — three GFS (Grandfather-Father-Son) `Schedule` CRs (daily/14d, weekly/90d, monthly/365d) that actually define what gets backed up and how long it's kept.
 - **`restore-test/`** — a daily CronJob that automatically restores one namespace's most recent daily backup into a scratch namespace, checks pod health, alerts via Pushover on failure, and reports results to OpenSearch — this is what makes the backups more than theoretical.
 
-Together this is the cluster's only backup/disaster-recovery path for application PVC data (`nextcloud`, `paperless`, `open-webui`, `hermes-agent`); Postgres has its own separate, non-overlapping path via `plugin-barman-cloud` (see `docs/apps/plugin-barman-cloud.md`) and is deliberately **not** in Velero's scope.
+Together this is the cluster's only backup/disaster-recovery path for application PVC data (`nextcloud`, `paperless`, `open-webui`, `hermes-agent`, `immich`, `mail`); Postgres has its own separate, non-overlapping path via `plugin-barman-cloud` (see `docs/apps/plugin-barman-cloud.md`) and is deliberately **not** in Velero's scope.
 
 ## Architecture at a glance
 - **Depends on:** `ExternalSecret` `velero-credentials` → 1Password item `intercolo` (same item as `plugin-barman-cloud`, see Secrets); `external-secrets-stores` (namespace `security`), per `kubernetes/apps/velero/ks.yaml`'s `dependsOn`. The restore-test CronJob additionally depends on the OpenSearch cluster (namespace `logging`) for result indexing and on `api.pushover.net` for alerting.
@@ -49,7 +49,7 @@ No HTTPRoute anywhere in this app — everything is cluster-internal.
 - The Velero server/node-agent own no PVC of their own — they read/write to the existing PVCs of the namespaces they back up, plus the S3 destination.
 - Destination bucket: `k8s-volume-backup` (`app/helmrelease.yaml:76`), a **separate** bucket from Postgres's own `k8s-postgres-backup` (`plugin-barman-cloud`).
 - `snapshotsEnabled: false` — this cluster's NFS-backed storage class has no CSI snapshot support, so `defaultVolumesToFsBackup: true` makes kopia filesystem backup (via the node-agent DaemonSet) the only path (`app/helmrelease.yaml:65-70,84-87`).
-- **Coverage — GFS schedule, three `Schedule` CRs, all with identical `includedNamespaces`:** `nextcloud`, `paperless`, `open-webui`, `hermes-agent` (`kubernetes/apps/velero/schedules/schedule-{daily,weekly,monthly}.yaml`).
+- **Coverage — GFS schedule, three `Schedule` CRs, all with identical `includedNamespaces`:** `nextcloud`, `paperless`, `open-webui`, `hermes-agent`, `immich`, `mail` (`kubernetes/apps/velero/schedules/schedule-{daily,weekly,monthly}.yaml`). `mail`'s `mailu-redis` pod excludes its `tmp` emptyDir (`backup.velero.io/backup-volumes-excludes`, `kubernetes/apps/mail/mailu/app/helmrelease-redis.yaml`) — disposable greylisting/quota counters, not worth backing up; the chart's own Maildir/DB PVC (`persistence.single_pvc`) is still covered.
   - `daily`: `02:00`, `ttl: 336h0m0s` (14d)
   - `weekly`: Sundays `02:00`, `ttl: 2160h0m0s` (90d)
   - `monthly`: 1st of month `02:00`, `ttl: 8760h0m0s` (365d)
