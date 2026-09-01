@@ -38,7 +38,7 @@ All five keys come from the single `sogo` 1Password item via `dataFrom.extract` 
 - No SSO — no user-facing surface to gate; the only "user" is hermes-agent's MCP client.
 
 ## Storage
-None. Fully stateless — config arrives via env vars each pod start, `pylibs`/`tmp`/`app-src` are all `emptyDir`/`configMap` volumes (`deployment.yaml:122-129`), nothing to back up.
+None. Fully stateless — config arrives via env vars each pod start, `pylibs`/`tmp`/`app-src` are all `emptyDir`/`configMap` volumes (`deployment.yaml:122-129`), nothing to back up. `pylibs`/`tmp` are explicitly excluded from Velero's fs-backup (`backup.velero.io/backup-volumes-excludes: pylibs,tmp`, `deployment.yaml`) since `hermes-agent` is in Velero's GFS schedules — same pattern as `paperless-mcp`/`nextcloud-mcp`.
 
 ## Known quirks
 - **This wields the owner's full real mailbox and calendar account, not a service account** — Netcup's SOGo hosting has no read-only or calendar-only credential option, a deliberate scope tradeoff documented in the module docstring (`sogo_full.py:22-29`).
