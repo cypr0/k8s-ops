@@ -51,16 +51,18 @@ spec:
     # nothing stops that Service's IP from being routable from anywhere that
     # can reach 192.168.10.0/24.
     #
-    # 10.10.0.2/32 is NOT the office LAN's own 192.168.40.0/24 range — it's
-    # the WireGuard tunnel interface's own address on the OPNsense side.
-    # OPNsense is masquerading office-LAN clients' traffic to that address
-    # before it enters the site-to-site tunnel into the Proxmox network,
-    # rather than routing it through with the original 192.168.40.x source
-    # preserved. Confirmed live via `cilium monitor --to <mailu-front
-    # endpoint>`: connections showed up as 10.10.0.2, not 192.168.40.x, and
-    # were dropped until this was added. If OPNsense's WireGuard config ever
-    # changes (more peers, a different masquerade address, routing instead
-    # of NAT), this needs updating to match.
+    # 10.10.0.2/32 was the WireGuard tunnel interface's own address on the
+    # OPNsense side — OPNsense used to masquerade office-LAN clients' traffic
+    # to that address before it entered the site-to-site tunnel into the
+    # Proxmox network, confirmed live via `cilium monitor --to <mailu-front
+    # endpoint>` at the time. That masquerade no longer happens: re-confirmed
+    # live via `hubble observe --ip 192.168.10.105` on 2026-09-01, office-LAN
+    # connections now arrive with their real 192.168.40.x source and were
+    # being dropped as `world` until this was widened. Kept 10.10.0.2/32
+    # alongside the real CIDR in case OPNsense's NAT behavior reverts or
+    # varies by path -- harmless to allow both. If OPNsense's WireGuard
+    # config changes again, re-check with hubble before assuming either
+    # form still applies.
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
@@ -71,6 +73,7 @@ spec:
               protocol: TCP
     - fromCIDR:
         - "192.168.10.0/24"
+        - "192.168.40.0/24"
         - "10.10.0.2/32"
       toPorts:
         - ports:
