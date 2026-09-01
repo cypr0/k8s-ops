@@ -1,0 +1,49 @@
+---
+# Overrides the mailu/radicale image's baked-in /radicale.conf via the
+# HelmRelease's postRenderers patch (helmrelease.yaml) -- the chart exposes
+# no values for Radicale's [storage] section, and the container's ENTRYPOINT
+# invokes `radicale -S -C /radicale.conf` with an explicit -C flag, so
+# RADICALE_CONFIG env var alone wouldn't be consulted; only a literal file
+# at that exact path works.
+#
+# The only change from the chart's stock config is
+# `use_mtime_and_size_for_item_cache = true` in [storage]. Radicale's
+# multifilesystem backend re-validates every cached calendar/addressbook
+# item on every collection-level PROPFIND by SHA256-hashing its content by
+# default -- confirmed live via cgroup cpu.stat before/after an identical
+# request: ~7.5 CPU-seconds consumed for Anna's 2374-item personal calendar
+# (helene/philine/philipp accounts are smaller and didn't show this as
+# acutely, e.g. Philipp's 658-item calendar took ~4s). Switching to
+# mtime+size validation (Radicale's own documented perf knob) avoids
+# hashing file content on every request. All other lines are copied
+# verbatim from the stock config to avoid drift.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mailu-radicale-config
+data:
+  radicale.conf: |-
+    [server]
+    ssl = False
+    hosts = 0.0.0.0:5232, [::]:5232
+
+    [encoding]
+    request = utf-8
+    stock = utf-8
+
+    [auth]
+    realm = Radicale - Password Required
+    type = http_x_remote_user
+
+    [rights]
+    type = owner_only
+
+    [storage]
+    type = multifilesystem
+    filesystem_folder = /data
+    use_mtime_and_size_for_item_cache = true
+
+    [logging]
+    level = info
+
+    [headers]

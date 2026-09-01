@@ -9,6 +9,7 @@ resources:
   - ./externalsecret.yaml
   - ./certificate.yaml
   - ./dnsendpoint.yaml
+  - ./configmap-radicale-config.yaml
   - ./helmrelease-redis.yaml
   - ./ciliumnetworkpolicy-redis.yaml
   - ./helmrelease.yaml
