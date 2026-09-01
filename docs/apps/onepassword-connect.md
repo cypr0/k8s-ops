@@ -1,11 +1,11 @@
 # 1Password Connect
 
 > **Namespace**  security
-> **Source**     Not a dedicated upstream chart — deployed via the generic `bjw-s-labs/app-template` chart (OCIRepository `app-template`, tag `5.0.1`, `kubernetes/apps/security/onepassword-connect/app/ocirepository.yaml`), wrapping the two official 1Password Connect images directly (`docker.io/1password/connect-api:1.8.2`, `docker.io/1password/connect-sync:1.8.2`, pinned by digest in `kubernetes/apps/security/onepassword-connect/app/helmrelease.yaml`).
+> **Source**     Not a dedicated upstream chart — deployed via the generic `bjw-s-labs/app-template` chart (OCIRepository `app-template`, tag `5.1.0`, `kubernetes/apps/security/onepassword-connect/app/ocirepository.yaml`), wrapping the two official 1Password Connect images directly (`docker.io/1password/connect-api:1.8.2`, `docker.io/1password/connect-sync:1.8.2`, pinned by digest in `kubernetes/apps/security/onepassword-connect/app/helmrelease.yaml`).
 > **Hostname**   Internal-only — `onepassword-connect.security.svc.cluster.local`. No `httproute.yaml` exists in this app's directory; it is never exposed outside the cluster.
 
 ## What it does here
-This is the 1Password Connect server: the on-cluster proxy that turns 1Password vault items into a REST API. `external-secrets`' `ClusterSecretStore/onepassword` talks to it exclusively, and every `ExternalSecret` in the cluster — 49 resources across roughly 20 apps at last count — resolves through this Service. It is the credential root for the entire GitOps secret pipeline documented across `docs/apps/`: if this app is gone, no ExternalSecret can create or refresh a Kubernetes Secret, though Secrets already synced continue to exist until something forces a re-sync.
+This is the 1Password Connect server: the on-cluster proxy that turns 1Password vault items into a REST API. `external-secrets`' `ClusterSecretStore/onepassword` talks to it exclusively, and every `ExternalSecret` in the cluster — 51 resources across 28 app directories at last count (`grep -rl "name: onepassword" kubernetes/apps --include="externalsecret*.yaml"`) — resolves through this Service. It is the credential root for the entire GitOps secret pipeline documented across `docs/apps/`: if this app is gone, no ExternalSecret can create or refresh a Kubernetes Secret, though Secrets already synced continue to exist until something forces a re-sync.
 
 ## Architecture at a glance
 - **Depends on:** 1Password's cloud service (SaaS) reached over egress — see Routing & access below. No in-cluster database, cache, or object storage dependency; it is stateless apart from a scratch `emptyDir`. Bootstraps from a raw SOPS-encrypted Kubernetes `Secret` committed in-repo (`kubernetes/apps/security/onepassword-connect/app/secret.sops.yaml`) rather than an `ExternalSecret` — it *is* the secret backend, so it cannot pull its own bootstrap credentials from itself.
@@ -15,7 +15,7 @@ This is the 1Password Connect server: the on-cluster proxy that turns 1Password 
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/security/onepassword-connect/app/helmrelease.yaml` | app-template values: two containers (`api`, `sync`), image tags/digests, probes, resources |
-| `kubernetes/apps/security/onepassword-connect/app/ocirepository.yaml` | Pins the `app-template` chart source (OCI, tag `5.0.1`) |
+| `kubernetes/apps/security/onepassword-connect/app/ocirepository.yaml` | Pins the `app-template` chart source (OCI, tag `5.1.0`) |
 | `kubernetes/apps/security/onepassword-connect/app/secret.sops.yaml` | SOPS/age-encrypted raw `Secret` — the Connect credentials file + API token |
 | `kubernetes/apps/security/onepassword-connect/app/ciliumnetworkpolicy.yaml` | Ingress locked to `security` namespace + Gatus + kubelet probes; egress to `world` (1Password cloud) + DNS |
 | `kubernetes/apps/security/onepassword-connect/app/kustomization.yaml` | Includes the four files above — no `httproute.yaml` present |
