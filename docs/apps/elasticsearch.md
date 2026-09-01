@@ -1,7 +1,7 @@
 # Elasticsearch (Nextcloud)
 
 > **Namespace**  nextcloud
-> **Source**     `app-template` chart v5.0.1 via OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/nextcloud/elasticsearch/app/ocirepository.yaml`, `helmrelease.yaml`)
+> **Source**     `app-template` chart v5.1.0 via OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/nextcloud/elasticsearch/app/ocirepository.yaml`, `helmrelease.yaml`)
 > **Hostname**   none — cluster-internal only, no HTTPRoute; reachable at `elasticsearch.nextcloud.svc.cluster.local:9200`
 
 ## What it does here
@@ -15,7 +15,7 @@ Single-node full-text search index backing Nextcloud's `fulltextsearch`/`fulltex
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/nextcloud/elasticsearch/app/helmrelease.yaml` | `app-template`-wrapped single-replica Elasticsearch container, resources, probes, persistence |
-| `kubernetes/apps/nextcloud/elasticsearch/app/ocirepository.yaml` | Chart source pin (`app-template` v5.0.1) |
+| `kubernetes/apps/nextcloud/elasticsearch/app/ocirepository.yaml` | Chart source pin (`app-template` v5.1.0) |
 | `kubernetes/apps/nextcloud/elasticsearch/app/ciliumnetworkpolicy.yaml` | Ingress allow-list (same-namespace only) + DNS-only egress |
 | `kubernetes/apps/nextcloud/elasticsearch/app/kustomization.yaml` | Wires the three manifests above under the `nextcloud` namespace |
 | `kubernetes/apps/nextcloud/elasticsearch/ks.yaml` | Flux Kustomization: `dependsOn: csi-driver-nfs`, 1h interval, `targetNamespace: nextcloud` |
