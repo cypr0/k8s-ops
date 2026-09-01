@@ -5,7 +5,7 @@
 > **Hostname**   none of its own — not exposed via HTTPRoute. It *creates* DNS records for other apps' public hostnames.
 
 ## What it does here
-Runs upstream `external-dns` against the Cloudflare API to keep public DNS records in sync with two sources: HTTPRoutes parented to the `envoy-external` Gateway, and explicit `DNSEndpoint` CRDs (`extraArgs: --gateway-name=envoy-external`, `sources: [crd, gateway-httproute]`). It manages two Cloudflare zones in the same account — `${SECRET_DOMAIN}` and the separate apex `${SECRET_SECOND_DOMAIN}` (added for the portfolio site) — and is deliberately scoped to public-facing routes only; internal-only apps behind the `envoy-internal` Gateway are resolved instead by `k8s-gateway`'s split-horizon DNS, not by this controller.
+Runs upstream `external-dns` against the Cloudflare API to keep public DNS records in sync with two sources: HTTPRoutes parented to the `envoy-external` Gateway, and explicit `DNSEndpoint` CRDs (`extraArgs: --gateway-name=envoy-external`, `sources: [crd, gateway-httproute]`). It manages five Cloudflare zones in the same "Rosch Domains" account — `${SECRET_DOMAIN}` (primary) plus four separate apex domains: `${SECRET_SECOND_DOMAIN}` (originally added for the now-removed portfolio site, also Philipp's personal Mailu mail domain), `${SECRET_THIRD_DOMAIN}`/`${SECRET_FOURTH_DOMAIN}`/`${SECRET_FIFTH_DOMAIN}` (added later purely as Mailu-hosted personal mail domains — see `docs/apps/mailu.md`) — and is deliberately scoped to public-facing routes only; internal-only apps behind the `envoy-internal` Gateway are resolved instead by `k8s-gateway`'s split-horizon DNS, not by this controller.
 
 ## Architecture at a glance
 - **Depends on:**
@@ -13,8 +13,8 @@ Runs upstream `external-dns` against the Cloudflare API to keep public DNS recor
   - CoreDNS (`kube-dns` in `kube-system`) for its own DNS resolution, and `kube-apiserver` to watch `HTTPRoute`/`DNSEndpoint`/`Service` — both explicit egress rules.
   - The public Cloudflare API (`toEntities: [world]`, port 443 only) — this is the one app in `network` whose CNP intentionally allows egress to the whole internet, scoped to 443.
 - **Depended on by:**
-  - HTTPRoutes parented to Gateway `envoy-external`: `nextcloud`, `whiteboard`, `collabora`, `flux-instance`, `authentik`, `philipp-rosch-site`, and `echo`'s inline HTTPRoute.
-  - `DNSEndpoint` CRDs: `cloudflare-tunnel`'s (the tunnel's CNAME record) and `philipp-rosch-site`'s (same tunnel, `${SECRET_SECOND_DOMAIN}` zone). If `cloudflare-dns`'s `domainFilters` doesn't include a CRD's zone, `external-dns` silently ignores that `DNSEndpoint` — no error, just no record.
+  - HTTPRoutes parented to Gateway `envoy-external`: `nextcloud`, `whiteboard`, `collabora`, `flux-instance`, `authentik`, and `echo`'s inline HTTPRoute.
+  - `DNSEndpoint` CRDs: `cloudflare-tunnel`'s (the tunnel's CNAME record) and `mailu`'s (`kubernetes/apps/mail/mailu/app/dnsendpoint.yaml`) — by far the largest consumer, publishing DKIM/DMARC/autoconfig/autodiscover records across all four secondary domains (`${SECRET_SECOND_DOMAIN}` through `${SECRET_FIFTH_DOMAIN}`), plus `mail.${SECRET_DOMAIN}`'s own A record and `webmail.${SECRET_DOMAIN}`'s CNAME. MX, apex SPF TXT, and SRV records for those domains are created directly via the Cloudflare API instead — see `docs/apps/mailu.md` for why `external-dns` can't handle those record types/positions. If `cloudflare-dns`'s `domainFilters` doesn't include a CRD's zone, `external-dns` silently ignores that `DNSEndpoint` — no error, just no record.
   - **Not** depended on by anything behind `envoy-internal` (`open-webui`, `gatus`, `grafana`, `opensearch-cluster`, `paperless-ngx`, and `nextcloud`'s internal listener) — those resolve via `k8s-gateway` instead, a separate internal-only DNS path this app has no role in.
 
 ## Repo layout
@@ -44,7 +44,7 @@ Rotation goes through `sops` re-encryption of this file directly, not a 1Passwor
 No PVCs — fully stateless. Source of truth is the Kubernetes API and the Cloudflare zone itself; nothing here needs Velero coverage.
 
 ## Known quirks
-- **Two zones, one shared token.** `domainFilters` covers both `${SECRET_DOMAIN}` and `${SECRET_SECOND_DOMAIN}`, added in commit `90f7366` for the portfolio site. The single `CF_API_TOKEN` must have `Zone:DNS:Edit` scope on *both* zones in the Cloudflare dashboard — this can't be verified from the repo (a Cloudflare-side scope, not tracked by git), so if a new zone is ever added to `domainFilters` without widening the token's scope, records for that zone will silently fail to create/update.
+- **Five zones, one shared token.** `domainFilters` covers `${SECRET_DOMAIN}` plus four secondary domains: `${SECRET_SECOND_DOMAIN}` (added in commit `90f7366` for the now-removed portfolio site), `${SECRET_THIRD_DOMAIN}`/`${SECRET_FOURTH_DOMAIN}` (commit `430128c`) and `${SECRET_FIFTH_DOMAIN}` (commit `689f0b9`), the latter three added purely as further Mailu-hosted personal mail domains. The single `CF_API_TOKEN` needs `Zone:DNS:Edit` scope on all five zones in the Cloudflare dashboard — confirmed live for all of them while onboarding each domain (see `docs/apps/mailu.md`), though that scope grant itself isn't tracked by git, so a future new zone added to `domainFilters` without widening the token's scope will still fail silently.
 - **Scoped by `--gateway-name=envoy-external`, not by namespace.** Any HTTPRoute anywhere in the cluster parented to the `envoy-external` Gateway gets a public DNS record automatically; anything on `envoy-internal` is invisible to this controller by design. Easy to mis-diagnose as "DNS not syncing" when the real issue is the HTTPRoute is parented to the wrong Gateway.
 - **Not the repo's usual secret pattern.** Unlike most other apps' `ExternalSecret` + 1Password, this app's Cloudflare token is a directly SOPS-encrypted `Secret` — rotation is a `sops`/git operation, not a 1Password-item change.
 - **`resources.limits` has no `cpu` key**, only `memory: 128Mi` — per commit `f4172f8`'s message, this is intentional repo-wide policy ("No CPU limits set intentionally — avoid throttling on nodes with free capacity"), not an oversight specific to this app.
@@ -57,7 +57,6 @@ No PVCs — fully stateless. Source of truth is the Kubernetes API and the Cloud
 - Check what a new public HTTPRoute needs to get a DNS record: parent it to the `envoy-external` Gateway — no per-app cloudflare-dns config required.
 
 ## TODOs / unknowns
-- Whether the `CF_API_TOKEN` currently has `Zone:DNS:Edit` scope on the `${SECRET_SECOND_DOMAIN}` zone cannot be verified from the repo — it's a Cloudflare dashboard-side setting.
 - No entry in `docs/incidents/` references `cloudflare-dns` by name — no known past outage tied to this app as of this writing.
 - Whether the CNP's lack of an explicit ingress allow-list is intentional or an oversight relative to sibling apps like `reloader` that do allowlist Prometheus ingress explicitly — not documented anywhere in the repo.
 
