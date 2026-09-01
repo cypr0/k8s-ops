@@ -1,7 +1,7 @@
 # firecrawl
 
 > **Namespace**  hermes-agent
-> **Source**     `ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/hermes-agent/firecrawl/app/ocirepository.yaml`, tag `5.0.1`); app images `ghcr.io/firecrawl/firecrawl:2.11.202-production` and `ghcr.io/firecrawl/playwright-service` (pinned by digest, `tag: latest@sha256:...`) (`kubernetes/apps/hermes-agent/firecrawl/app/helmrelease.yaml`)
+> **Source**     `ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/hermes-agent/firecrawl/app/ocirepository.yaml`, tag `5.1.0`); app images `ghcr.io/firecrawl/firecrawl:2.11.202-production` and `ghcr.io/firecrawl/playwright-service` (pinned by digest, `tag: latest@sha256:...`) (`kubernetes/apps/hermes-agent/firecrawl/app/helmrelease.yaml`)
 > **Hostname**   none — ClusterIP only, no HTTPRoute; reachable in-cluster at `firecrawl-api.hermes-agent.svc.cluster.local:3002`
 
 ## What it does here
@@ -15,7 +15,7 @@ Self-hosted web-scrape/crawl/search backend for two callers in this cluster: `he
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/hermes-agent/firecrawl/app/helmrelease.yaml` | app-template values: 4 controllers (`api`, `worker`, `nuq-worker` ×2, `playwright-service`), resources sized down from upstream, per-controller Services |
-| `kubernetes/apps/hermes-agent/firecrawl/app/ocirepository.yaml` | `app-template` chart source, pinned to `5.0.1` |
+| `kubernetes/apps/hermes-agent/firecrawl/app/ocirepository.yaml` | `app-template` chart source, pinned to `5.1.0` |
 | `kubernetes/apps/hermes-agent/firecrawl/app/configmap.yaml` | Non-secret app config (`firecrawl-config`) and `playwright-service-config` — concurrency knobs, `PLAYWRIGHT_MICROSERVICE_URL` |
 | `kubernetes/apps/hermes-agent/firecrawl/app/externalsecret.yaml` | `firecrawl-secret`: Redis URL(s), nuq Postgres DSN, bare `PGPASSWORD` |
 | `kubernetes/apps/hermes-agent/firecrawl/app/job-nuq-schema.yaml` | Force-recreated Job that applies the "nuq" schema (tables/indexes, `pgcrypto`) to the `firecrawl` database |
