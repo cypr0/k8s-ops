@@ -1,7 +1,7 @@
 # Gatus
 
 > **Namespace**  monitoring
-> **Source**     `app-template` chart v5.0.1 via `OCIRepository` `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/monitoring/gatus/app/ocirepository.yaml`, `helmrelease.yaml`), image `ghcr.io/twin/gatus:v5.36.0`
+> **Source**     `app-template` chart v5.1.0 via `OCIRepository` `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/monitoring/gatus/app/ocirepository.yaml`, `helmrelease.yaml`), image `ghcr.io/twin/gatus:v5.36.0`
 > **Hostname**   `status.${SECRET_DOMAIN}` — internal-only, via `envoy-internal` (`kubernetes/apps/monitoring/gatus/app/httproute.yaml`); not reachable through the public Cloudflare tunnel, which only forwards `*.${SECRET_DOMAIN}` to `envoy-external`
 
 ## What it does here
