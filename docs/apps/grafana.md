@@ -1,7 +1,7 @@
 # Grafana
 
 > **Namespace**  monitoring
-> **Source**     Helm chart `grafana` from the `grafana` HelmRepository (`https://grafana.github.io/helm-charts`), version `10.5.15` (`kubernetes/apps/monitoring/grafana/app/helmrelease.yaml`, `helmrepository.yaml`); Grafana image `grafana/grafana:13.1.1`, pinned by digest
+> **Source**     Helm chart `grafana` from the `grafana` HelmRepository (`https://grafana.github.io/helm-charts`), version `10.5.15` (`kubernetes/apps/monitoring/grafana/app/helmrelease.yaml`, `helmrepository.yaml`); Grafana image `grafana/grafana:13.2.0`, pinned by digest
 > **Hostname**   `grafana.${SECRET_DOMAIN}` — internal-only (VPN/split-DNS), not exposed via the Cloudflare tunnel
 
 ## What it does here
