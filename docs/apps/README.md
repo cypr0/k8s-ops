@@ -4,7 +4,7 @@ Per-app operational docs, one file per app, generated per the contract in
 [`../prompts/app-docs-campaign.md`](../prompts/app-docs-campaign.md) from the
 skeleton at [`../templates/app-readme.md`](../templates/app-readme.md).
 
-Every app under `kubernetes/apps/` has a doc as of 2026-09-01 (53 apps,
+Every app under `kubernetes/apps/` has a doc as of 2026-09-01 (54 apps,
 matching every leaf directory in `kubernetes/apps/` one-for-one). New apps
 added after this date won't have one yet until the campaign catches up —
 check here before assuming a gap means "not interesting."

@@ -2,7 +2,7 @@
 
 A single Kubernetes cluster, homelab-run, deployed with [Talos Linux](https://github.com/siderolabs/talos) and managed entirely through GitOps with [Flux](https://github.com/fluxcd/flux2). Everything the cluster runs — infrastructure, security tooling, and applications — is declared in this repo and reconciled automatically; nothing is applied by hand.
 
-Originally scaffolded from [onedr0p/cluster-template](https://github.com/onedr0p/cluster-template) (credit where due — see [Acknowledgements](#-acknowledgements)), it has since grown into its own thing: 8 nodes, ~55 applications, and an in-repo documentation system (see [Documentation](#-documentation) below) covering every app plus every notable incident.
+Originally scaffolded from [onedr0p/cluster-template](https://github.com/onedr0p/cluster-template) (credit where due — see [Acknowledgements](#-acknowledgements)), it has since grown into its own thing: 8 nodes, 54 applications, and an in-repo documentation system (see [Documentation](#-documentation) below) covering every app plus every notable incident.
 
 ## 🧱 Stack
 
