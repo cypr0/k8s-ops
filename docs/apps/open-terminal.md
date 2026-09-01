@@ -1,7 +1,7 @@
 # Open Terminal
 
 > **Namespace**  open-webui
-> **Source**     `oci://ghcr.io/bjw-s-labs/helm/app-template` (chart `app-template` v5.0.1) — `kubernetes/apps/open-webui/open-terminal/app/ocirepository.yaml`, `kubernetes/apps/open-webui/open-terminal/app/helmrelease.yaml`
+> **Source**     `oci://ghcr.io/bjw-s-labs/helm/app-template` (chart `app-template` v5.1.0) — `kubernetes/apps/open-webui/open-terminal/app/ocirepository.yaml`, `kubernetes/apps/open-webui/open-terminal/app/helmrelease.yaml`
 > **Hostname**   none — not externally exposed; reachable only from the `open-webui` backend pod in-cluster
 
 ## What it does here
@@ -14,7 +14,7 @@ A single-container shell sandbox (`ghcr.io/open-webui/open-terminal`) that Open 
 ## Repo layout
 | File | Purpose |
 | --- | --- |
-| `kubernetes/apps/open-webui/open-terminal/app/ocirepository.yaml` | Pins the `app-template` chart to v5.0.1 |
+| `kubernetes/apps/open-webui/open-terminal/app/ocirepository.yaml` | Pins the `app-template` chart to v5.1.0 |
 | `kubernetes/apps/open-webui/open-terminal/app/helmrelease.yaml` | Container image/digest, env, probes, root securityContext, persistence |
 | `kubernetes/apps/open-webui/open-terminal/app/externalsecret.yaml` | Shared bearer token pulled from 1Password |
 | `kubernetes/apps/open-webui/open-terminal/app/ciliumnetworkpolicy.yaml` | Ingress from `open-webui` backend only; broad egress for package installs |
