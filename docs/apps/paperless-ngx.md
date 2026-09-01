@@ -1,7 +1,7 @@
 # paperless-ngx
 
 > **Namespace**  paperless
-> **Source**     `app-template` chart v5.0.1 via `OCIRepository` `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/paperless/paperless-ngx/app/ocirepository.yaml`, `helmrelease.yaml`) — image `ghcr.io/paperless-ngx/paperless-ngx:3.0.5`
+> **Source**     `app-template` chart v5.1.0 via `OCIRepository` `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/paperless/paperless-ngx/app/ocirepository.yaml`, `helmrelease.yaml`) — image `ghcr.io/paperless-ngx/paperless-ngx:3.1.2`
 > **Hostname**   `paperless.${SECRET_DOMAIN}` — internal only, `httproute.yaml` attaches solely to the `envoy-internal` Gateway, no `envoy-external`/cloudflare-tunnel exposure
 
 ## What it does here
@@ -26,7 +26,7 @@ The cluster's document management system: ingests scanned business documents (fr
 ## Repo layout
 | File | Purpose |
 | --- | --- |
-| `kubernetes/apps/paperless/paperless-ngx/app/ocirepository.yaml` | `app-template` chart pin (v5.0.1) |
+| `kubernetes/apps/paperless/paperless-ngx/app/ocirepository.yaml` | `app-template` chart pin (v5.1.0) |
 | `kubernetes/apps/paperless/paperless-ngx/app/helmrelease.yaml` | Chart values — image tag, all `PAPERLESS_*` env, resources, persistence mounts |
 | `kubernetes/apps/paperless/paperless-ngx/app/externalsecret.yaml` | DB/admin/OIDC/AI/Redis secrets, built into `paperless-secret` |
 | `kubernetes/apps/paperless/paperless-ngx/app/pvc.yaml` | `paperless-data-pvc` (RWX) + statically-bound `paperless-consume-pvc`/PV |
