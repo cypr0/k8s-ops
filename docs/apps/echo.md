@@ -1,7 +1,7 @@
 # Echo
 
 > **Namespace**  `echo`
-> **Source**     `app-template` chart v5.0.1 via `OCIRepository` `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/echo/echo/app/ocirepository.yaml`, `helmrelease.yaml`)
+> **Source**     `app-template` chart v5.1.0 via `OCIRepository` `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/echo/echo/app/ocirepository.yaml`, `helmrelease.yaml`)
 > **Hostname**   `echo.${SECRET_DOMAIN}` — public, via `envoy-external` Gateway
 
 ## What it does here
@@ -15,7 +15,7 @@ A deliberate connectivity-test/diagnostic app, not a real workload: it runs `ghc
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/echo/echo/ks.yaml` | Flux Kustomization: `targetNamespace: echo`, `postBuild.substituteFrom` → `cluster-secrets` (resolves `${SECRET_DOMAIN}`) |
-| `kubernetes/apps/echo/echo/app/ocirepository.yaml` | Chart source: `app-template` v5.0.1 |
+| `kubernetes/apps/echo/echo/app/ocirepository.yaml` | Chart source: `app-template` v5.1.0 |
 | `kubernetes/apps/echo/echo/app/helmrelease.yaml` | Image, probes, resources, Service/Route/ServiceMonitor values (chart-generated, no separate manifest files) |
 | `kubernetes/apps/echo/echo/app/ciliumnetworkpolicy.yaml` | Ingress from Envoy + kubelet probes, egress to CoreDNS only |
 
