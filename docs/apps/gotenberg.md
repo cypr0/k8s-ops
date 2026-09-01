@@ -1,7 +1,7 @@
 # Gotenberg
 
 > **Namespace**  paperless
-> **Source**     `app-template` OCIRepository v5.0.1 (`kubernetes/apps/paperless/gotenberg/app/ocirepository.yaml`), chart-templated `docker.io/gotenberg/gotenberg:8.36.0` image (`kubernetes/apps/paperless/gotenberg/app/helmrelease.yaml`)
+> **Source**     `app-template` OCIRepository v5.1.0 (`kubernetes/apps/paperless/gotenberg/app/ocirepository.yaml`), chart-templated `docker.io/gotenberg/gotenberg:8.36.0` image (`kubernetes/apps/paperless/gotenberg/app/helmrelease.yaml`)
 > **Hostname**   none — internal only, `gotenberg-http.paperless.svc.cluster.local:3000`
 
 ## What it does here
@@ -15,7 +15,7 @@ A stateless HTTP microservice wrapping headless Chromium plus LibreOffice-style 
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/paperless/gotenberg/ks.yaml` | Flux Kustomization — 1h reconcile interval, no `dependsOn`, `targetNamespace: paperless` |
-| `kubernetes/apps/paperless/gotenberg/app/ocirepository.yaml` | Pins the `bjw-s-labs/app-template` chart (v5.0.1) used to render the workload |
+| `kubernetes/apps/paperless/gotenberg/app/ocirepository.yaml` | Pins the `bjw-s-labs/app-template` chart (v5.1.0) used to render the workload |
 | `kubernetes/apps/paperless/gotenberg/app/helmrelease.yaml` | Image tag, Chromium command flags, resources, probes, securityContext, `emptyDir` persistence |
 | `kubernetes/apps/paperless/gotenberg/app/kustomization.yaml` | Wires the two resources above, sets `namespace: paperless` |
 
