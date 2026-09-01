@@ -72,7 +72,7 @@ Single `ReadWriteMany` PVC (`persistence.single_pvc: true`, `zfs-nfs` StorageCla
 
 ## DNS runbook (manual — not infra-as-code)
 
-For each of the 4-5 domains Mailu will serve mail for, after creating the `Domain` object in the Admin UI:
+For each of the 5 domains Mailu now serves mail for (`${SECRET_DOMAIN}`, `${SECRET_SECOND_DOMAIN}` through `${SECRET_FIFTH_DOMAIN}` — see `kubernetes/apps/mail/mailu/app/dnsendpoint.yaml`), after creating the `Domain` object in the Admin UI:
 
 1. **MX record**: `<domain> MX 10 mail.${SECRET_DOMAIN}`.
 2. **SPF** (TXT on `<domain>`): `v=spf1 mx ~all` (adjust if any other systems send as that domain).
