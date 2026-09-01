@@ -1,7 +1,7 @@
 # Envoy Gateway
 
 > **Namespace**  `network`
-> **Source**     OCI Helm chart `oci://mirror.gcr.io/envoyproxy/gateway-helm`, tag `1.8.3` (`kubernetes/apps/network/envoy-gateway/app/ocirepository.yaml`)
+> **Source**     OCI Helm chart `oci://mirror.gcr.io/envoyproxy/gateway-helm`, tag `1.9.1` (`kubernetes/apps/network/envoy-gateway/app/ocirepository.yaml`)
 > **Hostname**   None of its own — it's the cluster's Gateway API controller. It defines the two Gateways every other app's `HTTPRoute` attaches to: `envoy-external` (public) and `envoy-internal` (in-cluster-only) (`kubernetes/apps/network/envoy-gateway/app/envoy.yaml:56,86`).
 
 ## What it does here
@@ -9,14 +9,14 @@ This is the cluster's sole Gateway API implementation: one `GatewayClass`/`Envoy
 
 ## Architecture at a glance
 - **Depends on:** cert-manager's wildcard `Certificate` for the TLS secret both Gateways' HTTPS listeners reference (`kubernetes/apps/network/envoy-gateway/app/certificate.yaml` — see `docs/apps/cert-manager.md`); Cloudflare Tunnel as the public ingress path into `envoy-external`; kube-apiserver, which the controller watches for Gateway API resources. No ExternalSecret of its own.
-- **Depended on by:** every app with an `HTTPRoute`/embedded chart route pointing at `envoy-external` or `envoy-internal` — 12 confirmed: `flux-instance`, `opensearch-cluster`, `gatus`, `grafana`, `collabora`, `nextcloud`, `whiteboard`, `open-webui`, `paperless-ngx`, `philipp-rosch-site`, `authentik` (all via standalone `httproute.yaml` files), plus `echo`, whose `app-template` chart embeds its route directly in `helmrelease.yaml`. If the controller or its `EnvoyProxy` data-plane pods go down, every one of these loses ingress simultaneously.
+- **Depended on by:** every app with an `HTTPRoute`/embedded chart route pointing at `envoy-external` or `envoy-internal` — 12 confirmed: `flux-instance`, `opensearch-cluster`, `gatus`, `grafana`, `collabora`, `nextcloud`, `whiteboard`, `open-webui`, `paperless-ngx`, `immich`, `authentik` (all via standalone `httproute.yaml` files), plus `echo`, whose `app-template` chart embeds its route directly in `helmrelease.yaml`. If the controller or its `EnvoyProxy` data-plane pods go down, every one of these loses ingress simultaneously. New backends must be added to the shared `envoy-proxy` `CiliumNetworkPolicy` (`ciliumnetworkpolicy.yaml`) on *both* sides — egress (envoy → backend) and ingress (backend → envoy, for the backend's own OIDC discovery/token calls) — commit `e82f544` documents Immich being missed on first rollout as the concrete example.
 
 ## Repo layout
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/network/envoy-gateway/app/envoy.yaml` | `EnvoyProxy` (data-plane sizing/HPA), `GatewayClass`, both `Gateway`s, `BackendTrafficPolicy`, `ClientTrafficPolicy`, and the cluster-wide HTTP→HTTPS `https-redirect` `HTTPRoute` |
 | `kubernetes/apps/network/envoy-gateway/app/helmrelease.yaml` | Controller chart values: resources, `GatewayNamespace` deploy mode |
-| `kubernetes/apps/network/envoy-gateway/app/ocirepository.yaml` | Pins chart to `1.8.3`, 15m poll |
+| `kubernetes/apps/network/envoy-gateway/app/ocirepository.yaml` | Pins chart to `1.9.1`, 15m poll |
 | `kubernetes/apps/network/envoy-gateway/app/certificate.yaml` | The one wildcard `Certificate` both Gateways' HTTPS listeners reference |
 | `kubernetes/apps/network/envoy-gateway/app/ciliumnetworkpolicy.yaml` | Two `CiliumNetworkPolicy` objects: `envoy-gateway` (controller, xDS server) and `envoy-proxy` (data plane, per-backend allow-list) |
 | `kubernetes/apps/network/envoy-gateway/app/podmonitor.yaml` | Scrapes proxy pods' `/stats/prometheus` |
