@@ -1,7 +1,7 @@
 # Cilium
 
 > **Namespace**  kube-system
-> **Source**     `cilium` OCIRepository, chart `cilium` v1.20.0, `oci://quay.io/cilium/charts/cilium` (`kubernetes/apps/kube-system/cilium/app/ocirepository.yaml`), referenced by the HelmRelease via `chartRef` (`kubernetes/apps/kube-system/cilium/app/helmrelease.yaml`)
+> **Source**     `cilium` OCIRepository, chart `cilium` v1.20.1, `oci://quay.io/cilium/charts/cilium` (`kubernetes/apps/kube-system/cilium/app/ocirepository.yaml`), referenced by the HelmRelease via `chartRef` (`kubernetes/apps/kube-system/cilium/app/helmrelease.yaml`)
 > **Hostname**   none — this is the cluster's CNI, not an exposed service
 
 ## What it does here
@@ -15,7 +15,7 @@ The cluster's only CNI, replacing kube-proxy entirely (`kubeProxyReplacement: tr
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/kube-system/cilium/app/helmrelease.yaml` | All chart values: kube-proxy replacement, routing mode, resources, Hubble, security context capabilities |
-| `kubernetes/apps/kube-system/cilium/app/ocirepository.yaml` | Chart source/version pin (`1.20.0`) |
+| `kubernetes/apps/kube-system/cilium/app/ocirepository.yaml` | Chart source/version pin (`1.20.1`) |
 | `kubernetes/apps/kube-system/cilium/app/networks.yaml` | `CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy` for internal LB IPs |
 | `kubernetes/apps/kube-system/cilium/app/ciliumnetworkpolicy.yaml` | Self-protection policy for `hubble-relay` only (agent itself is deliberately unrestricted, see below) |
 | `kubernetes/apps/kube-system/cilium/app/kustomization.yaml` | Wires the above into the Flux Kustomization |
@@ -28,12 +28,13 @@ None. No `ExternalSecret` exists under `kubernetes/apps/kube-system/cilium/app/`
 - Not exposed via Gateway/HTTPRoute — this app *is* the network layer everything else routes through.
 - **Hubble**: enabled with relay (`hubble.relay.enabled: true`) but UI disabled (`hubble.ui.enabled: false`); flow metrics (`dns`, `drop`, `tcp`, `flow`, `port-distribution`, `icmp`, `httpV2`) are scraped by Prometheus (`hubble.metrics.serviceMonitor.enabled: true`) — `kubernetes/apps/kube-system/cilium/app/helmrelease.yaml`.
 - **`hubble-relay` CiliumNetworkPolicy** (`kubernetes/apps/kube-system/cilium/app/ciliumnetworkpolicy.yaml`): ingress allowed from `cluster` entities on TCP/4245 (CLI/UI queries), from `host` entity on TCP/4245 (kubelet probes, since those originate from the host network and aren't covered by the `cluster` entity), and from `monitoring` namespace's Prometheus on TCP/9966; egress restricted to `kube-dns` (UDP/TCP 53) and `cluster` entities on TCP/4244 (collecting flows from every node's `hubble-peer`). The comment at the top of the file is explicit that **cilium-agent itself is not policy-restricted** — restricting the eBPF dataplane that enforces policies risks deadlocking the cluster's own connectivity.
-- **LoadBalancer IPs**: `CiliumLoadBalancerIPPool` (`kubernetes/apps/kube-system/cilium/app/networks.yaml`) allocates from a private RFC1918 range (`allowFirstLastIPs: "No"`), announced via a `CiliumL2AnnouncementPolicy` selecting all Linux nodes. `l2announcements.enabled: true` and `loadBalancer.mode: "snat"` / `algorithm: maglev` in `helmrelease.yaml` back this.
+- **LoadBalancer IPs**: `CiliumLoadBalancerIPPool` (`kubernetes/apps/kube-system/cilium/app/networks.yaml`) allocates from a private RFC1918 range (`allowFirstLastIPs: "No"`), announced via a `CiliumL2AnnouncementPolicy` selecting Linux nodes, **excluding control-plane nodes** (added in commit `c936e21` — see Known quirks). `l2announcements.enabled: true` and `loadBalancer.mode: "snat"` / `algorithm: maglev` in `helmrelease.yaml` back this.
 
 ## Storage
 None — no PVCs.
 
 ## Known quirks
+- **Control-plane nodes could win a Service's L2-announcement lease despite never being able to host its backend pod.** Fixed in commit `c936e21` (2026-08-30): the `CiliumL2AnnouncementPolicy`'s `nodeSelector` (`kubernetes/apps/kube-system/cilium/app/networks.yaml`) only filtered by `kubernetes.io/os`, not against the `NoSchedule` taint on control-plane nodes. A control-plane node holding the lease answers ARP for the Service's IP but has no local endpoint for an `externalTrafficPolicy: Local` Service, silently blackholing all traffic to it — confirmed live via `mail/mailu`'s `mailu-front-webmail-lan` Service (lease on `k8s-cp-0`, backend pod on `k8s-wrk-1`). Cluster-wide bug affecting any Service using this policy, not Mailu-specific.
 - **cilium-agent ran with zero resource accounting until 2026-08-16.** `kubernetes/apps/kube-system/cilium/app/helmrelease.yaml` documents that no `resources` block existed for the agent DaemonSet before commit `7334b47` (`fix(cilium): add missing resource requests for the agent DaemonSet`), despite live usage of ~90m CPU / ~215Mi memory per node — a contributor to the control-plane memory-overcommit investigated the same day (see auto-memory `project_talos_1138_network_flapping`, not independently re-verified in this pass). Only a `requests` block was added (`cpu: 100m`, `memory: 256Mi`); a `limits` entry was deliberately *not* added — the same file's comment reasons that throttling/OOM-killing the cluster's own CNI under load is a worse failure mode than the accounting gap it fixes.
 - **`bpf.hostLegacyRouting: true`** is a workaround for a specific Talos incompatibility, linked in-file to `siderolabs/talos#10002`.
 - **`socketLB.hostNamespaceOnly: false`** (commit `63be357`, `fix(cilium): enable in-pod socket-LB (disable hostNamespaceOnly)`): the chart default (`true`) bypasses in-pod socket-LB and breaks a pod calling a LoadBalancer/ClusterIP that hairpins back to the same node — the file cites `dashboards -> envoy LB -> authentik` as the observed case. The default exists for Multus/KubeVirt/Istio-sidecar setups, none of which are deployed in this repo (confirmed — no Multus manifests exist anywhere under `kubernetes/`), which is why it's safe to disable cluster-wide here.
