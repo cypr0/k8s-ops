@@ -9,7 +9,7 @@ Runs the CNPG operator plus a single shared 3-instance PostgreSQL 18 cluster (`p
 
 ## Architecture at a glance
 - **Depends on:** `external-secrets-stores` (security ns, for the `onepassword` `ClusterSecretStore`); `plugin-barman-cloud-objectstore` (database ns) for the S3 `ObjectStore` the `Cluster` references by name; storage class `zfs-nfs`.
-- **Depended on by:** authentik, nextcloud, paperless-ngx, open-webui, firecrawl, and hermes-agent's portfolio-tracking job — see [Secrets](#secrets) for the full per-app breakdown. Also polled (not a functional dependency) by Gatus's health check and incidentally referenced in a CoreDNS comment unrelated to actual usage — see [Known quirks](#known-quirks).
+- **Depended on by:** authentik, nextcloud, paperless-ngx, open-webui, firecrawl, mailu (both its `admin` component and the bundled Roundcube webmail — two separate roles/databases), and hermes-agent's portfolio-tracking job — see [Secrets](#secrets) for the full per-app breakdown. Also polled (not a functional dependency) by Gatus's health check and incidentally referenced in a CoreDNS comment unrelated to actual usage — see [Known quirks](#known-quirks).
 
 ## Repo layout
 This app is three Flux Kustomization stages (`kubernetes/apps/database/cloudnative-pg/ks.yaml`), each depending on the previous:
@@ -37,6 +37,8 @@ The `cloudnative-pg-cluster` Kustomization is deliberately `wait: false` (`ks.ya
 | `nextcloud-db-role` (`databases/externalsecret-nextcloud.yaml`) | item `nextcloud`, field `NEXTCLOUD_POSTGRESQL_PASSWORD` | managed role `nextcloudusr` → database `nextcloud` |
 | `firecrawl-db-role` (`databases/externalsecret-firecrawl.yaml`) | item `firecrawl`, field `FIRECRAWL_POSTGRESQL_PASSWORD` | managed role `firecrawlusr` → database `firecrawl` |
 | `portfolio-db-role` (`databases/externalsecret-portfolio.yaml`) | item `portfolio`, field `PORTFOLIO_POSTGRESQL_PASSWORD` | managed role `portfoliousr` → database `portfolio` |
+| `mailu-db-role` (`databases/externalsecret-mailu.yaml`) | item `mailu`, field `MAILU_POSTGRESQL_PASSWORD` | managed role `mailuusr` → database `mailudb` (Mailu's `admin` component) |
+| `roundcube-db-role` (`databases/externalsecret-roundcube.yaml`) | item `mailu` (same item as above), field `ROUNDCUBE_POSTGRESQL_PASSWORD` | managed role `roundcubeusr` → database `roundcubedb` (Roundcube's own address-book/preferences store) |
 
 Every managed-role ExternalSecret's `target.template.data` sets both `username` and `password` — required by CNPG 0.29.0, not optional (see [Known quirks](#known-quirks)). Each consuming app then holds its **own** copy of the same password in its own namespace's ExternalSecret (K8s Secrets don't cross namespaces) — e.g. `kubernetes/apps/security/authentik/app/externalsecret.yaml` pulls the same `AUTHENTIK_POSTGRESQL_PASSWORD` field independently rather than referencing this namespace's secret.
 
@@ -56,7 +58,7 @@ Each of the 3 instances gets its own `storage` (20Gi) and `walStorage` (5Gi) PVC
 
 Two independent, non-overlapping backup paths:
 - **Postgres data itself:** barman-cloud plugin, `ScheduledBackup` `postgres-daily` (`cluster/scheduledbackup.yaml`) at 02:30 nightly to `s3://k8s-postgres-backup/` (Intercolo S3, `plugin-barman-cloud/objectstore/objectstore.yaml`), flat 30-day `retentionPolicy` (no GFS tiering here, unlike Velero's volume backups).
-- **PVCs themselves:** **not** covered by Velero — `kubernetes/apps/velero/schedules/schedule-daily.yaml`'s `includedNamespaces` lists `nextcloud`, `paperless`, `open-webui`, `hermes-agent` only; `database` is deliberately absent since Postgres data is already covered by barman-cloud and a filesystem-level snapshot of a running cluster's PVCs wouldn't be consistent anyway.
+- **PVCs themselves:** **not** covered by Velero — `kubernetes/apps/velero/schedules/schedule-daily.yaml`'s `includedNamespaces` lists `nextcloud`, `paperless`, `open-webui`, `hermes-agent`, `immich`, `mail`; `database` is deliberately absent since Postgres data is already covered by barman-cloud and a filesystem-level snapshot of a running cluster's PVCs wouldn't be consistent anyway. (`mail` being in Velero's scope covers Mailu's Maildir volume, not the `mailudb`/`roundcubedb` databases documented here — those two backup paths are independent.)
 
 ## Known quirks
 - **Managed-role secrets need both `username` and `password` keys, and the `Secret.type` is immutable.** CNPG 0.29.0 silently fails to reconcile a managed role if its `passwordSecret` is missing `username` (`Cluster.status.managedRolesStatus.cannotReconcile`), and once a role's Secret is created, its `.type` can't be flipped between `Opaque` and `kubernetes.io/basic-auth` — ESO errors on the update. Every `databases/externalsecret-*.yaml` sets `username` explicitly for this reason; several carry an inline `# CNPG managed roles require both username and password keys` comment as a result. Recorded from an earlier debugging session, not re-verified live for this doc.
