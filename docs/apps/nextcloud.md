@@ -1,7 +1,7 @@
 # Nextcloud
 
 > **Namespace**  nextcloud
-> **Source**     `nextcloud` HelmRepository, chart `nextcloud` v9.2.5 (`kubernetes/apps/nextcloud/nextcloud/app/helmrelease.yaml`, `helmrepository.yaml`)
+> **Source**     `nextcloud` HelmRepository, chart `nextcloud` v9.2.6 (`kubernetes/apps/nextcloud/nextcloud/app/helmrelease.yaml`, `helmrepository.yaml`), image `docker.io/library/nextcloud:34.0.3-fpm-alpine`
 > **Hostname**   `cloud.${SECRET_DOMAIN}` (public via `envoy-external`, and internally via `envoy-internal` — see Routing)
 
 ## What it does here
