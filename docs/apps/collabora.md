@@ -1,7 +1,7 @@
 # Collabora
 
 > **Namespace**  nextcloud
-> **Source**     `app-template` chart v5.0.1 via OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/nextcloud/collabora/app/ocirepository.yaml`, `helmrelease.yaml`) — wraps the `collabora/code` and `collabora/languagetool` container images, not a dedicated Collabora Helm chart
+> **Source**     `app-template` chart v5.1.0 via OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/nextcloud/collabora/app/ocirepository.yaml`, `helmrelease.yaml`) — wraps the `collabora/code` and `collabora/languagetool` container images, not a dedicated Collabora Helm chart
 > **Hostname**   `collabora.${SECRET_DOMAIN}` (public, via `envoy-external`)
 
 ## What it does here
@@ -14,7 +14,7 @@ WOPI-protocol Office document editing/rendering backend for Nextcloud's `richdoc
 ## Repo layout
 | File | Purpose |
 | --- | --- |
-| `kubernetes/apps/nextcloud/collabora/app/ocirepository.yaml` | Chart source: `app-template` v5.0.1 |
+| `kubernetes/apps/nextcloud/collabora/app/ocirepository.yaml` | Chart source: `app-template` v5.1.0 |
 | `kubernetes/apps/nextcloud/collabora/app/helmrelease.yaml` | `collabora/code` + `collabora/languagetool` image tags, env, probes, resources |
 | `kubernetes/apps/nextcloud/collabora/app/externalsecret.yaml` | Basic-auth credentials for the Collabora container |
 | `kubernetes/apps/nextcloud/collabora/app/httproute.yaml` | Public route via `envoy-external`, backend `collabora-app:9980` |
