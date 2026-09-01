@@ -1,7 +1,7 @@
 # flux-operator-mcp
 
 > **Namespace**  flux-system
-> **Source**     OCI Helm chart `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator-mcp`, tag `0.57.0` (`kubernetes/apps/flux-system/flux-operator-mcp/app/ocirepository.yaml`)
+> **Source**     OCI Helm chart `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator-mcp`, tag `0.58.1` (`kubernetes/apps/flux-system/flux-operator-mcp/app/ocirepository.yaml`)
 > **Hostname**   none — internal-only, no HTTPRoute; reached at `flux-operator-mcp.flux-system.svc.cluster.local:9090`
 
 ## What it does here
@@ -18,7 +18,7 @@ It was built as one of several MCP backends for OpenClaw, the cluster's original
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/flux-system/flux-operator-mcp/ks.yaml` | Flux Kustomization; `dependsOn: flux-instance`, `targetNamespace: flux-system` |
-| `kubernetes/apps/flux-system/flux-operator-mcp/app/ocirepository.yaml` | Chart source: `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator-mcp`, tag `0.57.0` |
+| `kubernetes/apps/flux-system/flux-operator-mcp/app/ocirepository.yaml` | Chart source: `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator-mcp`, tag `0.58.1` |
 | `kubernetes/apps/flux-system/flux-operator-mcp/app/helmrelease.yaml` | `transport: http`, `readonly: true`, `rbac.create: false`, `networkPolicy.create: false` |
 | `kubernetes/apps/flux-system/flux-operator-mcp/app/rbac.yaml` | Binds the chart's ServiceAccount to the built-in `view` ClusterRole (overrides chart's default cluster-admin) |
 | `kubernetes/apps/flux-system/flux-operator-mcp/app/ciliumnetworkpolicy.yaml` | Ingress/egress policy — see Routing & access |
