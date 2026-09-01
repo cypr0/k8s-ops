@@ -1,7 +1,7 @@
 # external-secrets
 
 > **Namespace**  security
-> **Source**     OCI chart `oci://ghcr.io/external-secrets/charts/external-secrets`, tag `2.8.0` — `kubernetes/apps/security/external-secrets/app/ocirepository.yaml`
+> **Source**     OCI chart `oci://ghcr.io/external-secrets/charts/external-secrets`, tag `2.10.0` — `kubernetes/apps/security/external-secrets/app/ocirepository.yaml`
 > **Hostname**   none — internal controller/operator only, not exposed via any Gateway/HTTPRoute
 
 ## What it does here
@@ -16,7 +16,7 @@ The External Secrets Operator (ESO) is the mechanism by which every `ExternalSec
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/security/external-secrets/ks.yaml` | Two Flux Kustomizations: `external-secrets` (the controller, path `app/`) and `external-secrets-stores` (the `ClusterSecretStore`, path `stores/`), wired with explicit `dependsOn` |
-| `kubernetes/apps/security/external-secrets/app/ocirepository.yaml` | Chart source — OCI ref, currently pinned to tag `2.8.0` |
+| `kubernetes/apps/security/external-secrets/app/ocirepository.yaml` | Chart source — OCI ref, currently pinned to tag `2.10.0` |
 | `kubernetes/apps/security/external-secrets/app/helmrelease.yaml` | HelmRelease; `chartRef` points at the OCIRepository above, values sourced from a generated ConfigMap |
 | `kubernetes/apps/security/external-secrets/app/helm/values.yaml` | All Helm values (resources, security contexts, autoscaling, monitoring) — folded into a ConfigMap by `kustomization.yaml`'s `configMapGenerator` |
 | `kubernetes/apps/security/external-secrets/app/ciliumnetworkpolicy.yaml` | Three separate `CiliumNetworkPolicy` objects — main controller, cert-controller, webhook |
@@ -51,7 +51,7 @@ Stateless — no PVC in this app's directory. All persisted state is either in 1
 - Pause reconciliation: `flux suspend kustomization external-secrets -n security` / `flux suspend kustomization external-secrets-stores -n security` / `flux suspend helmrelease external-secrets -n security`.
 
 ## TODOs / unknowns
-- `refreshInterval`/poll behavior for the `ClusterSecretStore` and individual `ExternalSecret`s is left at chart/CRD defaults for v2.8.0 — not overridden in `values.yaml`.
+- `refreshInterval`/poll behavior for the `ClusterSecretStore` and individual `ExternalSecret`s is left at chart/CRD defaults for v2.10.0 — not overridden in `values.yaml`.
 - Only one 1Password vault is wired up (`vaults: {Kubernetes: 1}`) — unclear whether additional vaults are planned or intentionally out of scope.
 
 ---
