@@ -1,7 +1,7 @@
 # ClamAV
 
 > **Namespace**  nextcloud
-> **Source**     `app-template` OCIRepository v5.0.1 (`kubernetes/apps/nextcloud/clamav/app/ocirepository.yaml`), chart-templated `clamav/clamav:1.5.4` image (`kubernetes/apps/nextcloud/clamav/app/helmrelease.yaml`)
+> **Source**     `app-template` OCIRepository v5.1.0 (`kubernetes/apps/nextcloud/clamav/app/ocirepository.yaml`), chart-templated `clamav/clamav:1.5.4` image (`kubernetes/apps/nextcloud/clamav/app/helmrelease.yaml`)
 > **Hostname**   none — internal only, `clamav.nextcloud.svc.cluster.local:3310`
 
 ## What it does here
@@ -15,7 +15,7 @@ Runs `clamd` as a daemon that Nextcloud's `files_antivirus` app calls synchronou
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/nextcloud/clamav/ks.yaml` | Flux Kustomization — `dependsOn: csi-driver-nfs`, 1h reconcile interval |
-| `kubernetes/apps/nextcloud/clamav/app/ocirepository.yaml` | Pins the `bjw-s-labs/app-template` chart (v5.0.1) used to render the workload |
+| `kubernetes/apps/nextcloud/clamav/app/ocirepository.yaml` | Pins the `bjw-s-labs/app-template` chart (v5.1.0) used to render the workload |
 | `kubernetes/apps/nextcloud/clamav/app/helmrelease.yaml` | Container image/tag, resources, probes, service, persistence — no chart-native ClamAV values, everything is app-template's generic `controllers`/`persistence` schema |
 | `kubernetes/apps/nextcloud/clamav/app/ciliumnetworkpolicy.yaml` | Ingress: `nextcloud` namespace → `:3310` only. Egress: DNS + world on 80/443 (freshclam) |
 | `kubernetes/apps/nextcloud/clamav/app/kustomization.yaml` | Wires the three resources above, sets `namespace: nextcloud` |
