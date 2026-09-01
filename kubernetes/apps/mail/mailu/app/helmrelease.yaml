@@ -20,29 +20,6 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
-  # Patches the rendered mailu-webdav Deployment to bind-mount
-  # configmap-radicale-config.yaml over the image's baked-in /radicale.conf
-  # -- the chart has no values for Radicale's [storage] section. See that
-  # ConfigMap's own header comment for why this is needed.
-  postRenderers:
-    - kustomize:
-        patches:
-          - target:
-              kind: Deployment
-              name: mailu-webdav
-            patch: |
-              - op: add
-                path: /spec/template/spec/volumes/-
-                value:
-                  name: radicale-config
-                  configMap:
-                    name: mailu-radicale-config
-              - op: add
-                path: /spec/template/spec/containers/0/volumeMounts/-
-                value:
-                  name: radicale-config
-                  mountPath: /radicale.conf
-                  subPath: radicale.conf
   values:
     # NOT wiring up Reloader (kube-system/reloader) here: this chart's only
     # blanket annotation knob is `commonAnnotations`, which — unlike other
