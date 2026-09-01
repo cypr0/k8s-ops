@@ -1,7 +1,7 @@
 # Metrics Server
 
 > **Namespace**  kube-system
-> **Source**     `metrics-server` chart via OCIRepository `oci://ghcr.io/home-operations/charts-mirror/metrics-server`, tag `3.13.1` (`kubernetes/apps/kube-system/metrics-server/app/ocirepository.yaml`)
+> **Source**     `metrics-server` chart via OCIRepository `oci://ghcr.io/home-operations/charts-mirror/metrics-server`, tag `3.14.0` (`kubernetes/apps/kube-system/metrics-server/app/ocirepository.yaml`)
 > **Hostname**   none — cluster-internal only, no HTTPRoute
 
 ## What it does here
@@ -15,7 +15,7 @@ Aggregates live CPU/memory usage from every node's kubelet and exposes it via th
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/kube-system/metrics-server/ks.yaml` | Flux Kustomization, 1h reconcile interval |
-| `kubernetes/apps/kube-system/metrics-server/app/ocirepository.yaml` | Chart source: OCI mirror, pinned tag `3.13.1` |
+| `kubernetes/apps/kube-system/metrics-server/app/ocirepository.yaml` | Chart source: OCI mirror, pinned tag `3.14.0` |
 | `kubernetes/apps/kube-system/metrics-server/app/helmrelease.yaml` | kubelet args, resources, security contexts |
 | `kubernetes/apps/kube-system/metrics-server/app/ciliumnetworkpolicy.yaml` | Ingress from apiserver + Prometheus, egress to kubelets/DNS/apiserver |
 
@@ -31,10 +31,10 @@ Not exposed via Gateway/HTTPRoute — cluster-internal only. The `CiliumNetworkP
 None — stateless, in-memory metrics cache only (last scrape interval per node, nothing persisted). No PVC, not part of any Velero/Kopia backup schedule, and doesn't need to be.
 
 ## Known quirks
-- **`--kubelet-insecure-tls` is set** (`helmrelease.yaml:13`) — metrics-server does not validate kubelet serving certificates against a trusted CA before scraping. This is a deliberate repo choice, not a chart default (chart v3.13.1's `defaultArgs` do not include it — verified via `helm pull oci://ghcr.io/home-operations/charts-mirror/metrics-server --version 3.13.1`).
+- **`--kubelet-insecure-tls` is set** (`helmrelease.yaml:13`) — metrics-server does not validate kubelet serving certificates against a trusted CA before scraping. This is a deliberate repo choice, not a chart default (chart v3.13.1's `defaultArgs` did not include it — verified via `helm pull oci://ghcr.io/home-operations/charts-mirror/metrics-server --version 3.13.1`; chart is now pinned to `3.14.0`, not re-verified against that version for this pass).
 - **`--metric-resolution=10s`** (`helmrelease.yaml:16`) overrides the chart's own default of `15s`, for a slightly snappier feed into the HPA controller's polling loop.
 - **Duplicated args, harmless.** `helmrelease.yaml`'s `args:` list restates `--kubelet-preferred-address-types=...` and `--kubelet-use-node-status-port`, both of which are already in the chart's `defaultArgs`. The chart's Deployment template renders `defaultArgs` and `args` as two separate, concatenated ranges (confirmed in the chart's `templates/deployment.yaml`), so both end up on the container's command line twice. Cosmetic only — not a bug, just redundant.
-- **`containerSecurityContext` key is very likely a no-op.** `helmrelease.yaml:34-38` sets a top-level `containerSecurityContext` value, but chart v3.13.1's Deployment template only reads `.Values.podSecurityContext` (pod-level) and `.Values.securityContext` (container-level) — there is no `containerSecurityContext` key anywhere in the chart's templates. Practically harmless *today* only because the chart's own default `securityContext` already sets the same hardening (`allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `runAsNonRoot: true`, `runAsUser: 1000`, `capabilities.drop: [ALL]`) — so the container ends up hardened by coincidence, not by this override. If the chart's default ever changes, this block would silently stop taking effect. Not fixed here per the campaign's no-inline-fixes rule — flagged for a follow-up (rename to `securityContext` in `helmrelease.yaml`).
+- **`containerSecurityContext` key is very likely a no-op.** `helmrelease.yaml:34-38` sets a top-level `containerSecurityContext` value, but chart v3.13.1's Deployment template only read `.Values.podSecurityContext` (pod-level) and `.Values.securityContext` (container-level) — there was no `containerSecurityContext` key anywhere in the chart's templates at that version (chart is now `3.14.0`, not re-verified against that version for this pass). Practically harmless *today* only because the chart's own default `securityContext` already sets the same hardening (`allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `runAsNonRoot: true`, `runAsUser: 1000`, `capabilities.drop: [ALL]`) — so the container ends up hardened by coincidence, not by this override. If the chart's default ever changes, this block would silently stop taking effect. Not fixed here per the campaign's no-inline-fixes rule — flagged for a follow-up (rename to `securityContext` in `helmrelease.yaml`).
 
 ## Common operations
 - Upgrade chart version: bump `tag` in `kubernetes/apps/kube-system/metrics-server/app/ocirepository.yaml`, commit, push — the `OCIRepository` polls every `15m`, the `HelmRelease` reconciles hourly, or force both with `flux reconcile helmrelease metrics-server -n kube-system`.
