@@ -1,7 +1,7 @@
 # Open WebUI
 
 > **Namespace**  `open-webui`
-> **Source**     `oci://ghcr.io/bjw-s-labs/helm/app-template` (chart `app-template` v5.0.1) + image `ghcr.io/open-webui/open-webui:v0.11.0`
+> **Source**     `oci://ghcr.io/bjw-s-labs/helm/app-template` (chart `app-template` v5.1.0) + image `ghcr.io/open-webui/open-webui:v0.11.0`
 > **Hostname**   `ai.${SECRET_DOMAIN}` — internal-only (see [Routing & access](#routing--access))
 
 ## What it does here
@@ -23,7 +23,7 @@ The cluster's chat UI in front of OpenRouter-hosted LLMs, with OIDC SSO via Auth
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/open-webui/open-webui/app/helmrelease.yaml` | app-template chart values: image, env, probes, service, persistence |
-| `kubernetes/apps/open-webui/open-webui/app/ocirepository.yaml` | `app-template` chart source (OCI, v5.0.1) |
+| `kubernetes/apps/open-webui/open-webui/app/ocirepository.yaml` | `app-template` chart source (OCI, v5.1.0) |
 | `kubernetes/apps/open-webui/open-webui/app/externalsecret.yaml` | Core secret: DB/pgvector URLs, Dragonfly URL, OpenRouter key, OIDC client id/secret, WebUI secret key |
 | `kubernetes/apps/open-webui/open-webui/app/externalsecret-paperless-token.yaml` | Paperless API token for the `paperless_full` Tool |
 | `kubernetes/apps/open-webui/open-webui/app/externalsecret-nextcloud-token.yaml` | Nextcloud admin credentials for the `nextcloud_full` Tool |
