@@ -1,7 +1,7 @@
 # Falco & Falcosidekick
 
 > **Namespace**  `falco` (the Flux Kustomization lives under `kubernetes/apps/security/falco/` for repo organization, but `targetNamespace: falco` — `kubernetes/apps/security/falco/ks.yaml:6-27`)
-> **Source**     `falcosecurity` HelmRepository (`kubernetes/apps/security/falco/app/helmrepository.yaml`) — two charts from one Kustomization: `falco` v9.0.0 and `falcosidekick` v0.13.1
+> **Source**     `falcosecurity` HelmRepository (`kubernetes/apps/security/falco/app/helmrepository.yaml`) — two charts from one Kustomization: `falco` v9.1.0 and `falcosidekick` v0.14.0
 > **Hostname**   none — no HTTPRoute; both components are internal-only, reached via ClusterIP/eBPF, not the ingress path
 
 ## What it does here
