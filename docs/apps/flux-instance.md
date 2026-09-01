@@ -1,7 +1,7 @@
 # Flux Instance
 
 > **Namespace**  flux-system
-> **Source**     `flux-instance` OCIRepository, chart `flux-instance` v0.57.0, `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-instance` (`kubernetes/apps/flux-system/flux-instance/app/ocirepository.yaml`)
+> **Source**     `flux-instance` OCIRepository, chart `flux-instance` v0.58.1, `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-instance` (`kubernetes/apps/flux-system/flux-instance/app/ocirepository.yaml`)
 > **Hostname**   `flux-webhook.${SECRET_DOMAIN}` — GitHub webhook receiver only; no UI/API surface of its own
 
 ## What it does here
@@ -15,7 +15,7 @@ Declares and configures the actual Flux GitOps reconciliation engine for this cl
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/flux-system/flux-instance/ks.yaml` | Kustomization wiring; `dependsOn: flux-operator`, `wait: false` |
-| `kubernetes/apps/flux-system/flux-instance/app/ocirepository.yaml` | Pins the `flux-instance` chart to tag `0.57.0` |
+| `kubernetes/apps/flux-system/flux-instance/app/ocirepository.yaml` | Pins the `flux-instance` chart to tag `0.58.1` |
 | `kubernetes/apps/flux-system/flux-instance/app/helmrelease.yaml` | `FluxInstance` spec: which controllers run, the git sync target, and a long list of `kustomize.patches` tuning the controller Deployments |
 | `kubernetes/apps/flux-system/flux-instance/app/secret.sops.yaml` | SOPS-encrypted GitHub webhook validation token |
 | `kubernetes/apps/flux-system/flux-instance/app/httproute.yaml` | Exposes the GitHub webhook receiver externally |
@@ -42,7 +42,7 @@ None. Flux's state is the git repo plus in-cluster CRs — no PVC for this app. 
 - **This app's `ks.yaml` uses `wait: false`**, unlike `flux-operator`'s (`wait: true`) — a deliberate ordering choice given the chicken-and-egg nature of Flux managing its own controllers, but not otherwise explained in-repo.
 
 ## Common operations
-- Upgrade the Flux controller stack: bump `spec.ref.tag` in `app/ocirepository.yaml` (currently `0.57.0`), commit. `OCIRepository` re-fetches within its 15m `interval`; `HelmRelease` reconciles within its 1h `interval`, or force with `flux reconcile helmrelease flux-instance -n flux-system`.
+- Upgrade the Flux controller stack: bump `spec.ref.tag` in `app/ocirepository.yaml` (currently `0.58.1`), commit. `OCIRepository` re-fetches within its 15m `interval`; `HelmRelease` reconciles within its 1h `interval`, or force with `flux reconcile helmrelease flux-instance -n flux-system`.
 - Change which controllers run, or the sync target: edit `instance.components` / `instance.sync` in `helmrelease.yaml`.
 - Force an immediate re-sync from git without waiting on the webhook or interval: `flux reconcile source git flux-system -n flux-system && flux reconcile kustomization flux-system -n flux-system`.
 - Rotate the GitHub webhook validation token: re-encrypt a new value into `app/secret.sops.yaml` with `sops`, commit.
