@@ -1,14 +1,14 @@
 # hermes-agent
 
 > **Namespace**  hermes-agent
-> **Source**     plain manifests, hand-rolled (not the upstream `ultraworkers/hermes-agent-helm-chart` — see Known quirks), image `nousresearch/hermes-agent:v2026.7.7.2` (`kubernetes/apps/hermes-agent/hermes-agent/app/deployment.yaml`)
+> **Source**     plain manifests, hand-rolled (not the upstream `ultraworkers/hermes-agent-helm-chart` — see Known quirks), image `nousresearch/hermes-agent:v2026.8.16.2` (`kubernetes/apps/hermes-agent/hermes-agent/app/deployment.yaml`)
 > **Hostname**   none — ClusterIP only, no external exposure
 
 ## What it does here
 A personal LLM agent (OpenRouter-backed) that runs as a long-lived gateway process with multiple front-ends: Telegram, an in-cluster webhook receiver (currently just Paperless-ngx's "new document" workflow notification), WhatsApp pairing, and scheduled cron scripts (a portfolio price check, a cluster-health check). Not a stateless request/response service — `HERMES_HOME` (`/opt/data`) holds mutable state (config, WhatsApp session, agent memory) that must survive pod restarts, which shapes most of this app's operational quirks below.
 
 ## Architecture at a glance
-- **Depends on:** OpenRouter (LLM API), CNPG postgres `portfolio` database (own local secret copy — see Secrets), Telegram Bot API, the in-cluster webhook caller (Paperless-ngx), read-only Kubernetes API access (own ServiceAccount/RBAC, `rbac.yaml`) for its agent "terminal" tool.
+- **Depends on:** OpenRouter (LLM API), CNPG postgres `portfolio` database (own local secret copy — see Secrets), Telegram Bot API, the in-cluster webhook caller (Paperless-ngx), read-only Kubernetes API access (own ServiceAccount/RBAC, `rbac.yaml`) for its agent "terminal" tool, self-hosted Firecrawl (`kubernetes/apps/hermes-agent/firecrawl/`) as its web-scraping backend, and three sibling MCP tool servers reached over plain HTTP inside the namespace (`configmap.yaml`): `paperless-mcp.hermes-agent.svc.cluster.local:8000`, `nextcloud-mcp.hermes-agent.svc.cluster.local:8000`, and `sogo-mcp.hermes-agent.svc.cluster.local:8000` — see `docs/apps/paperless-mcp.md`, `docs/apps/nextcloud-mcp.md`, and `docs/apps/sogo-mcp.md` for each.
 - **Depended on by:** Paperless-ngx's document-consumption workflow (webhook push, one-directional — Paperless doesn't wait on a response).
 
 ## Repo layout
