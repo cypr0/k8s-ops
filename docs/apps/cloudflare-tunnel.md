@@ -1,7 +1,7 @@
 # Cloudflare Tunnel
 
 > **Namespace**  network
-> **Source**     `bjw-s-labs/helm/app-template` (OCI, `oci://ghcr.io/bjw-s-labs/helm/app-template`, tag `5.0.1`) — `kubernetes/apps/network/cloudflare-tunnel/app/ocirepository.yaml`; runs `docker.io/cloudflare/cloudflared:2026.7.3`
+> **Source**     `bjw-s-labs/helm/app-template` (OCI, `oci://ghcr.io/bjw-s-labs/helm/app-template`, tag `5.1.0`) — `kubernetes/apps/network/cloudflare-tunnel/app/ocirepository.yaml`; runs `docker.io/cloudflare/cloudflared:2026.7.3`
 > **Hostname**   `*.${SECRET_DOMAIN}`, `external.${SECRET_DOMAIN}`, `${SECRET_SECOND_DOMAIN}`, `www.${SECRET_SECOND_DOMAIN}`
 
 ## What it does here
@@ -19,7 +19,7 @@ This is the cluster's only public inbound path. `cloudflared` opens an outbound-
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/network/cloudflare-tunnel/app/helmrelease.yaml` | Chart values: cloudflared image/args, probes, security context, the `config.yaml` ingress-mapping ConfigMap |
-| `kubernetes/apps/network/cloudflare-tunnel/app/ocirepository.yaml` | Chart source: `app-template` 5.0.1 from `ghcr.io/bjw-s-labs/helm/app-template` |
+| `kubernetes/apps/network/cloudflare-tunnel/app/ocirepository.yaml` | Chart source: `app-template` 5.1.0 from `ghcr.io/bjw-s-labs/helm/app-template` |
 | `kubernetes/apps/network/cloudflare-tunnel/app/secret.sops.yaml` | SOPS(age)-encrypted `Secret` holding `TUNNEL_TOKEN` |
 | `kubernetes/apps/network/cloudflare-tunnel/app/dnsendpoint.yaml` | `DNSEndpoint` CRD: CNAME for `external.${SECRET_DOMAIN}` to this tunnel's Cloudflare target |
 | `kubernetes/apps/network/cloudflare-tunnel/app/ciliumnetworkpolicy.yaml` | Egress-only policy: DNS, Cloudflare edge, `envoy-external` — nothing else |
