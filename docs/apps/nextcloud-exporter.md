@@ -1,7 +1,7 @@
 # nextcloud-exporter
 
 > **Namespace**  nextcloud
-> **Source**     `bjw-s-labs/app-template` chart v5.0.1 via `OCIRepository` (`kubernetes/apps/nextcloud/nextcloud-exporter/app/ocirepository.yaml`) for the Deployment; the CronJob component is a plain manifest, no chart
+> **Source**     `bjw-s-labs/app-template` chart v5.1.0 via `OCIRepository` (`kubernetes/apps/nextcloud/nextcloud-exporter/app/ocirepository.yaml`) for the Deployment; the CronJob component is a plain manifest, no chart
 > **Hostname**   none — internal-only, no HTTPRoute in this app's directory
 
 ## What it does here
@@ -16,7 +16,7 @@ Two independent metrics pipelines for Nextcloud's `serverinfo` API, bundled unde
 ## Repo layout
 | File | Purpose |
 | --- | --- |
-| `kubernetes/apps/nextcloud/nextcloud-exporter/app/ocirepository.yaml` | Pins `app-template` chart to v5.0.1 |
+| `kubernetes/apps/nextcloud/nextcloud-exporter/app/ocirepository.yaml` | Pins `app-template` chart to v5.1.0 |
 | `kubernetes/apps/nextcloud/nextcloud-exporter/app/helmrelease.yaml` | `nextcloud-exporter` Deployment: image, env, probes, resources |
 | `kubernetes/apps/nextcloud/nextcloud-exporter/app/servicemonitor.yaml` | Prometheus scrape config for the Deployment |
 | `kubernetes/apps/nextcloud/nextcloud-exporter/app/ciliumnetworkpolicy.yaml` | Network policy for the Deployment |
