@@ -1,7 +1,7 @@
 # Tika (Paperless)
 
 > **Namespace**  paperless
-> **Source**     `apache/tika` image (`3.3.1.0-full`) deployed via the `app-template` chart (bjw-s-labs, OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template`, tag `5.0.1`) — `kubernetes/apps/paperless/tika/app/ocirepository.yaml`, `kubernetes/apps/paperless/tika/app/helmrelease.yaml`
+> **Source**     `apache/tika` image (`3.3.1.0-full`) deployed via the `app-template` chart (bjw-s-labs, OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template`, tag `5.1.0`) — `kubernetes/apps/paperless/tika/app/ocirepository.yaml`, `kubernetes/apps/paperless/tika/app/helmrelease.yaml`
 > **Hostname**   None — internal-only, reached at `tika-http.paperless.svc.cluster.local:9998`
 
 ## What it does here
@@ -15,7 +15,7 @@ Apache Tika content-detection/text-extraction backend for Paperless-ngx's docume
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/paperless/tika/app/helmrelease.yaml` | Chart ref, image tag, resources, security context, service, `/tmp` emptyDir mount |
-| `kubernetes/apps/paperless/tika/app/ocirepository.yaml` | `app-template` chart source (OCI, tag `5.0.1`) |
+| `kubernetes/apps/paperless/tika/app/ocirepository.yaml` | `app-template` chart source (OCI, tag `5.1.0`) |
 | `kubernetes/apps/paperless/tika/app/kustomization.yaml` | Wires the two resources above, sets namespace `paperless` |
 | `kubernetes/apps/paperless/tika/ks.yaml` | Flux `Kustomization` — 1h interval, `prune: true`, targets `paperless` namespace |
 
