@@ -1,7 +1,7 @@
 # Tika (open-webui)
 
 > **Namespace**  open-webui
-> **Source**     `oci://ghcr.io/bjw-s-labs/helm/app-template` (v5.0.1), image `apache/tika:3.3.1.0-full`
+> **Source**     `oci://ghcr.io/bjw-s-labs/helm/app-template` (v5.1.0), image `apache/tika:3.3.1.0-full`
 > **Hostname**   none — internal-only, `tika.open-webui.svc.cluster.local:9998`
 
 ## What it does here
@@ -15,7 +15,7 @@ Dedicated document text-extraction backend for Open WebUI's RAG/file-upload pipe
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/open-webui/tika/app/helmrelease.yaml` | app-template chart values: image, resources, probes, security context, emptyDir mount |
-| `kubernetes/apps/open-webui/tika/app/ocirepository.yaml` | Pins `app-template` chart to `5.0.1` |
+| `kubernetes/apps/open-webui/tika/app/ocirepository.yaml` | Pins `app-template` chart to `5.1.0` |
 | `kubernetes/apps/open-webui/tika/app/kustomization.yaml` | Wires the two resources above, sets `namespace: open-webui` |
 | `kubernetes/apps/open-webui/tika/ks.yaml` | Flux Kustomization — 1h interval, no `dependsOn` |
 | `kubernetes/apps/open-webui/open-webui/app/ciliumnetworkpolicy.yaml` | Contains **this app's** CiliumNetworkPolicy (named `tika`), defined alongside open-webui's rather than in tika's own directory |
