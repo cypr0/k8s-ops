@@ -35,7 +35,7 @@ A standalone MCP (Model Context Protocol) server that gives `hermes-agent` (and 
 - No SSO — no user-facing UI to gate.
 
 ## Storage
-None — no PVC. All volumes are ephemeral `emptyDir` (`pylibs` for the pip-installed MCP SDK, `tmp`, and `app-src` mounted from the `nextcloud-mcp-src` ConfigMap). Dependencies are re-fetched from PyPI on every pod restart — an accepted ephemeral-dependency tradeoff, the same pattern `hermes-agent`'s own `tools-install` init container uses.
+None — no PVC. All volumes are ephemeral `emptyDir` (`pylibs` for the pip-installed MCP SDK, `tmp`, and `app-src` mounted from the `nextcloud-mcp-src` ConfigMap). Dependencies are re-fetched from PyPI on every pod restart — an accepted ephemeral-dependency tradeoff, the same pattern `hermes-agent`'s own `tools-install` init container uses. Since `hermes-agent` (the namespace) is in Velero's GFS backup schedules, `pylibs`/`tmp` are explicitly excluded from fs-backup via `backup.velero.io/backup-volumes-excludes: pylibs,tmp` (`deployment.yaml`) — nothing in them is worth backing up given the pod re-fetches on every restart anyway.
 
 ## Known quirks
 - **Full-admin blast radius, shared across three copies of the same credential.** This app, `kubernetes/apps/nextcloud/nextcloud/`, and Open WebUI's `nextcloud_full` Tool all authenticate as the same real Nextcloud admin account from the same 1Password item — a deliberate choice (over a dedicated restricted account) documented in `nextcloud_full.py`'s docstring, reconsider if this tool's blast radius ever needs to shrink.
