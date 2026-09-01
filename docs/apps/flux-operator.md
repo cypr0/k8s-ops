@@ -1,7 +1,7 @@
 # flux-operator
 
 > **Namespace**  flux-system
-> **Source**     `flux-operator` OCIRepository, chart `flux-operator` at `ghcr.io/controlplaneio-fluxcd/charts/flux-operator:0.57.0` (`kubernetes/apps/flux-system/flux-operator/app/ocirepository.yaml`)
+> **Source**     `flux-operator` OCIRepository, chart `flux-operator` at `ghcr.io/controlplaneio-fluxcd/charts/flux-operator:0.58.1` (`kubernetes/apps/flux-system/flux-operator/app/ocirepository.yaml`)
 > **Hostname**   none — no ingress, not exposed via Gateway/HTTPRoute
 
 ## What it does here
@@ -16,7 +16,7 @@ The operator that installs and upgrades the actual Flux controllers (source-cont
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/flux-system/flux-operator/app/helmrelease.yaml` | Chart install via `chartRef` (OCIRepository-sourced, not a HelmRepository); only override is `serviceMonitor.create: true` |
-| `kubernetes/apps/flux-system/flux-operator/app/ocirepository.yaml` | Pins chart version `0.57.0` from `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator` |
+| `kubernetes/apps/flux-system/flux-operator/app/ocirepository.yaml` | Pins chart version `0.58.1` from `oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator` |
 | `kubernetes/apps/flux-system/flux-operator/app/ciliumnetworkpolicy.yaml` | Network policy — see Routing & access |
 | `kubernetes/apps/flux-system/flux-operator/app/kustomization.yaml` | Bundles the three files above |
 | `kubernetes/apps/flux-system/flux-operator/ks.yaml` | Flux Kustomization — `targetNamespace: flux-system`, `wait: true`, 1h interval |
@@ -34,7 +34,7 @@ None — no PVCs.
 
 ## Known quirks
 - The HelmRelease uses `chartRef` against an `OCIRepository`, not the more common `HelmRepository` + `chart` pairing — consistent across all three apps in this namespace (`flux-instance`, `flux-operator`, `flux-operator-mcp`), all sourced straight from GHCR OCI artifacts rather than a Helm repo index.
-- Chart version bumps in this file have so far all been mechanical, one-line dependency-bot-style commits (`git log --oneline -- kubernetes/apps/flux-system/flux-operator/`: `0.50.0 → 0.52.0 → 0.54.1 → 0.57.0`) with no accompanying values changes — no bump has needed a values migration yet, but that's a track record, not a guarantee for the next one.
+- Chart version bumps in this file have so far all been mechanical, one-line dependency-bot-style commits (`git log --oneline -- kubernetes/apps/flux-system/flux-operator/`: `0.50.0 → 0.52.0 → 0.54.1 → 0.57.0 → 0.58.0 → 0.58.1`) with no accompanying values changes — no bump has needed a values migration yet, but that's a track record, not a guarantee for the next one.
 
 ## Common operations
 - Upgrade chart version: edit `kubernetes/apps/flux-system/flux-operator/app/ocirepository.yaml` (`spec.ref.tag`), commit, push, Flux reconciles within the 1h interval (or force with `flux reconcile helmrelease flux-operator -n flux-system`).
