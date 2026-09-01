@@ -1,7 +1,7 @@
 # Whiteboard
 
 > **Namespace**  nextcloud
-> **Source**     `app-template` chart v5.0.1 via OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/nextcloud/whiteboard/app/ocirepository.yaml`, `helmrelease.yaml`) — wraps the `ghcr.io/nextcloud-releases/whiteboard:v1.5.9` image, not a dedicated Whiteboard Helm chart
+> **Source**     `app-template` chart v5.1.0 via OCIRepository `oci://ghcr.io/bjw-s-labs/helm/app-template` (`kubernetes/apps/nextcloud/whiteboard/app/ocirepository.yaml`, `helmrelease.yaml`) — wraps the `ghcr.io/nextcloud-releases/whiteboard:v1.5.9` image, not a dedicated Whiteboard Helm chart
 > **Hostname**   `cloud.${SECRET_DOMAIN}/whiteboard` (path-based, on the same hostname/gateway as Nextcloud itself, not its own subdomain — see Routing)
 
 ## What it does here
@@ -14,7 +14,7 @@ Real-time collaborative-drawing backend for Nextcloud's `whiteboard` app — a s
 ## Repo layout
 | File | Purpose |
 | --- | --- |
-| `kubernetes/apps/nextcloud/whiteboard/app/ocirepository.yaml` | Chart source: `app-template` v5.0.1 |
+| `kubernetes/apps/nextcloud/whiteboard/app/ocirepository.yaml` | Chart source: `app-template` v5.1.0 |
 | `kubernetes/apps/nextcloud/whiteboard/app/helmrelease.yaml` | Single `whiteboard` controller: image tag, env, resources, Service |
 | `kubernetes/apps/nextcloud/whiteboard/app/externalsecret.yaml` | JWT secret + Redis URL, sourced from two 1Password items |
 | `kubernetes/apps/nextcloud/whiteboard/app/httproute.yaml` | Path-based route on Nextcloud's own hostname (see Routing) |
