@@ -51,7 +51,7 @@ spec:
           # password/API-key auth paths don't work here). Keep this tag in
           # sync with the open-webui HelmRelease
           # (kubernetes/apps/open-webui/open-webui/app/helmrelease.yaml).
-          image: ghcr.io/open-webui/open-webui:v0.11.1
+          image: ghcr.io/open-webui/open-webui:v0.11.3
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
