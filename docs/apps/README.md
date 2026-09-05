@@ -57,6 +57,7 @@ check here before assuming a gap means "not interesting."
 | OpenSearch Operator | logging | [opensearch-operator.md](opensearch-operator.md) |
 | paperless-mcp | hermes-agent | [paperless-mcp.md](paperless-mcp.md) |
 | paperless-ngx | paperless | [paperless-ngx.md](paperless-ngx.md) |
+| philipp-rosch-site | portfolio | [philipp-rosch-site.md](philipp-rosch-site.md) |
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
 | Proxmox Ansible | automation | [proxmox-ansible.md](proxmox-ansible.md) |
 | Reloader | kube-system | [reloader.md](reloader.md) |
