@@ -27,7 +27,7 @@ spec:
           app:
             image:
               repository: collabora/code
-              tag: 26.04.3.1.1
+              tag: 26.04.3.2.1
             env:
               - name: username
                 valueFrom:
