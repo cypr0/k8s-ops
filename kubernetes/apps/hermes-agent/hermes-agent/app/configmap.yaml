@@ -229,15 +229,15 @@ data:
                    (auch wenn die Custom Fields bereits vorher korrekt gesetzt waren --
                    das entscheidet NICHT, ob schon ein Kalendertermin existiert):
                    falls faelligkeitsdatum oder kuendigungsfrist_datum erkannt wurden,
-                   lege dafür je einen ganztägigen Termin im "personal"-Kalender an
-                   (sogo-mcp create_event, all_day=true):
+                   lege dafür je einen ganztägigen Termin in Philipps Kalender an
+                   (mailu-mcp create_event, mailbox="philipp", all_day=true):
                    - faelligkeitsdatum: Titel "Fällig: <Dokumenttitel>"
                    - kuendigungsfrist_datum: Titel "Kündigungsfrist: <Dokumenttitel>"
                    Beschreibung jeweils: "Automatisch erstellt aus Paperless-Dokument
                    #{document_id}. Bei Fehlern: Termin einfach löschen, betrifft nicht
                    das Paperless-Dokument." -- das macht Fehlextraktionen leicht
                    erkennbar und risikolos rückgängig zu machen. Entscheidungsregel:
-                   rufe list_events() für genau dieses eine Datum auf -- taucht darin
+                   rufe list_events(mailbox="philipp") für genau dieses eine Datum auf -- taucht darin
                    BEREITS ein Termin mit demselben Titel auf, nichts weiter tun;
                    TAUCHT KEINER AUF (Normalfall, auch wenn die Custom Fields schon
                    vorher gesetzt waren), dann create_event() jetzt aufrufen, nicht
@@ -262,13 +262,15 @@ data:
     # admin/full-access credentials on their own end (see each server's
     # nextcloud_full.py/paperless_full.py module docstring for the exact
     # scope/tradeoffs), so treat every tool call through them with the
-    # same care as a direct API call would deserve. sogo (kubernetes/apps/
-    # hermes-agent/sogo-mcp/) is the same story with the owner's real
-    # Netcup-hosted SOGo calendar/mailbox account.
+    # same care as a direct API call would deserve. mailu (kubernetes/apps/
+    # hermes-agent/mailu-mcp/) is the same story with the owner's and
+    # Ann's real personal Mailu calendar/mailbox accounts (replaces the
+    # former sogo-mcp, which pointed at the same kind of account on
+    # Netcup's now-retired SOGo hosting -- see git history).
     mcp_servers:
       paperless:
         url: "http://paperless-mcp.hermes-agent.svc.cluster.local:8000/mcp"
       nextcloud:
         url: "http://nextcloud-mcp.hermes-agent.svc.cluster.local:8000/mcp"
-      sogo:
-        url: "http://sogo-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+      mailu:
+        url: "http://mailu-mcp.hermes-agent.svc.cluster.local:8000/mcp"

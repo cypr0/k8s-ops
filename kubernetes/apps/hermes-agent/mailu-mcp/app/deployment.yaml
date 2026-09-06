@@ -1,32 +1,35 @@
 ---
-# Standalone MCP (Model Context Protocol) server for the Netcup-hosted
-# SOGo groupware account (see sogo_full.py's module docstring for scope/
-# auth decisions). Built for hermes-agent's remote HTTP MCP client
-# support (kubernetes/apps/hermes-agent/hermes-agent/app/configmap.yaml's
-# mcp_servers section).
+# Standalone MCP (Model Context Protocol) server giving hermes-agent
+# CalDAV calendar + read-only IMAP access to the in-cluster Mailu
+# instance (kubernetes/apps/mail/mailu/), for both the owner's and Ann's
+# personal mailboxes. Replaces the former sogo-mcp (see git history),
+# which pointed at the same kind of account on Netcup's now-retired SOGo
+# hosting -- see mailu_full.py's module docstring for scope/auth
+# decisions.
 #
 # Same "generic base image + ConfigMap script + init-container pip
-# install" pattern as paperless-mcp/nextcloud-mcp -- greenfield app, no
-# CI/registry set up for it. `icalendar` is the one extra dependency
-# those two don't need (for correctly generating/parsing VEVENT bodies
-# rather than hand-rolling iCalendar's line-folding/escaping rules).
+# install" pattern as paperless-mcp/nextcloud-mcp/the former sogo-mcp --
+# greenfield app, no CI/registry set up for it. `icalendar` is the one
+# extra dependency those two don't need (for correctly generating/
+# parsing VEVENT bodies rather than hand-rolling iCalendar's line-
+# folding/escaping rules).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sogo-mcp
+  name: mailu-mcp
   labels:
-    app.kubernetes.io/name: sogo-mcp
+    app.kubernetes.io/name: mailu-mcp
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: sogo-mcp
+      app.kubernetes.io/name: mailu-mcp
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: sogo-mcp
+        app.kubernetes.io/name: mailu-mcp
       annotations:
         # No PVC here at all -- both volumes are plain emptyDirs (pip cache,
         # scratch /tmp). Exclude from Velero's kopia fs-backup (default
@@ -77,9 +80,9 @@ spec:
             - "/app/owui_tool_mcp_bridge.py"
           env:
             - name: TOOL_MODULE_PATH
-              value: /app/sogo_full.py
+              value: /app/mailu_full.py
             - name: MCP_SERVER_NAME
-              value: sogo
+              value: mailu
             - name: MCP_PORT
               value: "8000"
             - name: PYTHONPATH
@@ -88,9 +91,20 @@ spec:
               value: /tmp
             - name: PYTHONUNBUFFERED
               value: "1"
+            # Not secret -- this is the same public hostname Mailu's own
+            # TLS cert covers (certificate.yaml's dnsNames), which CoreDNS
+            # resolves straight to mailu-front's ClusterIP for in-cluster
+            # clients (see mailu's own ciliumnetworkpolicy.yaml comment on
+            # the paperless-ngx rule for the same trick). Using the raw
+            # *.svc.cluster.local name instead would fail TLS hostname
+            # verification, since that name isn't in the cert's SANs.
+            - name: MAILU_HOST
+              value: "mail.${SECRET_DOMAIN}"
+            - name: MAILU_IMAP_PORT
+              value: "993"
           envFrom:
             - secretRef:
-                name: sogo-mcp-secret
+                name: mailu-mcp-secret
           ports:
             - name: http
               containerPort: 8000
@@ -132,4 +146,4 @@ spec:
           emptyDir: {}
         - name: app-src
           configMap:
-            name: sogo-mcp-src
+            name: mailu-mcp-src

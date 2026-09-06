@@ -114,6 +114,21 @@ spec:
         - ports:
             - port: "443"
               protocol: TCP
+    # mailu-mcp (kubernetes/apps/hermes-agent/mailu-mcp/), replacing the
+    # former sogo-mcp: IMAP (read-only mailbox tools) + CalDAV (front's
+    # /webdav/ path, proxying Radicale) for both the owner's and Ann's
+    # mailboxes. Same in-cluster-via-public-hostname reasoning as the
+    # paperless-ngx rule above.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: mailu-mcp
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

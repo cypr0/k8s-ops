@@ -9,13 +9,14 @@ resources:
   - ./ciliumnetworkpolicy.yaml
 
 # Content-hash-suffixed ConfigMap (same rationale as paperless-mcp/
-# nextcloud-mcp): any change to either file changes the ConfigMap name,
-# which changes the Deployment's volume reference, which triggers a real
-# rollout automatically -- no force annotation or manual restart needed.
+# nextcloud-mcp/the former sogo-mcp): any change to either file changes
+# the ConfigMap name, which changes the Deployment's volume reference,
+# which triggers a real rollout automatically -- no force annotation or
+# manual restart needed.
 configMapGenerator:
-  - name: sogo-mcp-src
+  - name: mailu-mcp-src
     files:
-      - sogo_full.py
+      - mailu_full.py
       - owui_tool_mcp_bridge.py
 
 generatorOptions:

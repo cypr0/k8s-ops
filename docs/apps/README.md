@@ -46,6 +46,7 @@ check here before assuming a gap means "not interesting."
 | Kyverno | kyverno | [kyverno.md](kyverno.md) |
 | Loki | monitoring | [loki.md](loki.md) |
 | Mailu | mail | [mailu.md](mailu.md) |
+| mailu-mcp | hermes-agent | [mailu-mcp.md](mailu-mcp.md) |
 | Metrics Server | kube-system | [metrics-server.md](metrics-server.md) |
 | Nextcloud | nextcloud | [nextcloud.md](nextcloud.md) |
 | nextcloud-exporter | nextcloud | [nextcloud-exporter.md](nextcloud-exporter.md) |
@@ -60,7 +61,6 @@ check here before assuming a gap means "not interesting."
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
 | Proxmox Ansible | automation | [proxmox-ansible.md](proxmox-ansible.md) |
 | Reloader | kube-system | [reloader.md](reloader.md) |
-| sogo-mcp | hermes-agent | [sogo-mcp.md](sogo-mcp.md) |
 | Spegel | kube-system | [spegel.md](spegel.md) |
 | Tika (open-webui) | open-webui | [open-webui-tika.md](open-webui-tika.md) |
 | Tika (Paperless) | paperless | [paperless-tika.md](paperless-tika.md) |

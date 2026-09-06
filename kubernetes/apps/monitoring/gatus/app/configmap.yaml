@@ -333,9 +333,9 @@ data:
         alerts:
           - type: pushover
 
-      - name: SOGo MCP
+      - name: Mailu MCP
         group: Hermes Agent
-        url: "tcp://sogo-mcp.hermes-agent.svc.cluster.local:8000"
+        url: "tcp://mailu-mcp.hermes-agent.svc.cluster.local:8000"
         interval: 1m
         conditions:
           - "[CONNECTED] == true"

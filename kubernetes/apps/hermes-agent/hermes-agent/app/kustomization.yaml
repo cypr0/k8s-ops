@@ -13,7 +13,7 @@ resources:
   - ./rbac.yaml
   - ./ciliumnetworkpolicy.yaml
 
-# Content-hash-suffixed, same rationale as firecrawl-mcp/sogo-mcp/
+# Content-hash-suffixed, same rationale as firecrawl-mcp/mailu-mcp/
 # nextcloud-mcp's script ConfigMaps: any change to the actual .py file
 # changes the ConfigMap name, which changes the Deployment's volume
 # reference, which triggers a real rollout automatically -- generating

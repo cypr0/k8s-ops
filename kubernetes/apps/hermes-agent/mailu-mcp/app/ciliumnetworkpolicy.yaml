@@ -2,12 +2,12 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: sogo-mcp
+  name: mailu-mcp
   namespace: hermes-agent
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: sogo-mcp
+      app.kubernetes.io/name: mailu-mcp
   ingress:
     # hermes-agent, as an MCP client (see hermes-agent's configmap.yaml
     # mcp_servers section)
@@ -40,22 +40,25 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # SOGo's CalDAV (HTTPS, SOGO_BASE_URL) + IMAP (SOGO_IMAP_HOST, port
-    # 143/STARTTLS on this Netcup account -- 993/implicit-TLS also opened
-    # in case that's ever switched to) are both external to the cluster
-    # on the owner's Netcup account -- world, not a pinned toFQDNs like
-    # paperless-ngx's own external-IMAP rule uses, because that pattern
-    # needs the hostname in the *cluster's* SOPS secrets to reference via
-    # Flux $${VAR} substitution, and this one only lives in 1Password
-    # (dynamic, not statically known here). Also covers the install-deps
-    # init container's `pip install`.
+    # Mailu (mail.${SECRET_DOMAIN} resolves in-cluster to mailu-front's
+    # ClusterIP, same trick paperless-ngx's own egress rule uses -- see
+    # mailu's own ciliumnetworkpolicy.yaml comment): 993 for IMAP
+    # (read-only mailbox tools), 443 for CalDAV (Radicale, proxied by
+    # front at /webdav/ -- see mailu_full.py's module docstring).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    # pip install (init container) needs PyPI access.
     - toEntities:
         - world
       toPorts:
         - ports:
             - port: "443"
-              protocol: TCP
-            - port: "143"
-              protocol: TCP
-            - port: "993"
               protocol: TCP
