@@ -15,7 +15,7 @@ spec:
       # sourceRef.namespace fix (see git log) let it see authentik updates
       # for the first time. 2026.5.x is the required intermediate release
       # line; bump straight to 2026.8.1 again once this is healthy.
-      version: 2026.5.6
+      version: 2026.8.1
       sourceRef:
         kind: HelmRepository
         name: authentik
