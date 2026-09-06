@@ -141,6 +141,15 @@ spec:
         - ports:
             - port: "9998"
               protocol: TCP
+    # Gatus health check
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "9998"
+              protocol: TCP
   egress:
     # DNS resolution
     - toEndpoints:
