@@ -9,7 +9,13 @@ spec:
   chart:
     spec:
       chart: authentik
-      version: 2026.8.1
+      # Intermediate stop on the way to 2026.8.1: authentik refuses to
+      # migrate directly from 2026.2.3 to 2026.8.1 ("Major version skips
+      # are not allowed") -- Renovate jumped straight there once the
+      # sourceRef.namespace fix (see git log) let it see authentik updates
+      # for the first time. 2026.5.x is the required intermediate release
+      # line; bump straight to 2026.8.1 again once this is healthy.
+      version: 2026.5.6
       sourceRef:
         kind: HelmRepository
         name: authentik
