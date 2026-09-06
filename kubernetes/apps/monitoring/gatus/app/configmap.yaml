@@ -180,3 +180,164 @@ data:
           - "[STATUS] == any(200, 302, 401, 403)"
         alerts:
           - type: pushover
+
+      # ── Apps (continued) ─────────────────────────────────────────────────
+      - name: Immich
+        group: Apps
+        url: "http://immich-immich-server.immich.svc.cluster.local:2283/api/server/ping"
+        interval: 1m
+        # Path is Immich's documented ping endpoint but not curl-verified live
+        # from inside this session -- same caveat as the existing Open WebUI
+        # entry below. Tighten/correct once observed live.
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Mailu (Front)
+        group: Apps
+        url: "tcp://mailu-front.mail.svc.cluster.local:443"
+        interval: 1m
+        # Coarse check only: confirms front's nginx accepts TLS connections,
+        # not that webmail (webmail.${SECRET_DOMAIN}) or admin
+        # (mail.${SECRET_DOMAIN}/admin) actually respond correctly -- both
+        # are Host-header/vhost-routed through this same pod, and a plain
+        # HTTP GET without the matching Host header wouldn't reliably
+        # reflect real app health.
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: Elasticsearch (Nextcloud Search)
+        group: Apps
+        url: "http://elasticsearch.nextcloud.svc.cluster.local:9200/_cluster/health?local=true"
+        interval: 1m
+        # Same path/port as this app's own liveness/readiness probe
+        # (kubernetes/apps/nextcloud/elasticsearch/app/helmrelease.yaml).
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: ClamAV (Nextcloud)
+        group: Apps
+        url: "tcp://clamav.nextcloud.svc.cluster.local:3310"
+        interval: 1m
+        # No HTTP surface at all -- this app's own probes shell out to
+        # `clamdscan --ping 3` rather than a native TCP/HTTP check
+        # (docs/apps/clamav.md). A plain TCP connect only proves the port
+        # accepts connections, not that clamd is actually scanning
+        # correctly.
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: Whiteboard (Nextcloud)
+        group: Apps
+        url: "http://whiteboard.nextcloud.svc.cluster.local:3002/"
+        interval: 1m
+        # UNCONFIRMED health path -- this app's helmrelease defines no probe
+        # block at all, and docs/apps/whiteboard.md explicitly notes it has
+        # no existing monitoring to reference. Guessed root path with
+        # permissive status; verify against a real response before trusting.
+        conditions:
+          - "[STATUS] == any(200, 404)"
+        alerts:
+          - type: pushover
+
+      - name: Tika (Open WebUI)
+        group: Apps
+        url: "http://tika.open-webui.svc.cluster.local:9998/tika"
+        interval: 1m
+        # Apache Tika Server's documented GET /tika version endpoint
+        # (not independently curl-verified live in this session).
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Tika (Paperless)
+        group: Apps
+        url: "http://tika.paperless.svc.cluster.local:9998/tika"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Gotenberg (Paperless)
+        group: Apps
+        url: "http://gotenberg.paperless.svc.cluster.local:3000/health"
+        interval: 1m
+        # docs/apps/gotenberg.md documents a working
+        # `curl -sf http://gotenberg.paperless.svc.cluster.local:3000/health`
+        # check already run against this exact endpoint.
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Open Terminal (Open WebUI)
+        group: Apps
+        url: "tcp://open-terminal.open-webui.svc.cluster.local:8000"
+        interval: 1m
+        # Matches this app's own liveness/readiness probes, which are
+        # tcpSocket-only on this port (no HTTP surface by design).
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      # ── Hermes Agent ─────────────────────────────────────────────────────
+      - name: Hermes Agent (Webhook)
+        group: Hermes Agent
+        url: "tcp://hermes-agent.hermes-agent.svc.cluster.local:8644"
+        interval: 1m
+        # No general-purpose HTTP health path -- the Service only exposes a
+        # specific webhook route (paperless-ngx's "document added" callback),
+        # not a plain health endpoint. TCP connect is the safest check here.
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: Firecrawl (Scrape API)
+        group: Hermes Agent
+        url: "http://firecrawl-api.hermes-agent.svc.cluster.local:3002/v0/health/readiness"
+        interval: 1m
+        # Same path this app's own readiness probe uses.
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Nextcloud MCP
+        group: Hermes Agent
+        url: "tcp://nextcloud-mcp.hermes-agent.svc.cluster.local:8000"
+        interval: 1m
+        # Streamable-HTTP MCP server at /mcp only, not a plain-GET-able
+        # health route. Matches this app's own tcpSocket probes.
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: Paperless MCP
+        group: Hermes Agent
+        url: "tcp://paperless-mcp.hermes-agent.svc.cluster.local:8000"
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      - name: SOGo MCP
+        group: Hermes Agent
+        url: "tcp://sogo-mcp.hermes-agent.svc.cluster.local:8000"
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover

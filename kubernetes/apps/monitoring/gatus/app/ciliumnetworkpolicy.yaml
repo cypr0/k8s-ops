@@ -86,7 +86,8 @@ spec:
               protocol: TCP
             - port: "6379"
               protocol: TCP
-    # Nextcloud namespace health checks (nextcloud, collabora)
+    # Nextcloud namespace health checks (nextcloud, collabora, elasticsearch,
+    # clamav, whiteboard)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": nextcloud
@@ -96,7 +97,13 @@ spec:
               protocol: TCP
             - port: "9980"
               protocol: TCP
-    # Open WebUI namespace health check
+            - port: "9200"
+              protocol: TCP
+            - port: "3310"
+              protocol: TCP
+            - port: "3002"
+              protocol: TCP
+    # Open WebUI namespace health checks (open-webui, tika, open-terminal)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": open-webui
@@ -104,13 +111,49 @@ spec:
         - ports:
             - port: "8090"
               protocol: TCP
-    # Paperless namespace health check (paperless-ngx)
+            - port: "9998"
+              protocol: TCP
+            - port: "8000"
+              protocol: TCP
+    # Paperless namespace health checks (paperless-ngx, tika, gotenberg)
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": paperless
       toPorts:
         - ports:
             - port: "80"
+              protocol: TCP
+            - port: "9998"
+              protocol: TCP
+            - port: "3000"
+              protocol: TCP
+    # Immich namespace health check
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": immich
+      toPorts:
+        - ports:
+            - port: "2283"
+              protocol: TCP
+    # Mail namespace health check (mailu-front)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Hermes Agent namespace health checks (webhook, firecrawl, MCP servers)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+      toPorts:
+        - ports:
+            - port: "8644"
+              protocol: TCP
+            - port: "3002"
+              protocol: TCP
+            - port: "8000"
               protocol: TCP
     # Security namespace health checks (onepassword-connect)
     - toEndpoints:

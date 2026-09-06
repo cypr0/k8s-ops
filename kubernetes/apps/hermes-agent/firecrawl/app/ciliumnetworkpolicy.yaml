@@ -43,6 +43,16 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": hermes-agent
             app.kubernetes.io/instance: firecrawl
+    # Gatus health check (api service, :3002 -- see helmrelease.yaml's
+    # apiPort anchor)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "3002"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

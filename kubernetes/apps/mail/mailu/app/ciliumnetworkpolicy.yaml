@@ -103,6 +103,17 @@ spec:
         - ports:
             - port: "993"
               protocol: TCP
+    # Gatus health check (front's ClusterIP Service, mailu-front:443 --
+    # verified live against the actual Service, distinct from the
+    # mailu-front-ext/mailu-front-webmail-lan LoadBalancer Services above)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
