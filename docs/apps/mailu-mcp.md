@@ -29,7 +29,7 @@ Built specifically for hermes-agent's document-pipeline / contract-monitoring us
 | Key (in `mailu-mcp-secret`) | 1Password source | Consumed by |
 | --- | --- | --- |
 | `PHILIPP_USERNAME` / `PHILIPP_PASSWORD` | `mailu-philipp` item (`username`/`password` fields) | The owner's real Mailu mailbox+calendar account — both CalDAV (HTTP Basic Auth) and IMAP (`LOGIN`) |
-| `ANN_USERNAME` / `ANN_PASSWORD` | `mailu-ann` item (`username`/`password` fields) | Ann's real Mailu mailbox+calendar account, same auth model |
+| `ANN_USERNAME` / `ANN_PASSWORD` | `mailu-anna` item (`username`/`password` fields) | Ann's real Mailu mailbox+calendar account, same auth model |
 
 **Deliberately kept out of this public repo entirely:** unlike `${SECRET_DOMAIN}`-style substitution variables (which resolve from the cluster's own SOPS-backed secret and are non-sensitive placeholders in git), the full mailbox addresses (and passwords) have no representation in git at all — not even as a `${SECRET_*}` reference — since they're real personal email addresses with no narrower-scope alternative. They exist only in the two 1Password items above and the resulting runtime `mailu-mcp-secret`. `MAILU_HOST` and `MAILU_IMAP_PORT` are the only non-secret config, set directly as plain env vars in `deployment.yaml` (the former via `${SECRET_DOMAIN}` substitution, the latter hardcoded `"993"`).
 
@@ -54,7 +54,7 @@ None. Fully stateless — config arrives via env vars each pod start, `pylibs`/`
 
 ## Common operations
 - Change tool behavior or add a method: edit `mailu_full.py`, commit, push — the `configMapGenerator` content hash changes automatically, which changes the Deployment's volume reference and triggers a real rollout, no manual restart or force annotation needed.
-- Rotate a mailbox's password: update the `mailu-philipp` or `mailu-ann` 1Password item; `externalsecret.yaml`'s `refreshInterval: 1h` picks it up, or force it sooner with `kubectl annotate externalsecret mailu-mcp -n hermes-agent force-sync=$(date +%s)`. The running pod won't pick up a changed `mailu-mcp-secret` until restarted (env vars are injected at container start, not live-reloaded) — `kubectl rollout restart deployment/mailu-mcp -n hermes-agent` after rotating.
+- Rotate a mailbox's password: update the `mailu-philipp` or `mailu-anna` 1Password item; `externalsecret.yaml`'s `refreshInterval: 1h` picks it up, or force it sooner with `kubectl annotate externalsecret mailu-mcp -n hermes-agent force-sync=$(date +%s)`. The running pod won't pick up a changed `mailu-mcp-secret` until restarted (env vars are injected at container start, not live-reloaded) — `kubectl rollout restart deployment/mailu-mcp -n hermes-agent` after rotating.
 - Bump the SDK pin: edit the `pip install` line's version constraints in `deployment.yaml`; the `mcp` SDK is deliberately pinned `<2` because 2.0.0 restructured its module layout and dropped `mcp.server.fastmcp.FastMCP` from where `owui_tool_mcp_bridge.py` imports it.
 - Pause reconciliation: `flux suspend kustomization mailu-mcp -n flux-system`.
 

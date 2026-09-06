@@ -29,7 +29,7 @@ description: >
   (against Mailu's `dovecot` component via `front`), both using the SAME
   real personal Mailu account per mailbox (PHILIPP_USERNAME/
   PHILIPP_PASSWORD or ANN_USERNAME/ANN_PASSWORD env vars -- see
-  externalsecret.yaml, sourced from the "mailu-philipp"/"mailu-ann"
+  externalsecret.yaml, sourced from the "mailu-philipp"/"mailu-anna"
   1Password items). These are the owner's and Ann's own real mailbox/
   calendar accounts, not dedicated narrower-scope service accounts --
   same tradeoff the former sogo-mcp made, since Mailu (like most mail
