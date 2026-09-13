@@ -147,15 +147,19 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
-    # Wazuh dashboard: OIDC discovery/token exchange with Authentik. Without
-    # this the securityDashboards plugin hangs on the discovery fetch and the
-    # container exits after its 30s setup timeout -- it never reports a network
-    # error, so the symptom looks like a broken plugin rather than a dropped
-    # connection.
+    # Wazuh: dashboard (OIDC discovery/token exchange) + indexer (JWKS
+    # validation), mirroring the OpenSearch entry above. Both halves are
+    # needed and they fail differently: without the dashboard rule the
+    # securityDashboards plugin hangs and the container exits on its 30s setup
+    # timeout; without the indexer rule login completes but every request comes
+    # back 401, with the real cause visible only in the indexer's log.
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": wazuh
             app: wazuh-dashboard
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-indexer
       toPorts:
         - ports:
             - port: "10443"

@@ -147,6 +147,20 @@ spec:
         - ports:
             - port: "9300"
               protocol: TCP
+    # The INDEXER validates the OIDC token, not the dashboard, so it is the
+    # indexer that fetches Authentik's discovery document and JWKS. Easy to
+    # miss, because the failure surfaces as a plain 401 in the browser while
+    # the real error ("Error while getting .../openid-configuration: Connect
+    # timed out") only appears in the indexer's log.
+    # Port 10443 = Envoy's post-DNAT container port, as everywhere else.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
 ---
 # Wazuh dashboard: fronted by Envoy, talks to the indexer, the Wazuh API and
 # Authentik.
