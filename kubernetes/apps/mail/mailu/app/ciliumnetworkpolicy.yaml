@@ -129,6 +129,34 @@ spec:
               protocol: TCP
             - port: "443"
               protocol: TCP
+    # Authentik, Immich and Nextcloud's outbound notification mail, all
+    # migrated off the old external mail server onto this shared "noreply"
+    # mailbox (authenticated submission port). Same in-cluster-via-
+    # public-hostname reasoning as the paperless-ngx/mailu-mcp rules above.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": security
+            app.kubernetes.io/name: authentik
+      toPorts:
+        - ports:
+            - port: "587"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": immich
+            app.kubernetes.io/name: immich
+      toPorts:
+        - ports:
+            - port: "587"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": nextcloud
+            app.kubernetes.io/name: nextcloud
+      toPorts:
+        - ports:
+            - port: "587"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

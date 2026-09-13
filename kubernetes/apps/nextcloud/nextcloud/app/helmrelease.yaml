@@ -46,8 +46,12 @@ spec:
             runAsUser: 0
             runAsNonRoot: false
             capabilities:
-              drop: ["ALL"]
-              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+              drop:
+                - "ALL"
+              add:
+                - "CHOWN"
+                - "FOWNER"
+                - "DAC_OVERRIDE"
           command:
             - sh
             - -c
@@ -81,8 +85,12 @@ spec:
             runAsUser: 0
             runAsNonRoot: false
             capabilities:
-              drop: ["ALL"]
-              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE"]
+              drop:
+                - "ALL"
+              add:
+                - "CHOWN"
+                - "FOWNER"
+                - "DAC_OVERRIDE"
           command:
             - sh
             - -c
@@ -134,8 +142,8 @@ spec:
         fromAddress: "noreply"
         domain: "${SECRET_DOMAIN}"
         smtp:
-          port: 25
-          secure: ''
+          port: 587
+          secure: 'tls'
       defaultConfigs:
         apache-pretty-urls.config.php: false
         apcu.config.php: false
@@ -234,20 +242,26 @@ spec:
                 'mail_smtpmode' => 'smtp',
                 'mail_smtptimeout' => 30,
                 'mail_sendmailmode' => 'smtp',
+                // Migrated off the old external mail server onto the
+                // in-cluster Mailu instance (kubernetes/apps/mail/mailu/),
+                // shared "noreply" mailbox with Authentik/Immich -- Mailu
+                // requires auth on its submission port, unlike the old
+                // server, so mail_smtpauth is now on and mail_smtpname
+                // (the SMTP auth username) is actually wired in.
                 'mail_smtphost' => getenv('SMTP_HOST'),
-                'mail_smtpport' => 25,
-                'mail_smtpsecure' => '',
-                'mail_smtpauth' => false,
-                'mail_smtpauthtype' => '',
+                'mail_smtpport' => 587,
+                'mail_smtpsecure' => 'tls',
+                'mail_smtpauth' => true,
+                'mail_smtpauthtype' => 'LOGIN',
+                'mail_smtpname' => getenv('SMTP_USERNAME'),
                 'mail_smtppassword' => getenv('SMTP_PASSWORD'),
-                'mail_smtpname' => '',
                 'mail_from_address' => 'noreply',
                 'mail_domain' => '${SECRET_DOMAIN}',
                 'mail_smtpstreamoptions' => array (
                   'ssl' => array (
-                    'allow_self_signed' => true,
-                    'verify_peer' => false,
-                    'verify_peer_name' => false
+                    'allow_self_signed' => false,
+                    'verify_peer' => true,
+                    'verify_peer_name' => true
                     ),
                   ),
                 'enable_previews' => true,

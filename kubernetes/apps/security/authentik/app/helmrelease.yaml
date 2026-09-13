@@ -84,11 +84,24 @@ spec:
       log_level: info
       avatars: "gravatar,initials"
       email:
-        host: ${SECRET_MAIL_SERVER}
-        port: 25
-        from: "Authentik <mail@${SECRET_DOMAIN}>"
+        # Migrated off the old external mail server onto the in-cluster
+        # Mailu instance (kubernetes/apps/mail/mailu/), shared "noreply"
+        # mailbox with Immich/Nextcloud. CoreDNS resolves this hostname
+        # in-cluster straight to mailu-front's ClusterIP (see
+        # kubernetes/apps/kube-system/coredns/app/helmrelease.yaml), so
+        # this is a same-cluster call, not a real external hop -- see the
+        # egress rule in ciliumnetworkpolicy.yaml. Submission port with
+        # STARTTLS + auth, since Mailu (unlike the old server) doesn't
+        # allow-list this cluster for unauthenticated relay. Credentials
+        # (AUTHENTIK_EMAIL__USERNAME / AUTHENTIK_EMAIL__PASSWORD) come via
+        # envFrom (authentik-secret, see externalsecret.yaml) rather than
+        # here, since authentik.email.password would otherwise land in
+        # plaintext in the HelmRelease's rendered values.
+        host: mail.${SECRET_DOMAIN}
+        port: 587
+        from: "Authentik <noreply@${SECRET_DOMAIN}>"
         timeout: 30
-        use_tls: false
+        use_tls: true
         use_ssl: false
       error_reporting:
         enable: false

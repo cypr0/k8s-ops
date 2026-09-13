@@ -66,12 +66,24 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": immich
     # External: map tiles (tiles.immich.cloud), reverse geocoding data,
-    # release/version checks, SMTP notifications
+    # release/version checks
     - toEntities:
         - world
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
-            - port: "25"
+    # SMTP notifications via the in-cluster Mailu instance
+    # (kubernetes/apps/mail/mailu/, submission port). CoreDNS resolves
+    # mail.${SECRET_DOMAIN} to mailu-front's ClusterIP for in-cluster
+    # clients, which is a real cluster-internal identity, not `world` --
+    # needs its own rule despite the toEntities:world rule above.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+            app.kubernetes.io/component: front
+      toPorts:
+        - ports:
+            - port: "587"
               protocol: TCP
