@@ -61,6 +61,21 @@ spec:
             # TLS is terminated by Envoy; see configmap-dashboard.yaml.
             - name: SERVER_SSL_ENABLED
               value: "false"
+            # The image defaults this to true, which makes the Wazuh app call
+            # the API *as the logged-in dashboard user* and map them onto a
+            # Wazuh RBAC role through an authorization-context rule. With no
+            # such rule the user ends up with no Wazuh permissions at all —
+            # they can log in and see the UI, but nothing is administrable,
+            # even holding all_access on the indexer.
+            #
+            # false makes every logged-in user act as wazuh-wui, which holds
+            # the built-in `administrator` role. Acceptable here because
+            # OpenSearch-side OIDC already decides who may log in at all and
+            # this cluster has a single admin. If Wazuh ever needs per-user
+            # roles, set this back to true and add authorization-context rules
+            # under Security > Roles mapping instead.
+            - name: RUN_AS
+              value: "false"
             - name: WAZUH_API_URL
               value: "https://wazuh-manager-master-0.wazuh-cluster"
             - name: API_USERNAME

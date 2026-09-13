@@ -149,6 +149,14 @@ days and pinned to zero replicas.
 - **`"admin"` must stay in `all_access.backend_roles`.** Replacing it with only
   OIDC groups locks the internal admin account out of the REST API entirely —
   the same mistake once made on the logging cluster.
+- **`RUN_AS=false` is load-bearing, not a default.** The dashboard image
+  defaults it to `true`, which makes the Wazuh app call the API as the
+  logged-in user and map them onto a Wazuh RBAC role via an
+  authorization-context rule. With no such rule the user logs in fine, holds
+  `all_access` on the indexer, and still has no administrable anything — the
+  two permission systems are independent. `false` makes everyone act as
+  `wazuh-wui` (`administrator`), which is the deliberate trade-off here: OIDC
+  already gates who may log in at all, and this cluster has one admin.
 - **A new Authentik OIDC provider needs an explicit `grant_types`.** The
   providers that predate the field were backfilled with the full list by a
   migration; one newly created from a blueprint gets an empty list and permits
