@@ -149,6 +149,28 @@ days and pinned to zero replicas.
 - **`"admin"` must stay in `all_access.backend_roles`.** Replacing it with only
   OIDC groups locks the internal admin account out of the REST API entirely —
   the same mistake once made on the logging cluster.
+- **A new Authentik OIDC provider needs an explicit `grant_types`.** The
+  providers that predate the field were backfilled with the full list by a
+  migration; one newly created from a blueprint gets an empty list and permits
+  nothing. Authentik then answers every authorize request with
+  `invalid_request` / "The request is otherwise malformed", the dashboard
+  retries, and the browser shows `ERR_TOO_MANY_REDIRECTS`. The reason appears
+  only in Authentik's own log, as "Invalid grant_type for provider".
+- **Three separate hops need an Envoy network-policy entry, not one.** The
+  dashboard reaching Authentik, the *indexer* reaching Authentik, and Envoy
+  reaching the dashboard are three different rules, and Envoy's ingress
+  allow-list names each client individually. They fail in ways that do not look
+  like networking at all:
+
+  | Missing rule | Symptom |
+  | --- | --- |
+  | dashboard → Envoy :10443 | container exits on the securityDashboards 30s setup timeout |
+  | indexer → Envoy :10443 | login succeeds, then every request is a bare 401 |
+  | Envoy → dashboard :5601 | 503 from the gateway |
+
+  The token is validated by the **indexer**, not the dashboard — that is why the
+  indexer needs its own path to Authentik for the JWKS. Always use the
+  post-DNAT container port (10443), never the Service port 443.
 - **No privileged init container.** Upstream ships one that sets
   `vm.max_map_count`. Instead the value is raised to 262144 on every node via
   `talos/patches/global/machine-sysctls.yaml`, which is what lets this namespace
