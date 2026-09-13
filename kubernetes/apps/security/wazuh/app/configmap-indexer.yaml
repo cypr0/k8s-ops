@@ -35,14 +35,16 @@ data:
     plugins.security.ssl.transport.enforce_hostname_verification: false
     plugins.security.ssl.transport.resolve_hostname: false
 
-    # Wildcard patterns, not literal DNs. OpenSearch compares the certificate
-    # subject as an RFC2253 string, and the attribute ordering cert-manager/Go
-    # produces is not guaranteed to match a hand-written literal. Matching on
-    # the parts we actually control avoids a class of silent auth failures.
+    # Exact DNs, no wildcards. authcz.admin_dn entries are parsed as LdapNames
+    # and compared canonically, so a trailing "*" is read as part of the
+    # organisation value ("O=Wazuh*") and simply never matches -- it does not
+    # act as a pattern here. These are the RFC2253 renderings the certificates
+    # in certificate.yaml actually produce; note the attribute order is the
+    # reverse of what `openssl x509 -subject` prints.
     plugins.security.authcz.admin_dn:
-      - 'CN=admin,O=Wazuh*'
+      - "CN=admin,O=Wazuh"
     plugins.security.nodes_dn:
-      - 'CN=indexer,O=Wazuh*'
+      - "CN=indexer,O=Wazuh"
 
     plugins.security.check_snapshot_restore_write_privileges: true
     plugins.security.enable_snapshot_restore_privilege: true
