@@ -147,6 +147,19 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
+    # Wazuh dashboard: OIDC discovery/token exchange with Authentik. Without
+    # this the securityDashboards plugin hangs on the discovery fetch and the
+    # container exits after its 30s setup timeout -- it never reports a network
+    # error, so the symptom looks like a broken plugin rather than a dropped
+    # connection.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-dashboard
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
     # Paperless: OIDC discovery/token exchange with Authentik (id.cisotop.de)
     - fromEndpoints:
         - matchLabels:
