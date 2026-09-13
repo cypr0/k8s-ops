@@ -81,4 +81,15 @@ data:
       "$$IDX/wazuh-*/_settings?ignore_unavailable=true&allow_no_indices=true" \
       -d '{"index":{"number_of_replicas":0}}' >/dev/null || true
 
+    # The ISM plugin creates its own config index with one replica, which a
+    # single-node cluster can never assign -- leaving cluster health yellow
+    # forever for a reason that has nothing to do with Wazuh. The ISM policy
+    # above cannot cover it (it only matches wazuh-*). auto_expand_replicas
+    # rather than a fixed 0 so this still does the right thing if the indexer
+    # is ever scaled past one node.
+    echo "==> Fixing replica count on .opendistro-ism-config"
+    idx -X PUT -H 'Content-Type: application/json' \
+      "$$IDX/.opendistro-ism-config/_settings" \
+      -d '{"index":{"auto_expand_replicas":"0-1"}}' >/dev/null || true
+
     echo "==> Done"

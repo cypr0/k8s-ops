@@ -16,7 +16,7 @@ metadata:
   name: wazuh-setup
   annotations:
     # Bump to force a re-run.
-    setup-version: "1"
+    setup-version: "2"
 spec:
   backoffLimit: 6
   ttlSecondsAfterFinished: 86400
