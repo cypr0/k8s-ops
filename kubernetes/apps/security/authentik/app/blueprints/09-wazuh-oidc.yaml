@@ -44,6 +44,17 @@ entries:
       client_type: confidential
       client_id: !Env WAZUH_CLIENT_ID
       client_secret: !Env WAZUH_CLIENT_SECRET
+      # Must be set explicitly. The older providers in this Authentik got the
+      # full grant_types list backfilled by the migration that introduced the
+      # field, so they work without declaring it -- a provider newly created
+      # from a blueprint does not, and ends up with an empty list that rejects
+      # every grant. Authentik then answers the authorize request with
+      # "invalid_request / The request is otherwise malformed", the dashboard
+      # retries, and the browser reports ERR_TOO_MANY_REDIRECTS.
+      # Only the two grants the dashboard actually uses.
+      grant_types:
+        - authorization_code
+        - refresh_token
       redirect_uris:
         - matching_mode: strict
           url: https://wazuh.${SECRET_DOMAIN}/auth/openid/login
