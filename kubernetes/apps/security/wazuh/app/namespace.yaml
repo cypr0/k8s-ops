@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wazuh
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    # "baseline" rather than "restricted": the manager container needs
+    # SYS_CHROOT (wazuh-authd chroots into /var/ossec), which restricted
+    # forbids but baseline explicitly allows. Nothing here needs privileged --
+    # the upstream manifests' privileged vm.max_map_count init container is
+    # deliberately omitted, see statefulset-indexer.yaml.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline

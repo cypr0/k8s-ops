@@ -66,4 +66,5 @@ check here before assuming a gap means "not interesting."
 | Tika (Paperless) | paperless | [paperless-tika.md](paperless-tika.md) |
 | Trivy Operator | trivy-system | [trivy.md](trivy.md) |
 | velero | velero | [velero.md](velero.md) |
+| Wazuh | wazuh | [wazuh.md](wazuh.md) |
 | Whiteboard | nextcloud | [whiteboard.md](whiteboard.md) |

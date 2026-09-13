@@ -1,0 +1,230 @@
+---
+# Manager configuration, derived from wazuh/wazuh-kubernetes v4.14.7
+# wazuh/wazuh_managers/wazuh_conf/master.conf with these deliberate changes:
+#   * cluster disabled     - single manager, so remoted (:1514) runs here and
+#                            no worker StatefulSet is needed
+#   * indexer cert paths   - point at the cert-manager secrets
+#   * email/AWS leftovers  - dropped (smtp.example.wazuh.com, the 10.66.0.2
+#                            white_list entry from the upstream EKS setup)
+#   * disabled wodles      - dropped (open-scap, cis-cat, osquery); they were
+#                            all `disabled: yes` and only added noise
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-manager-conf
+data:
+  ossec.conf: |-
+    <ossec_config>
+      <global>
+        <jsonout_output>yes</jsonout_output>
+        <alerts_log>yes</alerts_log>
+        <logall>no</logall>
+        <logall_json>no</logall_json>
+        <email_notification>no</email_notification>
+        <queue_size>131072</queue_size>
+        <agents_disconnection_time>20s</agents_disconnection_time>
+        <agents_disconnection_alert_time>100s</agents_disconnection_alert_time>
+        <white_list>127.0.0.1</white_list>
+        <white_list>^localhost.localdomain$</white_list>
+      </global>
+
+      <alerts>
+        <log_alert_level>3</log_alert_level>
+        <email_alert_level>12</email_alert_level>
+      </alerts>
+
+      <logging>
+        <log_format>plain</log_format>
+      </logging>
+
+      <!-- Agent event reception. Exposed to the LAN through the LoadBalancer
+           in service-agents.yaml. -->
+      <remote>
+        <connection>secure</connection>
+        <port>1514</port>
+        <protocol>tcp</protocol>
+        <queue_size>131072</queue_size>
+      </remote>
+
+      <!-- Agent enrollment. Password-protected; the password is mounted from
+           the wazuh-authd-pass secret at /wazuh-config-mount/etc/authd.pass. -->
+      <auth>
+        <disabled>no</disabled>
+        <port>1515</port>
+        <use_source_ip>no</use_source_ip>
+        <force>
+          <enabled>yes</enabled>
+          <key_mismatch>yes</key_mismatch>
+          <disconnected_time enabled="yes">1h</disconnected_time>
+          <after_registration_time>1h</after_registration_time>
+        </force>
+        <purge>no</purge>
+        <use_password>yes</use_password>
+        <ciphers>HIGH:!ADH:!EXP:!MD5:!RC4:!3DES:!CAMELLIA:@STRENGTH</ciphers>
+        <ssl_verify_host>no</ssl_verify_host>
+        <ssl_manager_cert>/var/ossec/etc/sslmanager.cert</ssl_manager_cert>
+        <ssl_manager_key>/var/ossec/etc/sslmanager.key</ssl_manager_key>
+        <ssl_auto_negotiate>no</ssl_auto_negotiate>
+      </auth>
+
+      <!-- Single manager: no worker nodes, so clustering buys nothing and
+           disabling it lets this one node serve remoted on :1514 itself. -->
+      <cluster>
+        <name>wazuh</name>
+        <node_name>wazuh-manager-master</node_name>
+        <node_type>master</node_type>
+        <!-- Left as the upstream placeholder on purpose: the image's
+             entrypoint rewrites it with $WAZUH_CLUSTER_KEY. An empty element
+             here would survive into /var/ossec/etc/ossec.conf and risk
+             tripping config validation. -->
+        <key>to_be_replaced_by_cluster_key</key>
+        <port>1516</port>
+        <bind_addr>0.0.0.0</bind_addr>
+        <nodes>
+          <node>wazuh-manager-master-0.wazuh-cluster</node>
+        </nodes>
+        <hidden>no</hidden>
+        <disabled>yes</disabled>
+      </cluster>
+
+      <!-- Where alerts and vulnerability state are written. Client cert from
+           cert-manager (see certificate.yaml). -->
+      <indexer>
+        <enabled>yes</enabled>
+        <hosts>
+          <host>https://indexer:9200</host>
+        </hosts>
+        <ssl>
+          <certificate_authorities>
+            <ca>/etc/ssl/filebeat/ca.crt</ca>
+          </certificate_authorities>
+          <certificate>/etc/ssl/filebeat/tls.crt</certificate>
+          <key>/etc/ssl/filebeat/tls.key</key>
+        </ssl>
+      </indexer>
+
+      <vulnerability-detection>
+        <enabled>yes</enabled>
+        <index-status>yes</index-status>
+        <feed-update-interval>60m</feed-update-interval>
+      </vulnerability-detection>
+
+      <rootcheck>
+        <disabled>no</disabled>
+        <check_unixaudit>yes</check_unixaudit>
+        <check_files>yes</check_files>
+        <check_trojans>yes</check_trojans>
+        <check_dev>yes</check_dev>
+        <check_sys>yes</check_sys>
+        <check_pids>yes</check_pids>
+        <check_ports>yes</check_ports>
+        <check_if>yes</check_if>
+        <frequency>43200</frequency>
+        <rootkit_files>/var/ossec/etc/rootcheck/rootkit_files.txt</rootkit_files>
+        <rootkit_trojans>/var/ossec/etc/rootcheck/rootkit_trojans.txt</rootkit_trojans>
+        <system_audit>/var/ossec/etc/rootcheck/system_audit_rcl.txt</system_audit>
+        <system_audit>/var/ossec/etc/rootcheck/system_audit_ssh.txt</system_audit>
+        <skip_nfs>yes</skip_nfs>
+      </rootcheck>
+
+      <wodle name="syscollector">
+        <disabled>no</disabled>
+        <interval>1h</interval>
+        <scan_on_start>yes</scan_on_start>
+        <hardware>yes</hardware>
+        <os>yes</os>
+        <network>yes</network>
+        <packages>yes</packages>
+        <ports all="yes">yes</ports>
+        <processes>yes</processes>
+      </wodle>
+
+      <syscheck>
+        <disabled>no</disabled>
+        <frequency>43200</frequency>
+        <scan_on_start>yes</scan_on_start>
+        <alert_new_files>yes</alert_new_files>
+        <auto_ignore frequency="10" timeframe="3600">no</auto_ignore>
+
+        <directories check_all="yes">/etc,/usr/bin,/usr/sbin</directories>
+        <directories check_all="yes">/bin,/sbin,/boot</directories>
+
+        <ignore>/etc/mtab</ignore>
+        <ignore>/etc/hosts.deny</ignore>
+        <ignore>/etc/mail/statistics</ignore>
+        <ignore>/etc/random-seed</ignore>
+        <ignore>/etc/random.seed</ignore>
+        <ignore>/etc/adjtime</ignore>
+        <ignore>/etc/httpd/logs</ignore>
+        <ignore>/etc/utmpx</ignore>
+        <ignore>/etc/wtmpx</ignore>
+        <ignore>/etc/cups/certs</ignore>
+        <ignore>/etc/dumpdates</ignore>
+        <ignore>/etc/svc/volatile</ignore>
+        <ignore>/sys/kernel/security</ignore>
+        <ignore>/sys/kernel/debug</ignore>
+
+        <nodiff>/etc/ssl/private.key</nodiff>
+        <skip_nfs>yes</skip_nfs>
+        <remove_old_diff>yes</remove_old_diff>
+        <restart_audit>yes</restart_audit>
+      </syscheck>
+
+      <command>
+        <name>disable-account</name>
+        <executable>disable-account</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+
+      <command>
+        <name>restart-wazuh</name>
+        <executable>restart-wazuh</executable>
+      </command>
+
+      <command>
+        <name>firewall-drop</name>
+        <executable>firewall-drop</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+
+      <command>
+        <name>host-deny</name>
+        <executable>host-deny</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+
+      <command>
+        <name>route-null</name>
+        <executable>route-null</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+
+      <ruleset>
+        <decoder_dir>ruleset/decoders</decoder_dir>
+        <rule_dir>ruleset/rules</rule_dir>
+        <rule_exclude>0215-policy_rules.xml</rule_exclude>
+        <list>etc/lists/audit-keys</list>
+        <list>etc/lists/amazon/aws-sources</list>
+        <list>etc/lists/amazon/aws-eventnames</list>
+        <list>etc/lists/malicious-ioc/malicious-ip</list>
+        <list>etc/lists/malicious-ioc/malicious-domains</list>
+        <list>etc/lists/malicious-ioc/malware-hashes</list>
+
+        <decoder_dir>etc/decoders</decoder_dir>
+        <rule_dir>etc/rules</rule_dir>
+      </ruleset>
+
+      <rule_test>
+        <enabled>yes</enabled>
+        <threads>1</threads>
+        <max_sessions>64</max_sessions>
+        <session_timeout>15m</session_timeout>
+      </rule_test>
+    </ossec_config>
+
+    <ossec_config>
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/var/ossec/logs/active-responses.log</location>
+      </localfile>
+    </ossec_config>

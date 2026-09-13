@@ -1,0 +1,64 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-indexer-conf
+data:
+  opensearch.yml: |-
+    cluster.name: wazuh
+    # Doubled $ on purpose: OpenSearch resolves this from the pod's environment
+    # at startup, but Flux's postBuild runs envsubst over the manifest first and
+    # would otherwise replace it with an empty string.
+    node.name: $${NODE_NAME}
+    network.host: 0.0.0.0
+    path.data: /var/lib/wazuh-indexer
+    path.logs: /var/log/wazuh-indexer
+
+    # Single node today, but written so that bumping the StatefulSet's replica
+    # count is the only change needed: node-0 is a stable name, so this stays
+    # correct after a restart (the failure mode that bit the operator-managed
+    # cluster in the logging namespace does not apply here).
+    discovery.seed_hosts: wazuh-indexer-0.wazuh-indexer
+    cluster.initial_master_nodes:
+      - wazuh-indexer-0
+
+    # Certificates come from cert-manager (see certificate.yaml), mounted as
+    # whole-secret directories rather than subPath files -- subPath mounts are
+    # never updated by the kubelet, which would silently break renewal.
+    plugins.security.ssl.http.enabled: true
+    plugins.security.ssl.http.pemcert_filepath: certs/node/tls.crt
+    plugins.security.ssl.http.pemkey_filepath: certs/node/tls.key
+    plugins.security.ssl.http.pemtrustedcas_filepath: certs/node/ca.crt
+    plugins.security.ssl.transport.pemcert_filepath: certs/node/tls.crt
+    plugins.security.ssl.transport.pemkey_filepath: certs/node/tls.key
+    plugins.security.ssl.transport.pemtrustedcas_filepath: certs/node/ca.crt
+    plugins.security.ssl.transport.enforce_hostname_verification: false
+    plugins.security.ssl.transport.resolve_hostname: false
+
+    # Wildcard patterns, not literal DNs. OpenSearch compares the certificate
+    # subject as an RFC2253 string, and the attribute ordering cert-manager/Go
+    # produces is not guaranteed to match a hand-written literal. Matching on
+    # the parts we actually control avoids a class of silent auth failures.
+    plugins.security.authcz.admin_dn:
+      - 'CN=admin,O=Wazuh*'
+    plugins.security.nodes_dn:
+      - 'CN=indexer,O=Wazuh*'
+
+    plugins.security.check_snapshot_restore_write_privileges: true
+    plugins.security.enable_snapshot_restore_privilege: true
+    plugins.security.restapi.roles_enabled:
+      - "all_access"
+      - "security_rest_api_access"
+    # Seeds the .opendistro_security index from the mounted config files on
+    # first boot. Later edits are pushed with securityadmin.sh, see
+    # ../config/job-setup.yaml.
+    plugins.security.allow_default_init_securityindex: true
+
+    # Upstream default. With a single node and no replicas the flood-stage
+    # watermark would flip every index to read-only rather than degrade
+    # gracefully; retention is handled by the ISM policy in ../config/ instead.
+    cluster.routing.allocation.disk.threshold_enabled: false
+
+    # The Wazuh dashboard plugin checks the indexer's reported version against
+    # what it was built for (OpenSearch 2.x).
+    compatibility.override_main_response_version: true

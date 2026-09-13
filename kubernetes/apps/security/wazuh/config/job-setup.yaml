@@ -1,0 +1,127 @@
+---
+# Runs after the indexer is up. Two steps:
+#   1. push the security configuration (init container)
+#   2. create the retention policy (main container)
+#
+# Step 1 is a no-op on a brand new cluster -- the indexer seeds itself from the
+# same files on first boot via plugins.security.allow_default_init_securityindex.
+# It exists for every subsequent change, which the .opendistro_security index
+# would otherwise ignore.
+#
+# The Kustomization sets force: true so that editing this Job actually replaces
+# it; a Job's pod template is immutable and a plain apply would be rejected.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wazuh-setup
+  annotations:
+    # Bump to force a re-run.
+    setup-version: "1"
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: securityconfig
+          image: wazuh/wazuh-indexer:4.14.7
+          command:
+            - "/bin/bash"
+            - "-c"
+          args:
+            - |
+              set -eu
+              export JAVA_HOME=/usr/share/wazuh-indexer/jdk
+              export OPENSEARCH_JAVA_HOME=/usr/share/wazuh-indexer/jdk
+              TOOL=/usr/share/wazuh-indexer/plugins/opensearch-security/tools/securityadmin.sh
+
+              echo "==> Waiting for indexer:9200"
+              until (exec 3<>/dev/tcp/indexer/9200) 2>/dev/null; do sleep 5; done
+
+              # Port 9200, not 9300: securityadmin has spoken to the REST layer
+              # since OpenSearch 2.0, when the transport client was removed.
+              # -nhnv because the check adds nothing here (the CA is pinned and
+              # the target is a ClusterIP) while being one more thing to break.
+              for pair in "config.yml:config" \
+                          "roles_mapping.yml:rolesmapping" \
+                          "internal_users.yml:internalusers"; do
+                file="$${pair%%:*}"
+                type="$${pair##*:}"
+                echo "==> Pushing $$file as $$type"
+                bash "$$TOOL" \
+                  -h indexer -p 9200 -icl -nhnv \
+                  -cacert /certs/ca.crt \
+                  -cert /certs/tls.crt \
+                  -key /certs/tls.key \
+                  -f "/securityconfig/$$file" -t "$$type"
+              done
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: admin-certs
+              mountPath: /certs
+              readOnly: true
+            - name: securityconfig
+              mountPath: /securityconfig
+              readOnly: true
+      containers:
+        - name: setup
+          # alpine/curl rather than the python:*-alpine + `apk add curl` combo
+          # used elsewhere in this repo: curl is already in the image, so the
+          # Job needs no egress to the internet at all.
+          image: alpine/curl:8.22.0
+          command:
+            - "/bin/sh"
+            - "/scripts/setup.sh"
+          env:
+            - name: INDEXER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: indexer-cred
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: admin-certs
+              mountPath: /certs
+              readOnly: true
+      volumes:
+        # Carries both the admin client certificate and ca.crt, which the
+        # retention script uses to verify the indexer.
+        - name: admin-certs
+          secret:
+            secretName: wazuh-indexer-admin
+            defaultMode: 0440
+        - name: securityconfig
+          secret:
+            secretName: wazuh-securityconfig
+            defaultMode: 0440
+        - name: scripts
+          configMap:
+            name: wazuh-setup
+            defaultMode: 0555

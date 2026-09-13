@@ -1,0 +1,84 @@
+---
+# Note on the doubled $: Flux runs envsubst over this manifest before applying
+# it, so every shell variable has to be written as $$VAR to survive as $VAR.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-setup
+data:
+  setup.sh: |-
+    #!/bin/sh
+    set -eu
+
+    IDX="https://indexer:9200"
+
+    # A function rather than a CURL="..." variable: the password is interpolated
+    # here and word-splitting an unquoted variable would mangle it.
+    idx() {
+      curl -sS --fail-with-body --cacert /certs/ca.crt \
+        -u "admin:$${INDEXER_PASSWORD}" "$$@"
+    }
+
+    echo "==> Waiting for the indexer to answer"
+    until idx "$$IDX/_cluster/health" >/dev/null 2>&1; do
+      sleep 5
+    done
+
+    # Retention and replica count in one ISM policy.
+    #
+    # replica_count is set here rather than through an index template on
+    # purpose: composable index templates do not merge, the single
+    # highest-priority match wins outright. A template carrying only settings
+    # would therefore shadow Wazuh's own templates and take their mappings with
+    # it. ISM applies to indices created after the fact and leaves templates
+    # alone.
+    echo "==> Applying ISM policy wazuh-retention"
+    POLICY='{
+      "policy": {
+        "description": "Wazuh homelab retention: single node, delete after 90 days",
+        "default_state": "hot",
+        "states": [
+          {
+            "name": "hot",
+            "actions": [{"replica_count": {"number_of_replicas": 0}}],
+            "transitions": [{"state_name": "delete", "conditions": {"min_index_age": "90d"}}]
+          },
+          {
+            "name": "delete",
+            "actions": [{"delete": {}}],
+            "transitions": []
+          }
+        ],
+        "ism_template": [
+          {
+            "index_patterns": ["wazuh-alerts-*", "wazuh-archives-*", "wazuh-states-*"],
+            "priority": 100
+          }
+        ]
+      }
+    }'
+
+    # An existing policy can only be replaced by quoting its current sequence
+    # number, so this is create-or-update rather than a blind PUT.
+    if idx "$$IDX/_plugins/_ism/policies/wazuh-retention" >/tmp/existing.json 2>/dev/null; then
+      SEQ=$$(sed -n 's/.*"_seq_no":\([0-9]*\).*/\1/p' /tmp/existing.json)
+      TERM=$$(sed -n 's/.*"_primary_term":\([0-9]*\).*/\1/p' /tmp/existing.json)
+      echo "    exists (seq_no=$$SEQ primary_term=$$TERM), updating"
+      idx -X PUT -H 'Content-Type: application/json' \
+        "$$IDX/_plugins/_ism/policies/wazuh-retention?if_seq_no=$$SEQ&if_primary_term=$$TERM" \
+        -d "$$POLICY" >/dev/null
+    else
+      echo "    does not exist, creating"
+      idx -X PUT -H 'Content-Type: application/json' \
+        "$$IDX/_plugins/_ism/policies/wazuh-retention" -d "$$POLICY" >/dev/null
+    fi
+
+    # ISM only ever touches indices created after the policy exists, so bring
+    # any that already exist down to zero replicas too. A no-op on a fresh
+    # cluster.
+    echo "==> Setting number_of_replicas=0 on existing wazuh-* indices"
+    idx -X PUT -H 'Content-Type: application/json' \
+      "$$IDX/wazuh-*/_settings?ignore_unavailable=true&allow_no_indices=true" \
+      -d '{"index":{"number_of_replicas":0}}' >/dev/null || true
+
+    echo "==> Done"

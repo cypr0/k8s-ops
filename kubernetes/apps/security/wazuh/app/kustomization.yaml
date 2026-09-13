@@ -1,0 +1,22 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ./namespace.yaml
+  - ./certificate.yaml
+  - ./externalsecret.yaml
+  - ./externalsecret-securityconfig.yaml
+  - ./externalsecret-dashboard-oidc.yaml
+  - ./configmap-indexer.yaml
+  - ./configmap-manager.yaml
+  - ./configmap-dashboard.yaml
+  - ./statefulset-indexer.yaml
+  - ./statefulset-manager.yaml
+  - ./deployment-dashboard.yaml
+  - ./service-indexer.yaml
+  - ./service-manager.yaml
+  - ./service-agents.yaml
+  - ./service-dashboard.yaml
+  - ./httproute.yaml
+  - ./ciliumnetworkpolicy.yaml

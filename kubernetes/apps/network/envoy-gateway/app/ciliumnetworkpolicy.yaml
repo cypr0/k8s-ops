@@ -309,3 +309,14 @@ spec:
         - ports:
             - port: "2283"
               protocol: TCP
+    # Backend: wazuh namespace (wazuh-dashboard :5601, served via
+    # envoy-internal). Plain HTTP on purpose -- the dashboard runs with
+    # SERVER_SSL_ENABLED=false so Envoy can terminate TLS itself, see
+    # kubernetes/apps/security/wazuh/app/configmap-dashboard.yaml.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP

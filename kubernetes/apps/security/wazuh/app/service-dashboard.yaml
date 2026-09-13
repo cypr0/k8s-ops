@@ -1,0 +1,17 @@
+---
+# Plain HTTP backend for Envoy; TLS is terminated at the gateway with the
+# Let's Encrypt wildcard. See httproute.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  labels:
+    app: wazuh-dashboard
+spec:
+  type: ClusterIP
+  selector:
+    app: wazuh-dashboard
+  ports:
+    - name: http
+      port: 5601
+      targetPort: 5601

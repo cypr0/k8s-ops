@@ -1,0 +1,253 @@
+---
+# Wazuh manager: receives agent traffic from the LAN, ships alerts to the
+# indexer, serves the API to the dashboard.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: wazuh-manager
+  namespace: wazuh
+spec:
+  endpointSelector:
+    matchLabels:
+      app: wazuh-manager
+  ingress:
+    # Agents. They arrive through the LoadBalancer VIP with their real source
+    # IP preserved (externalTrafficPolicy: Local), so a LAN client is seen as
+    # "world"; "host"/"remote-node" cover the node-local hairpin path and the
+    # kubelet probes on 1514.
+    - fromEntities:
+        - world
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "1514"
+              protocol: TCP
+            - port: "1515"
+              protocol: TCP
+    # Wazuh API, consumed only by the dashboard.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-dashboard
+      toPorts:
+        - ports:
+            - port: "55000"
+              protocol: TCP
+    # Gatus health check on the agent listener.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "1514"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Filebeat and the vulnerability detector write to the indexer.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-indexer
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # Vulnerability CTI feed (cti.wazuh.com) and ruleset updates
+    # (packages.wazuh.com).
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Wazuh indexer: written to by the manager, read by the dashboard and by the
+# one-shot setup Job.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: wazuh-indexer
+  namespace: wazuh
+spec:
+  endpointSelector:
+    matchLabels:
+      app: wazuh-indexer
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-manager
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-dashboard
+        # Gatus health check.
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # ../config/job-setup.yaml. Only 9200: since OpenSearch 2.x securityadmin
+    # talks to the REST port, not the transport port.
+    - fromEndpoints:
+        - matchExpressions:
+            - key: batch.kubernetes.io/job-name
+              operator: Exists
+          matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    # Peer transport traffic, and kubelet probes on 9200/9300.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-indexer
+      toPorts:
+        - ports:
+            - port: "9300"
+              protocol: TCP
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+            - port: "9300"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-indexer
+      toPorts:
+        - ports:
+            - port: "9300"
+              protocol: TCP
+---
+# Wazuh dashboard: fronted by Envoy, talks to the indexer, the Wazuh API and
+# Authentik.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: wazuh-dashboard
+  namespace: wazuh
+spec:
+  endpointSelector:
+    matchLabels:
+      app: wazuh-dashboard
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+        # Gatus health check against /api/status.
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+    # Kubelet probes.
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-indexer
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-manager
+      toPorts:
+        - ports:
+            - port: "55000"
+              protocol: TCP
+    # OIDC discovery, token exchange and userinfo against id.${SECRET_DOMAIN}.
+    # CoreDNS's hosts plugin resolves that name to the envoy-internal ClusterIP,
+    # so this stays inside the cluster -- same path the other in-cluster OIDC
+    # clients take (see kubernetes/apps/network/envoy-gateway/app/
+    # ciliumnetworkpolicy.yaml).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# One-shot setup Job in ../config/: pushes the security configuration and
+# creates the retention policy. No egress to the internet -- both Job
+# containers ship with everything they need (alpine/curl, and the indexer
+# image's bundled JDK).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: wazuh-setup-jobs
+  namespace: wazuh
+spec:
+  endpointSelector:
+    matchExpressions:
+      - key: batch.kubernetes.io/job-name
+        operator: Exists
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-indexer
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP

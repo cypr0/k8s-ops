@@ -1,0 +1,34 @@
+---
+# Headless service backing the StatefulSet: gives each pod the stable name
+# wazuh-indexer-<n>.wazuh-indexer used by discovery.seed_hosts.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-indexer
+  labels:
+    app: wazuh-indexer
+spec:
+  clusterIP: None
+  selector:
+    app: wazuh-indexer
+  ports:
+    - name: transport
+      port: 9300
+      targetPort: 9300
+---
+# REST API. Named "indexer" because that name is baked into the manager's
+# ossec.conf and the dashboard's config, and is a SAN on the node certificate.
+apiVersion: v1
+kind: Service
+metadata:
+  name: indexer
+  labels:
+    app: wazuh-indexer
+spec:
+  type: ClusterIP
+  selector:
+    app: wazuh-indexer
+  ports:
+    - name: rest
+      port: 9200
+      targetPort: 9200

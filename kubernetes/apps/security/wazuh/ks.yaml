@@ -1,0 +1,66 @@
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app wazuh
+  namespace: security
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  dependsOn:
+    - name: external-secrets-stores
+      namespace: security
+    - name: cert-manager
+      namespace: cert-manager
+  interval: 1h
+  path: ./kubernetes/apps/security/wazuh/app
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: wazuh
+  timeout: 15m
+  # The indexer takes a few minutes on its first boot (security index
+  # initialisation on NFS-backed storage); waiting on it would only push the
+  # Kustomization into repeated timeouts.
+  wait: false
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app wazuh-config
+  namespace: security
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  dependsOn:
+    - name: wazuh
+      namespace: security
+  # A Job's pod template is immutable, so editing job-setup.yaml would
+  # otherwise be rejected on apply instead of re-running the Job.
+  force: true
+  interval: 1h
+  path: ./kubernetes/apps/security/wazuh/config
+  postBuild:
+    substituteFrom:
+      - name: cluster-secrets
+        kind: Secret
+  prune: true
+  retryInterval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: wazuh
+  timeout: 10m
+  wait: false

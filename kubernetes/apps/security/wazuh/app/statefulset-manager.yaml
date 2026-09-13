@@ -1,0 +1,164 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wazuh-manager-master
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  # Gives the pod the stable DNS name wazuh-manager-master-0.wazuh-cluster,
+  # which the dashboard uses as WAZUH_API_URL.
+  serviceName: wazuh-cluster
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: wazuh-manager
+      node-type: master
+  template:
+    metadata:
+      labels:
+        app: wazuh-manager
+        node-type: master
+    spec:
+      securityContext:
+        fsGroup: 101
+      containers:
+        - name: wazuh-manager
+          image: wazuh/wazuh-manager:4.14.7
+          securityContext:
+            # Capabilities are not dropped wholesale here, unlike the indexer.
+            # The manager's entrypoint runs as root and fixes ownership across
+            # /var/ossec before each daemon chroots and drops to the `wazuh`
+            # user, so it genuinely needs CHOWN/DAC_OVERRIDE/SETUID on top of
+            # SYS_CHROOT. Upstream takes the same approach.
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+                - "SYS_CHROOT"
+          ports:
+            - name: events
+              containerPort: 1514
+            - name: registration
+              containerPort: 1515
+            - name: cluster
+              containerPort: 1516
+            - name: api
+              containerPort: 55000
+          env:
+            - name: INDEXER_URL
+              value: "https://indexer:9200"
+            - name: INDEXER_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: indexer-cred
+                  key: username
+            - name: INDEXER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: indexer-cred
+                  key: password
+            - name: FILEBEAT_SSL_VERIFICATION_MODE
+              value: "full"
+            - name: SSL_CERTIFICATE_AUTHORITIES
+              value: /etc/ssl/filebeat/ca.crt
+            - name: SSL_CERTIFICATE
+              value: /etc/ssl/filebeat/tls.crt
+            - name: SSL_KEY
+              value: /etc/ssl/filebeat/tls.key
+            - name: API_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-api-cred
+                  key: username
+            - name: API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-api-cred
+                  key: password
+            - name: WAZUH_CLUSTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-cluster-key
+                  key: key
+          startupProbe:
+            tcpSocket:
+              port: 1514
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: 1514
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 200m
+              memory: 768Mi
+            limits:
+              memory: 1536Mi
+          volumeMounts:
+            - name: config
+              mountPath: /wazuh-config-mount/etc/ossec.conf
+              subPath: ossec.conf
+              readOnly: true
+            - name: authd-pass
+              mountPath: /wazuh-config-mount/etc/authd.pass
+              subPath: authd.pass
+              readOnly: true
+            - name: filebeat-certs
+              mountPath: /etc/ssl/filebeat
+              readOnly: true
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/api/configuration
+              subPath: wazuh/var/ossec/api/configuration
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/etc
+              subPath: wazuh/var/ossec/etc
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/logs
+              subPath: wazuh/var/ossec/logs
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/queue
+              subPath: wazuh/var/ossec/queue
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/var/multigroups
+              subPath: wazuh/var/ossec/var/multigroups
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/integrations
+              subPath: wazuh/var/ossec/integrations
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/active-response/bin
+              subPath: wazuh/var/ossec/active-response/bin
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/agentless
+              subPath: wazuh/var/ossec/agentless
+            - name: wazuh-manager-master
+              mountPath: /var/ossec/wodles
+              subPath: wazuh/var/ossec/wodles
+            - name: wazuh-manager-master
+              mountPath: /etc/filebeat
+              subPath: filebeat/etc/filebeat
+            - name: wazuh-manager-master
+              mountPath: /var/lib/filebeat
+              subPath: filebeat/var/lib/filebeat
+      volumes:
+        - name: config
+          configMap:
+            name: wazuh-manager-conf
+        - name: authd-pass
+          secret:
+            secretName: wazuh-authd-pass
+        - name: filebeat-certs
+          secret:
+            secretName: wazuh-filebeat
+            defaultMode: 0440
+  volumeClaimTemplates:
+    - metadata:
+        name: wazuh-manager-master
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: zfs-nfs
+        resources:
+          requests:
+            storage: 10Gi

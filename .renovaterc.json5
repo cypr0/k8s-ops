@@ -68,6 +68,19 @@
       ignoreTests: true,
     },
     {
+      description: "Wazuh Group: manager, indexer and dashboard are version-locked to each other, so they must move together",
+      groupName: "wazuh",
+      matchDatasources: ["docker"],
+      matchPackageNames: [
+        "wazuh/wazuh-manager",
+        "wazuh/wazuh-indexer",
+        "wazuh/wazuh-dashboard",
+      ],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+    },
+    {
       matchUpdateTypes: ["major"],
       addLabels: ["type/major"],
     },

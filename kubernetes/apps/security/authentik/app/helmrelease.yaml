@@ -65,6 +65,8 @@ spec:
         - secretRef:
             name: authentik-immich-oidc
         - secretRef:
+            name: authentik-wazuh-oidc
+        - secretRef:
             name: authentik-pushover
             optional: true
       volumes:

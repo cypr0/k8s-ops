@@ -1,0 +1,37 @@
+---
+# Headless service for the manager StatefulSet. Port 1516 is the manager
+# cluster protocol, unused while clustering is disabled, but this Service also
+# provides the stable pod DNS name wazuh-manager-master-0.wazuh-cluster that
+# the dashboard points WAZUH_API_URL at.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-cluster
+  labels:
+    app: wazuh-manager
+spec:
+  clusterIP: None
+  selector:
+    app: wazuh-manager
+  ports:
+    - name: cluster
+      port: 1516
+      targetPort: 1516
+---
+# Wazuh API. In-cluster only -- the dashboard is the only consumer. Agents do
+# not use this port; they talk to the LoadBalancer in service-agents.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh
+  labels:
+    app: wazuh-manager
+spec:
+  type: ClusterIP
+  selector:
+    app: wazuh-manager
+    node-type: master
+  ports:
+    - name: api
+      port: 55000
+      targetPort: 55000

@@ -1,0 +1,156 @@
+---
+# Internal PKI for the Wazuh indexer stack.
+#
+# This is deliberately NOT the Let's Encrypt wildcard. The OpenSearch security
+# plugin that ships inside wazuh-indexer authenticates its transport layer and
+# its `securityadmin` tooling with CLIENT certificates whose Subject DN must
+# match `plugins.security.nodes_dn` / `authcz.admin_dn` (see
+# configmap-indexer.yaml). A public CA can neither issue a cert for a
+# non-resolvable name like `CN=admin,O=Wazuh` nor let us pin its DN, so an
+# in-namespace CA is the only option. None of these certs is ever seen by a
+# browser or by a Wazuh agent -- the dashboard is served to clients by Envoy
+# using the Let's Encrypt wildcard (see httproute.yaml).
+#
+# All keys are PKCS#8: the OpenSearch security plugin and securityadmin.sh
+# reject cert-manager's default PKCS#1 encoding with an opaque parse error.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: wazuh-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wazuh-indexer-ca
+spec:
+  isCA: true
+  commonName: wazuh-indexer-ca
+  secretName: wazuh-indexer-ca
+  duration: 87600h # 10y
+  renewBefore: 8760h # 1y
+  privateKey:
+    algorithm: RSA
+    size: 4096
+    encoding: PKCS8
+  issuerRef:
+    name: wazuh-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: wazuh-indexer-ca
+spec:
+  ca:
+    secretName: wazuh-indexer-ca
+---
+# Indexer node certificate. Needs BOTH server auth (HTTP/REST on 9200, and the
+# server side of the transport layer) and client auth (the client side of the
+# transport layer -- an OpenSearch node connects to its peers as a client).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wazuh-indexer-node
+spec:
+  secretName: wazuh-indexer-node
+  commonName: indexer
+  subject:
+    organizations:
+      - "Wazuh"
+  dnsNames:
+    - indexer
+    - indexer.wazuh.svc
+    - indexer.wazuh.svc.cluster.local
+    - wazuh-indexer
+    - wazuh-indexer.wazuh.svc
+    - wazuh-indexer.wazuh.svc.cluster.local
+    - wazuh-indexer-0.wazuh-indexer
+    - wazuh-indexer-0.wazuh-indexer.wazuh.svc.cluster.local
+  duration: 8760h # 1y
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8
+  usages:
+    - server auth
+    - client auth
+  issuerRef:
+    name: wazuh-indexer-ca
+    kind: Issuer
+---
+# Admin certificate for securityadmin.sh (see ../config/job-securityconfig.yaml).
+# Its DN is matched against plugins.security.authcz.admin_dn.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wazuh-indexer-admin
+spec:
+  secretName: wazuh-indexer-admin
+  commonName: admin
+  subject:
+    organizations:
+      - "Wazuh"
+  duration: 8760h # 1y
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8
+  usages:
+    - client auth
+  issuerRef:
+    name: wazuh-indexer-ca
+    kind: Issuer
+---
+# The dashboard only needs to TRUST the indexer, not to present a certificate.
+# It gets its own leaf anyway, purely so that it has a secret containing
+# ca.crt: mounting the CA secret itself would hand the dashboard pod the CA
+# private key, and mounting another component's leaf secret would hand it that
+# component's key.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wazuh-dashboard
+spec:
+  secretName: wazuh-dashboard
+  commonName: dashboard
+  subject:
+    organizations:
+      - "Wazuh"
+  duration: 8760h # 1y
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8
+  usages:
+    - client auth
+  issuerRef:
+    name: wazuh-indexer-ca
+    kind: Issuer
+---
+# Client certificate the manager's Filebeat uses to ship alerts to the indexer.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wazuh-filebeat
+spec:
+  secretName: wazuh-filebeat
+  commonName: filebeat
+  subject:
+    organizations:
+      - "Wazuh"
+  duration: 8760h # 1y
+  renewBefore: 720h # 30d
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    encoding: PKCS8
+  usages:
+    - client auth
+  issuerRef:
+    name: wazuh-indexer-ca
+    kind: Issuer

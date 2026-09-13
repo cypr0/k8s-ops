@@ -113,6 +113,38 @@ data:
         alerts:
           - type: pushover
 
+      # /api/status is in the security plugin's default unauthenticated_routes,
+      # so this works without dragging OIDC into a health check.
+      - name: Wazuh Dashboard
+        group: Security
+        url: "http://dashboard.wazuh.svc.cluster.local:5601/api/status"
+        interval: 1m
+        conditions:
+          - "[STATUS] == 200"
+        alerts:
+          - type: pushover
+
+      - name: Wazuh Indexer
+        group: Security
+        url: "tcp://indexer.wazuh.svc.cluster.local:9200"
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
+      # The manager's remoted listener. If this is down every Wazuh agent goes
+      # silent, which is the failure that actually matters here -- an agent has
+      # no queue deep enough to ride out a long outage.
+      - name: Wazuh Agent Listener
+        group: Security
+        url: "tcp://wazuh-agents.wazuh.svc.cluster.local:1514"
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover
+
       - name: OpenSearch
         group: Logging
         url: "tcp://opensearch.logging.svc.cluster.local:9200"

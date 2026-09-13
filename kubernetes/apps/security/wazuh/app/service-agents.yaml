@@ -1,0 +1,40 @@
+---
+# The only externally reachable part of Wazuh. Agents connect here:
+#   1515/TCP  enrollment (wazuh-authd), password-protected
+#   1514/TCP  event reporting (remoted)
+#
+# Reachable from the LAN and over the VPN only -- no port forward on OPNsense.
+# Agent onboarding:
+#   agent-auth -m 192.168.10.111 -P "<WAZUH_AUTHD_PASS from 1Password>"
+#
+# Deliberately its OWN IP rather than sharing one via
+# io.cilium/lb-ipam-sharing-key. Cilium runs L2-announcement leader election
+# per Service, so two Services on one VIP can be ARP-announced by two different
+# nodes at once -- see the incident write-up in
+# kubernetes/apps/mail/mailu/app/service-front-webmail-lan.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-agents
+  annotations:
+    lbipam.cilium.io/ips: "192.168.10.111"
+    coredns.io/hostname: "wazuh-agents.${SECRET_DOMAIN}"
+  labels:
+    app: wazuh-manager
+spec:
+  type: LoadBalancer
+  # "Local" preserves the agent's real source IP, which matters because Wazuh
+  # records and alerts on agent addresses.
+  externalTrafficPolicy: Local
+  selector:
+    app: wazuh-manager
+    node-type: master
+  ports:
+    - name: events
+      port: 1514
+      targetPort: 1514
+      protocol: TCP
+    - name: registration
+      port: 1515
+      targetPort: 1515
+      protocol: TCP

@@ -155,6 +155,19 @@ spec:
               protocol: TCP
             - port: "8000"
               protocol: TCP
+    # Wazuh namespace health checks (dashboard :5601, indexer :9200, and the
+    # manager's agent listener :1514 — the port every Wazuh agent depends on)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+            - port: "9200"
+              protocol: TCP
+            - port: "1514"
+              protocol: TCP
     # Security namespace health checks (onepassword-connect)
     - toEndpoints:
         - matchLabels:

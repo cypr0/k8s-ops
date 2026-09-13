@@ -13,6 +13,7 @@ resources:
   - ./externalsecret-open-webui-oidc.yaml
   - ./externalsecret-nextcloud-oidc.yaml
   - ./externalsecret-immich-oidc.yaml
+  - ./externalsecret-wazuh-oidc.yaml
   - ./externalsecret-pushover.yaml
   - ./helmrepository.yaml
   - ./helmrelease.yaml
@@ -37,5 +38,6 @@ configMapGenerator:
       - blueprints/06-nextcloud-oidc.yaml
       - blueprints/07-immich-oidc.yaml
       - blueprints/08-kubernetes-oidc.yaml
+      - blueprints/09-wazuh-oidc.yaml
     options:
       disableNameSuffixHash: true

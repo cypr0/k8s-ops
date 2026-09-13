@@ -1,0 +1,155 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wazuh-indexer
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  serviceName: wazuh-indexer
+  selector:
+    matchLabels:
+      app: wazuh-indexer
+  template:
+    metadata:
+      labels:
+        app: wazuh-indexer
+    spec:
+      securityContext:
+        fsGroup: 1000
+      # Only one init container. Upstream's privileged
+      # `increase-the-vm-max-map-count` is deliberately absent: the Talos nodes
+      # already ship vm.max_map_count=262144 (verified live), and a privileged
+      # container would be rejected by this namespace's baseline Pod Security
+      # level.
+      initContainers:
+        # The zfs-nfs volume arrives owned by root; the indexer runs as 1000.
+        # Same approach the operator-managed cluster in the logging namespace
+        # takes on this StorageClass.
+        - name: chown-data
+          image: busybox:1.38.0
+          command:
+            - "sh"
+            - "-c"
+            - "chown -R 1000:1000 /var/lib/wazuh-indexer"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+              add:
+                - "CHOWN"
+                - "FOWNER"
+                - "DAC_OVERRIDE"
+          volumeMounts:
+            - name: wazuh-indexer
+              mountPath: /var/lib/wazuh-indexer
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      containers:
+        - name: wazuh-indexer
+          image: wazuh/wazuh-indexer:4.14.7
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Half the memory limit, leaving the rest for the filesystem cache.
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms1g -Xmx1g -Dlog4j2.formatMsgNoLookups=true"
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: "true"
+          ports:
+            - name: rest
+              containerPort: 9200
+            - name: transport
+              containerPort: 9300
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+              add:
+                - "SYS_CHROOT"
+          startupProbe:
+            tcpSocket:
+              port: 9200
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: 9200
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9300
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1536Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: wazuh-indexer
+              mountPath: /var/lib/wazuh-indexer
+            # Whole-directory mounts, not subPath: subPath mounts are never
+            # refreshed by the kubelet, which would break cert-manager renewal.
+            - name: node-certs
+              mountPath: /usr/share/wazuh-indexer/config/certs/node
+              readOnly: true
+            - name: admin-certs
+              mountPath: /usr/share/wazuh-indexer/config/certs/admin
+              readOnly: true
+            - name: indexer-conf
+              mountPath: /usr/share/wazuh-indexer/config/opensearch.yml
+              subPath: opensearch.yml
+              readOnly: true
+            # Seed files for the first boot only; later changes are pushed with
+            # securityadmin.sh from ../config/job-setup.yaml.
+            - name: securityconfig
+              mountPath: /usr/share/wazuh-indexer/config/opensearch-security/internal_users.yml
+              subPath: internal_users.yml
+              readOnly: true
+            - name: securityconfig
+              mountPath: /usr/share/wazuh-indexer/config/opensearch-security/config.yml
+              subPath: config.yml
+              readOnly: true
+            - name: securityconfig
+              mountPath: /usr/share/wazuh-indexer/config/opensearch-security/roles_mapping.yml
+              subPath: roles_mapping.yml
+              readOnly: true
+      volumes:
+        - name: node-certs
+          secret:
+            secretName: wazuh-indexer-node
+            defaultMode: 0440
+        - name: admin-certs
+          secret:
+            secretName: wazuh-indexer-admin
+            defaultMode: 0440
+        - name: indexer-conf
+          configMap:
+            name: wazuh-indexer-conf
+        - name: securityconfig
+          secret:
+            secretName: wazuh-securityconfig
+            defaultMode: 0440
+  volumeClaimTemplates:
+    - metadata:
+        name: wazuh-indexer
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: zfs-nfs
+        resources:
+          requests:
+            storage: 20Gi
