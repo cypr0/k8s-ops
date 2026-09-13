@@ -19,10 +19,16 @@ spec:
       securityContext:
         fsGroup: 1000
       # Only one init container. Upstream's privileged
-      # `increase-the-vm-max-map-count` is deliberately absent: the Talos nodes
-      # already ship vm.max_map_count=262144 (verified live), and a privileged
-      # container would be rejected by this namespace's baseline Pod Security
-      # level.
+      # `increase-the-vm-max-map-count` is deliberately absent: vm.max_map_count
+      # is set to 262144 on every node through
+      # talos/patches/global/machine-sysctls.yaml instead. Fixing it at the node
+      # level rather than per-pod is what makes the baseline Pod Security level
+      # below possible -- a privileged container would be rejected here.
+      #
+      # Do not "verify" this by reading /proc/sys/vm/max_map_count inside some
+      # other pod and generalising: the opensearch-cluster operator raises it
+      # per-node with its own privileged init container, so a single pod's view
+      # says nothing about the rest of the cluster.
       initContainers:
         # The zfs-nfs volume arrives owned by root; the indexer runs as 1000.
         # Same approach the operator-managed cluster in the logging namespace

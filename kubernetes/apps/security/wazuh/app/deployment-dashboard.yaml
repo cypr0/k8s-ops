@@ -17,6 +17,11 @@ spec:
       labels:
         app: wazuh-dashboard
     spec:
+      # Required, not decorative: the cert volume below is mounted 0440 and
+      # lands owned by root, so without fsGroup the uid-1000 dashboard process
+      # cannot read ca.crt and exits with EACCES before it ever starts.
+      securityContext:
+        fsGroup: 1000
       containers:
         - name: wazuh-dashboard
           image: wazuh/wazuh-dashboard:4.14.7

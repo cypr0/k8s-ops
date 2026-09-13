@@ -150,8 +150,14 @@ days and pinned to zero replicas.
   OIDC groups locks the internal admin account out of the REST API entirely —
   the same mistake once made on the logging cluster.
 - **No privileged init container.** Upstream ships one that sets
-  `vm.max_map_count`; the Talos nodes already have 262144, and privileged pods
-  are rejected by this namespace's `baseline` Pod Security level.
+  `vm.max_map_count`. Instead the value is raised to 262144 on every node via
+  `talos/patches/global/machine-sysctls.yaml`, which is what lets this namespace
+  keep a `baseline` Pod Security level. The kernel default of 65530 fails
+  OpenSearch's bootstrap check outright — the indexer will not start.
+  Careful: reading `/proc/sys/vm/max_map_count` from inside an arbitrary pod
+  proves nothing about the cluster, because the opensearch-cluster operator
+  raises it per-node with its own privileged init container. Check with
+  `talosctl -n <ip> read /proc/sys/vm/max_map_count` across all nodes.
 - **`zfs-nfs` keys directories by PVC *name*, not UID.** Deleting and recreating
   the indexer PVC under the same name inherits the old cluster state. On a
   genuine rebuild, clear `/data/nodes/0/_state/` on the NFS server first.
