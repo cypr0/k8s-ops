@@ -207,15 +207,21 @@ spec:
               protocol: TCP
     # OIDC discovery, token exchange and userinfo against id.${SECRET_DOMAIN}.
     # CoreDNS's hosts plugin resolves that name to the envoy-internal ClusterIP,
-    # so this stays inside the cluster -- same path the other in-cluster OIDC
-    # clients take (see kubernetes/apps/network/envoy-gateway/app/
-    # ciliumnetworkpolicy.yaml).
+    # so this stays inside the cluster.
+    #
+    # Port 10443, not 443: Cilium matches the POST-DNAT port, and the Envoy
+    # proxy's container port is 10443 behind the Service's 443. Getting this
+    # wrong does not look like a network problem -- the dashboard's
+    # securityDashboards plugin just times out after 30s and the container
+    # exits 1. Same rule as Gatus uses, see
+    # kubernetes/apps/monitoring/gatus/app/ciliumnetworkpolicy.yaml.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
       toPorts:
         - ports:
-            - port: "443"
+            - port: "10443"
               protocol: TCP
 ---
 # One-shot setup Job in ../config/: pushes the security configuration and
