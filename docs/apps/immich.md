@@ -63,6 +63,6 @@ The `immich.json` config file is mounted as a Secret volume (not ConfigMap) at `
 - Whether VectorChord will ever be worth revisiting for better search relevance than plain pgvector — not evaluated; no observed quality problem with pgvector so far.
 
 ---
-**Secret/IP scan:** Clean. No resolved secret values, real public IPs, or account-identifying paths restated. All credentials cited via ExternalSecret resource + 1Password item/field names. The `${SECRET_DOMAIN}` and `${SECRET_MAIL_SERVER}` substitutions are templated at apply-time by Flux from `cluster-secrets` and never appear in plaintext in this doc.
+**Secret/IP scan:** Clean. No resolved secret values, real public IPs, or account-identifying paths restated. All credentials cited via ExternalSecret resource + 1Password item/field names. The `${SECRET_DOMAIN}` substitution is templated at apply-time by Flux from `cluster-secrets` and never appears in plaintext in this doc.
 
 _All file paths are relative to repo root. This doc lives at `docs/apps/immich.md`._

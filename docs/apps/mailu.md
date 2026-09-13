@@ -90,7 +90,6 @@ For each of the 5 domains Mailu now serves mail for (`${SECRET_DOMAIN}`, `${SECR
 
 ## TODOs / unknowns
 
-- `${SECRET_MAIL_SERVER}` (the old external mail server's SOPS-encrypted variable) is now unreferenced by any app in this repo — Authentik and Immich were the last two consumers, both repointed at this Mailu instance's submission port. Left in `cluster-secrets.sops.yaml` for now since removing a SOPS-encrypted value isn't done casually; safe to prune in a follow-up.
 - `mail` is now in Velero's GFS schedules (`kubernetes/apps/velero/schedules/schedule-{daily,weekly,monthly}.yaml`), so the `zfs-nfs` PVC (mailbox Maildir data) gets kopia fs-backup like every other app's volume. The two Postgres databases (`mailudb`, `roundcubedb`) remain covered separately by the cluster-wide CNPG `postgres` cluster's Barman Cloud WAL archiving. `mailu-redis`'s `tmp` emptyDir (disposable greylisting/quota counters) is excluded via `backup.velero.io/backup-volumes-excludes` in `helmrelease-redis.yaml`. Not yet exercised by an actual restore-test run or verified against Velero's node-agent on this namespace's RWX PVC — worth confirming on the first `mail-restore-test` cycle.
 - MTA-STS/DANE/TLS-RPT rollout (see Known limitations above) — deferred, not scheduled.
 
