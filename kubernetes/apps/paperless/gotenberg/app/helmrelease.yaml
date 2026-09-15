@@ -23,7 +23,7 @@ spec:
               # (149.0.7827.102) with 48 CRITICAL/664 HIGH CVEs, by far the
               # worst image in the cluster -- Renovate hadn't picked up
               # 8.35.0/8.36.0 yet despite them being out.
-              tag: 8.36.0
+              tag: 8.37.0
             command:
               - gotenberg
               - "--chromium-disable-javascript=true"
