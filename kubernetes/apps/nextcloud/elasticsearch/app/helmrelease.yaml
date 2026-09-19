@@ -38,7 +38,7 @@ spec:
           app:
             image:
               repository: docker.elastic.co/elasticsearch/elasticsearch
-              tag: 9.5.3
+              tag: 9.5.4
             env:
               discovery.type: single-node
               xpack.security.enabled: "false"
