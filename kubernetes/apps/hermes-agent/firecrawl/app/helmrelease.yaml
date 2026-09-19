@@ -154,8 +154,10 @@ spec:
               type: RuntimeDefault
 
       nuq-worker:
-        # 2, not upstream's 5 -- see the module docstring above.
-        replicas: 2
+        # 1, not upstream's 5 -- see the module docstring above. Was 2; both
+        # replicas idled at 1-2m CPU and ~350MiB each, so the second was
+        # paying rent for queue depth this home instance never reaches.
+        replicas: 1
         containers:
           nuq-worker:
             image:

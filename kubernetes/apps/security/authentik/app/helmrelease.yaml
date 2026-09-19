@@ -114,7 +114,11 @@ spec:
       autoscaling:
         enabled: true
         minReplicas: 1
-        maxReplicas: 3
+        # 2, not 3: this is SSO for a household, and each replica sits at
+        # ~450MiB. Two still survive a node going away and still allow a
+        # rolling update without a gap, which is what the replicas are
+        # actually for here.
+        maxReplicas: 2
         targetCPUUtilizationPercentage: 70
       resources:
         requests:
@@ -133,7 +137,10 @@ spec:
       autoscaling:
         enabled: true
         minReplicas: 1
-        maxReplicas: 3
+        # Same reasoning as the server above. Worker CPU spikes during
+        # blueprint imports, which is exactly when the HPA scales -- it just
+        # tops out one replica lower now.
+        maxReplicas: 2
         targetCPUUtilizationPercentage: 70
       resources:
         requests:
