@@ -466,8 +466,12 @@ spec:
                 name: hermes-agent-secrets
           resources:
             requests:
+              # Idles around 250Mi; 512Mi keeps a real reservation for the
+              # bursty phases without parking 1Gi that no scheduler can hand to
+              # anything else. The 4Gi ceiling is unchanged, so headroom for a
+              # heavy run is untouched.
               cpu: 500m
-              memory: 1Gi
+              memory: 512Mi
             limits:
               cpu: "2"
               memory: 4Gi

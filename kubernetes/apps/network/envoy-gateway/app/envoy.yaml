@@ -16,6 +16,13 @@ spec:
           resources:
             requests:
               cpu: 100m
+              # Without this, Kubernetes defaults the memory request to the
+              # limit -- 1Gi reserved per proxy pod for something that sits at
+              # 40-100Mi. With two gateways at minReplicas 2 that was ~5Gi of
+              # scheduling capacity blocked and unused, and up to 8Gi once the
+              # HPA scales out. 256Mi is comfortably above the observed peak
+              # while leaving the 1Gi ceiling for bursts.
+              memory: 256Mi
             limits:
               memory: 1Gi
       envoyHpa:
