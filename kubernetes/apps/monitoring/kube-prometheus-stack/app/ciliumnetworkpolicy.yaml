@@ -60,18 +60,49 @@ spec:
         - ports:
             - port: "9093"
               protocol: TCP
-    # All in-cluster metric endpoints (ServiceMonitors span all namespaces)
+    # All in-cluster metric endpoints (ServiceMonitors span all namespaces).
+    #
+    # MAINTENANCE HAZARD: this list has to be extended for every new scrape
+    # port, and nothing fails loudly when it is not. A missing port does not
+    # produce "connection refused" — Cilium drops the packet and Prometheus
+    # reports `context deadline exceeded`, which reads like a slow target.
+    # Nine ports were missing here and ~28% of all scrape targets had been
+    # silently down for an unknown period (found 2026-09-20). If you add a
+    # ServiceMonitor, add its port here and then check `up` for that job.
+    #
+    # The control-plane nodes are the exception that hid the problem: the
+    # `kube-apiserver` entity rule above carries no port restriction and Cilium
+    # maps that entity to the CP node IPs, so node-level scrapes worked on
+    # 3 of 7 nodes and looked like a per-node fault instead of a policy gap.
     - toEntities:
         - cluster
       toPorts:
         - ports:
+            - port: "80" # echo
+              protocol: TCP
             - port: "2020" # fluent-bit
+              protocol: TCP
+            - port: "2801" # falcosidekick
               protocol: TCP
             - port: "3000" # grafana
               protocol: TCP
             - port: "3100" # loki
               protocol: TCP
-            - port: "8001" # envoy proxy stats
+            - port: "3500" # loki-canary
+              protocol: TCP
+            - port: "7979" # cloudflare-dns (external-dns)
+              protocol: TCP
+            - port: "8001" # unused; kept pending verification, see 19001 below
+              protocol: TCP
+            - port: "9153" # coredns
+              protocol: TCP
+            - port: "9402" # cert-manager, cainjector, webhook
+              protocol: TCP
+            - port: "9962" # cilium-agent
+              protocol: TCP
+            - port: "9965" # hubble
+              protocol: TCP
+            - port: "19001" # envoy proxy admin/stats (NOT 8001)
               protocol: TCP
             - port: "8080" # kube-state-metrics, gatus, various
               protocol: TCP
@@ -105,7 +136,9 @@ spec:
     matchLabels:
       app.kubernetes.io/name: alertmanager
   ingress:
-    # Prometheus fires alerts
+    # Prometheus fires alerts on 9093 and scrapes two separate targets: the
+    # Alertmanager itself on 9093 and the config-reloader sidecar on 8080.
+    # 8080 was missing, so that second target had always been down.
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
@@ -113,6 +146,8 @@ spec:
       toPorts:
         - ports:
             - port: "9093"
+              protocol: TCP
+            - port: "8080"
               protocol: TCP
     # Grafana queries alert state
     - fromEndpoints:
@@ -231,6 +266,17 @@ spec:
     matchLabels:
       app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
   ingress:
+    # Prometheus scrapes the operator's own metrics over HTTPS on the same port
+    # the kubelet probes. This rule was missing, so the operator that manages
+    # Prometheus was the one component Prometheus could not see.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
     # Kubelet readiness/liveness probes (host network → host entity)
     - fromEntities:
         - host

@@ -35,6 +35,16 @@ spec:
         - ports:
             - port: "3000"
               protocol: TCP
+    # Prometheus scrapes Grafana's own metrics. The chart ships a ServiceMonitor
+    # for this, but the rule was missing here, so the job had always been down.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
   egress:
     # DNS — L7 dns rule required so Cilium learns the IPs behind the toFQDNs
     # entries below (*.cisotop.de OIDC, grafana.com/.net); otherwise Authentik
