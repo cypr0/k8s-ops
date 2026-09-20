@@ -139,6 +139,8 @@ spec:
               protocol: TCP
             - port: "9205" # nextcloud-exporter
               protocol: TCP
+            - port: "9797" # dmarc-exporter
+              protocol: TCP
             - port: "9877" # paperless-exporter
               protocol: TCP
             - port: "9999" # dragonfly admin

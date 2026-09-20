@@ -99,6 +99,20 @@ spec:
     # (primary) domain -- was missing entirely, unlike MX/SPF/DMARC/PTR
     # which predate this Mailu deployment. A subdomain of the *primary*
     # filtered domain, so unaffected by the bare-apex bug described below.
+    # ${SECRET_DOMAIN}'s own DMARC. Adopted into GitOps on 2026-09-20 when the
+    # rua= reporting address was added -- it predated this deployment and was
+    # the only DMARC record in the set not declared here, which is exactly how
+    # it ended up being the one nobody noticed had no reporting at all.
+    #
+    # p=reject with strict alignment was already in place on all five domains
+    # WITHOUT a rua=, meaning the strictest policy DMARC offers was running
+    # with zero feedback. The SPF breakage found the same day (mail.${SECRET_DOMAIN}
+    # proxied, so SPF authorised Cloudflare rather than the real sender) would
+    # have shown up in the first aggregate report.
+    - dnsName: "_dmarc.${SECRET_DOMAIN}"
+      recordType: TXT
+      targets:
+        - "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:dmarc@${SECRET_DOMAIN}"
     - dnsName: "dkim._domainkey.${SECRET_DOMAIN}"
       recordType: TXT
       targets:
@@ -110,7 +124,7 @@ spec:
     - dnsName: "_dmarc.${SECRET_SECOND_DOMAIN}"
       recordType: TXT
       targets:
-        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+        - "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:dmarc@${SECRET_DOMAIN}"
     # Cross-domain DMARC reporting authorization -- lives under
     # ${SECRET_DOMAIN}'s own zone (it's *this* domain authorizing reports
     # for ${SECRET_SECOND_DOMAIN} to reference it), not the portfolio
@@ -142,7 +156,7 @@ spec:
     - dnsName: "_dmarc.${SECRET_THIRD_DOMAIN}"
       recordType: TXT
       targets:
-        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+        - "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:dmarc@${SECRET_DOMAIN}"
     - dnsName: "${SECRET_THIRD_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
       recordType: TXT
       targets:
@@ -164,7 +178,7 @@ spec:
     - dnsName: "_dmarc.${SECRET_FOURTH_DOMAIN}"
       recordType: TXT
       targets:
-        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+        - "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:dmarc@${SECRET_DOMAIN}"
     - dnsName: "${SECRET_FOURTH_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
       recordType: TXT
       targets:
@@ -187,7 +201,7 @@ spec:
     - dnsName: "_dmarc.${SECRET_FIFTH_DOMAIN}"
       recordType: TXT
       targets:
-        - "v=DMARC1; p=reject; adkim=s; aspf=s"
+        - "v=DMARC1; p=reject; adkim=s; aspf=s; rua=mailto:dmarc@${SECRET_DOMAIN}"
     - dnsName: "${SECRET_FIFTH_DOMAIN}._report._dmarc.${SECRET_DOMAIN}"
       recordType: TXT
       targets:

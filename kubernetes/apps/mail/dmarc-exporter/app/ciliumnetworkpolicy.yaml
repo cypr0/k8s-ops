@@ -1,0 +1,53 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dmarc-exporter
+  namespace: mail
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: dmarc-exporter
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9797"
+              protocol: TCP
+    # Kubelet readiness probe
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9797"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # IMAPS to the mail front. Addressed as mail.${SECRET_DOMAIN} rather than
+    # the Service name on purpose: CoreDNS's hosts plugin resolves that name
+    # in-cluster to mailu-front's ClusterIP, and the serving certificate names
+    # it -- so the connection is both encrypted AND certificate-verified.
+    # Cilium encrypts nothing here (neither WireGuard nor IPsec is enabled), so
+    # plain IMAP on 143 would put the mailbox password on the pod network in
+    # clear text.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+            app.kubernetes.io/component: front
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP

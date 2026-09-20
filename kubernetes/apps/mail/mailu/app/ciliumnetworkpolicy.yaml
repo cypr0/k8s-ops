@@ -103,6 +103,18 @@ spec:
         - ports:
             - port: "993"
               protocol: TCP
+    # dmarc-exporter reads the dmarc@${SECRET_DOMAIN} mailbox for DMARC
+    # aggregate reports. Same situation as paperless above: it addresses
+    # mail.${SECRET_DOMAIN}, which CoreDNS resolves to this Service's ClusterIP,
+    # so it arrives as a cluster identity rather than `world`.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: dmarc-exporter
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP
     # Gatus health check (front's ClusterIP Service, mailu-front:443 --
     # verified live against the actual Service, distinct from the
     # mailu-front-ext/mailu-front-webmail-lan LoadBalancer Services above)

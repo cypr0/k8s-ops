@@ -1,0 +1,120 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dmarc-exporter
+  labels:
+    app.kubernetes.io/name: dmarc-exporter
+spec:
+  replicas: 1
+  strategy:
+    # The storage volume is RWO and holds the deduplication state; two pods
+    # would double-count reports delivered more than once.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dmarc-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dmarc-exporter
+      annotations:
+        secret.reloader.stakater.com/reload: "dmarc-exporter-config"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: exporter
+          # renovate: datasource=docker depName=jgosmann/dmarc-metrics-exporter
+          image: jgosmann/dmarc-metrics-exporter:1.3.1
+          args:
+            - --configuration
+            - /config/dmarc-metrics-exporter.json
+          ports:
+            - name: metrics
+              containerPort: 9797
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: storage
+              mountPath: /var/lib/dmarc-metrics-exporter
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+      volumes:
+        - name: config
+          secret:
+            secretName: dmarc-exporter-config
+            defaultMode: 0400
+        - name: storage
+          persistentVolumeClaim:
+            claimName: dmarc-exporter
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dmarc-exporter
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  storageClassName: zfs-nfs
+  resources:
+    requests:
+      # Only the deduplication state (report IDs seen in the last 7 days).
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dmarc-exporter
+  labels:
+    app.kubernetes.io/name: dmarc-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: dmarc-exporter
+  ports:
+    - name: metrics
+      port: 9797
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dmarc-exporter
+  labels:
+    app.kubernetes.io/name: dmarc-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dmarc-exporter
+  endpoints:
+    # The exporter polls IMAP on its own schedule (15 min); scraping more often
+    # than that only re-reads the same counters.
+    - port: metrics
+      interval: 5m

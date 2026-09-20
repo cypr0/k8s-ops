@@ -9,3 +9,4 @@ components:
 resources:
   - ./namespace.yaml
   - ./mailu/ks.yaml
+  - ./dmarc-exporter/ks.yaml
