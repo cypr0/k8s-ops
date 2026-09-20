@@ -57,12 +57,15 @@ spec:
             - name: scripts
               mountPath: /scripts
               readOnly: true
+          # /healthz, never /metrics: a scrape makes two live API calls that
+          # can take up to 20s, while the kubelet's default probe timeout is 1s.
           readinessProbe:
             httpGet:
-              path: /metrics
+              path: /healthz
               port: metrics
-            initialDelaySeconds: 15
+            initialDelaySeconds: 5
             periodSeconds: 30
+            timeoutSeconds: 3
           resources:
             requests:
               cpu: 10m
