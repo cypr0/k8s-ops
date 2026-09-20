@@ -5,11 +5,11 @@
 > **Hostname**   none — no ingress; egress-only toward the physical Proxmox host
 
 ## What it does here
-A daily `CronJob` that SSHes into the physical Proxmox VE host underlying this cluster and runs an Ansible playbook to harden and maintain it: OS package updates, fail2ban, CIS-flavored `sshd_config`, syslog forwarding to Fluent-Bit/OpenSearch, and vsftpd for a Brother scanner that drops files into Paperless's NFS consume share. It's the one app in this repo that reaches *outside* Kubernetes to manage the hypervisor hosting the cluster itself.
+A daily `CronJob` that SSHes into the physical Proxmox VE host underlying this cluster and runs an Ansible playbook to harden and maintain it: OS package updates, fail2ban, CIS-flavored `sshd_config`, a Wazuh agent reporting to the in-cluster manager, and vsftpd for a Brother scanner that drops files into Paperless's NFS consume share. It's the one app in this repo that reaches *outside* Kubernetes to manage the hypervisor hosting the cluster itself.
 
 ## Architecture at a glance
 - **Depends on:** ExternalSecret `proxmox-ansible-credentials` (1Password item `proxmox`); ConfigMap `proxmox-ansible-playbook` (`kubernetes/apps/automation/proxmox-ansible/app/configmap-playbook.yaml`) which embeds the entire playbook, a key-fixup script, and the run wrapper; Flux `postBuild.substituteFrom: cluster-secrets` for the `SECRET_ALLOWED_IP` value (`kubernetes/apps/automation/proxmox-ansible/ks.yaml`).
-- **Depended on by:** Paperless-ngx's scan-to-consume workflow — the vsftpd account and directory ownership this playbook maintains back the NFS path Paperless mounts as its consume share (`kubernetes/apps/paperless/paperless-ngx/app/pvc.yaml`). The cluster's Fluent-Bit/OpenSearch logging pipeline receives the Proxmox host's syslog/fail2ban output because this playbook configures the forwarding (`kubernetes/apps/automation/proxmox-ansible/app/configmap-playbook.yaml`, `hardening.yml` rsyslog tasks).
+- **Depended on by:** Paperless-ngx's scan-to-consume workflow — the vsftpd account and directory ownership this playbook maintains back the NFS path Paperless mounts as its consume share (`kubernetes/apps/paperless/paperless-ngx/app/pvc.yaml`). Wazuh's visibility into the hypervisor also comes from here: the playbook installs the agent, pins it to the manager's version, and registers it as `proxmox.${SECRET_DOMAIN}` (`kubernetes/apps/automation/proxmox-ansible/app/configmap-playbook.yaml`). It previously forwarded raw syslog to Fluent Bit instead; that was removed on 2026-09-20 once the agent shipped the same events decoded — rsyslog itself stays installed, because it writes the `/var/log/syslog` and `/var/log/auth.log` files the agent tails.
 
 ## Repo layout
 | File | Purpose |

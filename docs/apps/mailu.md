@@ -90,7 +90,7 @@ For each of the 5 domains Mailu now serves mail for (`${SECRET_DOMAIN}`, `${SECR
 
 ## TODOs / unknowns
 
-- `mail` is now in Velero's GFS schedules (`kubernetes/apps/velero/schedules/schedule-{daily,weekly,monthly}.yaml`), so the `zfs-nfs` PVC (mailbox Maildir data) gets kopia fs-backup like every other app's volume. The two Postgres databases (`mailudb`, `roundcubedb`) remain covered separately by the cluster-wide CNPG `postgres` cluster's Barman Cloud WAL archiving. `mailu-redis`'s `tmp` emptyDir (disposable greylisting/quota counters) is excluded via `backup.velero.io/backup-volumes-excludes` in `helmrelease-redis.yaml`. Not yet exercised by an actual restore-test run or verified against Velero's node-agent on this namespace's RWX PVC — worth confirming on the first `mail-restore-test` cycle.
+- `mail` is now in Velero's GFS schedules (`kubernetes/apps/velero/schedules/schedule-{daily,weekly,monthly}.yaml`), so the `zfs-nfs` PVC (mailbox Maildir data) gets kopia fs-backup like every other app's volume. The two Postgres databases (`mailudb`, `roundcubedb`) remain covered separately by the cluster-wide CNPG `postgres` cluster's Barman Cloud WAL archiving. `mailu-redis`'s `tmp` emptyDir (disposable greylisting/quota counters) is excluded via `backup.velero.io/backup-volumes-excludes` in `helmrelease-redis.yaml`. Never successfully restored: `mail` went 0 for 2 in the restore-test's history before that CronJob was removed on 2026-09-20, and nothing verifies it now. Worth a manual restore into a scratch namespace.
 - MTA-STS/DANE/TLS-RPT rollout (see Known limitations above) — deferred, not scheduled.
 
 ---

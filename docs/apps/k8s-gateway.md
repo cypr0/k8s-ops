@@ -9,7 +9,7 @@ This is the [k8s_gateway](https://github.com/k8s-gateway/k8s_gateway) project �
 
 ## Architecture at a glance
 - **Depends on:** CoreDNS (`kube-system`) for its own upstream resolution; Cilium's LoadBalancer IP pool for its LB IP; `kube-apiserver`, to watch `Service`/`HTTPRoute` objects cluster-wide. No `ExternalSecret`/1Password dependency — the app directory has no secrets file at all.
-- **Depended on by:** every app whose `HTTPRoute` needs to resolve to an internal address for LAN/VPN clients rather than the public Cloudflare tunnel path — concretely the apps attached to the `envoy-internal` Gateway: `nextcloud`, `open-webui`, `security/authentik`, `paperless/paperless-ngx`, `monitoring/grafana`, `monitoring/gatus`, `logging/opensearch-cluster`. `cert-manager` deliberately does **not** rely on it for its ACME self-check — see Known quirks.
+- **Depended on by:** every app whose `HTTPRoute` needs to resolve to an internal address for LAN/VPN clients rather than the public Cloudflare tunnel path — concretely the apps attached to the `envoy-internal` Gateway: `nextcloud`, `open-webui`, `security/authentik`, `paperless/paperless-ngx`, `monitoring/grafana`, `monitoring/gatus`, `security/wazuh`. `cert-manager` deliberately does **not** rely on it for its ACME self-check — see Known quirks.
 
 ## Repo layout
 | File | Purpose |

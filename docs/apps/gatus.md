@@ -40,7 +40,6 @@ Grounded in `kubernetes/apps/monitoring/gatus/app/configmap.yaml`, grouped as it
 - **Infrastructure:** Echo connectivity test (`https://echo.${SECRET_DOMAIN}`, 5m) — the one check deliberately routed over the real public Cloudflare edge, to prove the external ingress path end-to-end.
 - **Monitoring:** Prometheus, Alertmanager, Loki — all plain `/-/healthy`- or `/ready`-style HTTP checks against their in-cluster Service DNS names, 1m interval.
 - **Database:** PostgreSQL CNPG primary (`tcp://postgres-rw.database.svc.cluster.local:5432`) and DragonflyDB (`tcp://dragonfly.database.svc.cluster.local:6379`) — both 30s-interval plain TCP-connect checks (`[CONNECTED] == true`), no authentication attempted.
-- **Logging:** OpenSearch (TCP 9200) and OpenSearch Dashboards (`/api/status`, permissive `< 500`).
 - **Apps:** Grafana (`/api/health`), Nextcloud (`/status.php`), Collabora (`/hosting/discovery`), Open WebUI and Paperless-ngx — the latter two use a permissive `[STATUS] == any(200, 302, 401, 403)` condition because their exact unauthenticated response was never independently confirmed (inline comment).
 - A Paperless-AI check existed here too but was removed when that app was decommissioned (commit `c61fee3`) — its Gatus entry and dedicated egress rule were deleted in the same commit that removed the app.
 

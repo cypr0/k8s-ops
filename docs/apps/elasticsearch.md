@@ -5,7 +5,7 @@
 > **Hostname**   none — cluster-internal only, no HTTPRoute; reachable at `elasticsearch.nextcloud.svc.cluster.local:9200`
 
 ## What it does here
-Single-node full-text search index backing Nextcloud's `fulltextsearch`/`fulltextsearch_elasticsearch` apps — nothing else in the cluster talks to it. It is a wholly separate deployment from the OpenSearch instance in the `logging` namespace — the shared "elasticsearch" naming across the two is coincidental, not a shared backend.
+Single-node full-text search index backing Nextcloud's `fulltextsearch`/`fulltextsearch_elasticsearch` apps — nothing else in the cluster talks to it. It was deliberately kept when OpenSearch was removed from the cluster on 2026-09-20: the two were always separate deployments, and this one serves Nextcloud search rather than logging.
 
 ## Architecture at a glance
 - **Depends on:** `csi-driver-nfs` (Flux `dependsOn` in `kubernetes/apps/nextcloud/elasticsearch/ks.yaml`, since its PVC uses the `zfs-nfs` StorageClass). No CNPG, no cache, no ExternalSecret, no OIDC — the smallest dependency footprint of any app in `nextcloud/`.

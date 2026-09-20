@@ -1,40 +1,35 @@
 # velero
 
 > **Namespace**  velero
-> **Source**     Velero controller: HelmRelease chart `velero` v12.1.0 from `https://vmware-tanzu.github.io/helm-charts` (`kubernetes/apps/velero/app/helmrelease.yaml`, `kubernetes/apps/velero/app/helmrepository.yaml`). `restore-test/` and `schedules/` are plain manifests (CronJob / `Schedule` CRs), no separate chart.
+> **Source**     Velero controller: HelmRelease chart `velero` v12.1.0 from `https://vmware-tanzu.github.io/helm-charts` (`kubernetes/apps/velero/app/helmrelease.yaml`, `kubernetes/apps/velero/app/helmrepository.yaml`). `schedules/` are plain manifests (`Schedule` CRs), no separate chart.
 > **Hostname**   none — no HTTPRoute, no user-facing surface anywhere in this app; cluster-internal only
 
 ## What it does here
-Three Flux Kustomizations under one logical app (`kubernetes/apps/velero/ks.yaml`), in a strict dependency chain (`velero` → `velero-schedules` → `velero-restore-test`):
+Two Flux Kustomizations under one logical app (`kubernetes/apps/velero/ks.yaml`), chained (`velero` → `velero-schedules`):
 - **`app/`** — the Velero controller + node-agent DaemonSet, doing filesystem (kopia) backup of PVC data to Intercolo S3-compatible storage. No CSI snapshot support exists on this cluster's NFS-backed storage class, so this is the only backup path for volume data (`kubernetes/apps/velero/app/helmrelease.yaml:65-70`).
 - **`schedules/`** — three GFS (Grandfather-Father-Son) `Schedule` CRs (daily/14d, weekly/90d, monthly/365d) that actually define what gets backed up and how long it's kept.
-- **`restore-test/`** — a daily CronJob that automatically restores one namespace's most recent daily backup into a scratch namespace, checks pod health, alerts via Pushover on failure, and reports results to OpenSearch — this is what makes the backups more than theoretical.
+
+There used to be a third, `restore-test/` — a daily CronJob that restored one namespace's most recent backup into a scratch namespace and checked pod health. **It was removed on 2026-09-20 along with OpenSearch, which held its results.** That is a real loss and worth stating plainly: it was the only evidence these backups could actually be replayed, and its history had surfaced that `paperless` (0/15), `hermes-agent` (0/6) and `mail` (0/2) never once restored successfully. The backups and their schedules are untouched; what disappeared is the verification. This was a deliberate decision, not an oversight — see the **Known quirks** below, which are still the hard-won findings from the period when it ran.
 
 Together this is the cluster's only backup/disaster-recovery path for application PVC data (`nextcloud`, `paperless`, `open-webui`, `hermes-agent`, `immich`, `mail`); Postgres has its own separate, non-overlapping path via `plugin-barman-cloud` (see `docs/apps/plugin-barman-cloud.md`) and is deliberately **not** in Velero's scope.
 
 ## Architecture at a glance
-- **Depends on:** `ExternalSecret` `velero-credentials` → 1Password item `intercolo` (same item as `plugin-barman-cloud`, see Secrets); `external-secrets-stores` (namespace `security`), per `kubernetes/apps/velero/ks.yaml`'s `dependsOn`. The restore-test CronJob additionally depends on the OpenSearch cluster (namespace `logging`) for result indexing and on `api.pushover.net` for alerting.
-- **Depended on by:** every app whose backup coverage is documented against this app's `schedules/` — `docs/apps/nextcloud.md`, `docs/apps/dragonfly.md`, `docs/apps/cloudnative-pg.md`, and others cite `kubernetes/apps/velero/schedules/schedule-daily.yaml`'s `includedNamespaces` directly to state whether they're covered. `kubernetes/apps/logging/opensearch-cluster/config/job-velero-dashboard.yaml` builds an OpenSearch Dashboards view over the restore-test's indexed results (index `velero-restore-tests`).
+- **Depends on:** `ExternalSecret` `velero-credentials` → 1Password item `intercolo` (same item as `plugin-barman-cloud`, see Secrets); `external-secrets-stores` (namespace `security`), per `kubernetes/apps/velero/ks.yaml`'s `dependsOn`.
+- **Depended on by:** every app whose backup coverage is documented against this app's `schedules/` — `docs/apps/nextcloud.md`, `docs/apps/dragonfly.md`, `docs/apps/cloudnative-pg.md`, and others cite `kubernetes/apps/velero/schedules/schedule-daily.yaml`'s `includedNamespaces` directly to state whether they're covered. Nothing consumes Velero's own output in-cluster any more.
 
 ## Repo layout
 | File | Purpose |
 | --- | --- |
-| `kubernetes/apps/velero/ks.yaml` | Three Flux Kustomizations, strictly chained: `velero` (controller) → `velero-schedules` (`dependsOn: velero`) → `velero-restore-test` (`dependsOn: velero-schedules` + `external-secrets-stores`) |
+| `kubernetes/apps/velero/ks.yaml` | Two Flux Kustomizations, chained: `velero` (controller) → `velero-schedules` (`dependsOn: velero`) |
 | `kubernetes/apps/velero/app/helmrelease.yaml` | Velero chart values: pinned AWS plugin image, `backupStorageLocation`, node-agent config, resource limits |
 | `kubernetes/apps/velero/app/externalsecret.yaml` | S3 credentials + endpoint/region for the `ObjectStore`/HelmRelease (see Secrets) |
 | `kubernetes/apps/velero/app/ciliumnetworkpolicy.yaml` | Egress-only policy for the Velero server + node-agent DaemonSet |
 | `kubernetes/apps/velero/schedules/schedule-{daily,weekly,monthly}.yaml` | The three GFS `Schedule` CRs — actual namespaces covered, retention, resource exclusions |
-| `kubernetes/apps/velero/restore-test/cronjob.yaml` | Daily (05:00) restore-test CronJob spec, timeouts, node affinity |
-| `kubernetes/apps/velero/restore-test/configmap-restore-test.yaml` | The restore-test Python script itself, mounted as `/scripts/restore_test.py` |
-| `kubernetes/apps/velero/restore-test/rbac.yaml` | ServiceAccount + namespaced Role (Backups/Restores/ConfigMaps) + cluster-scoped ClusterRole (Namespaces/Pods/PVCs — restore target namespace name isn't fixed) |
-| `kubernetes/apps/velero/restore-test/externalsecret.yaml` | Pushover + OpenSearch credentials for the restore-test job |
-| `kubernetes/apps/velero/restore-test/ciliumnetworkpolicy.yaml` | Egress policy scoped to `app: velero-restore-test` pods only (DNS, apiserver, OpenSearch, Pushover) |
 
 ## Secrets
 | ExternalSecret | 1Password source | Consumed by |
 | --- | --- | --- |
 | `velero-credentials` (`kubernetes/apps/velero/app/externalsecret.yaml`) | whole-item `dataFrom.extract` on item `intercolo`, templated down to `S3_ENDPOINT`, `S3_REGION`, and a `cloud` key (AWS-INI format built from `S3_API_KEY`/`S3_API_SECRET`) | `cloud` → mounted into the Velero server/node-agent as `credentials.existingSecret` (`app/helmrelease.yaml:61-63`); `S3_ENDPOINT`/`S3_REGION` → injected via the HelmRelease's own `spec.valuesFrom` into `configuration.backupStorageLocation[0].config.{s3Url,region}` (`app/helmrelease.yaml:30-38`) |
-| `velero-restore-test-credentials` (`kubernetes/apps/velero/restore-test/externalsecret.yaml`) | two whole-item extracts, items `pushover` and `opensearch`, templated to `PUSHOVER_TOKEN`, `PUSHOVER_USER`, `OPENSEARCH_PASSWORD` | env vars in the `velero-restore-test` CronJob container (`restore-test/cronjob.yaml:53-71`) — reuses the same `pushover` item as `alertmanager`/`opensearch-config` per the ExternalSecret's own comment |
 
 `velero-credentials` reuses the **same** `intercolo` 1Password item as `plugin-barman-cloud` (`kubernetes/apps/database/plugin-barman-cloud/app/externalsecret.yaml`), but takes the opposite approach to extraction: barman-cloud uses explicit per-key `remoteRef`s because its values feed Flux `postBuild.substituteFrom` (which needs valid envsubst identifiers straight off the Secret); Velero uses a whole-item `dataFrom.extract` because its consumer is a `template` block (ExternalSecrets' own Go-template engine, tolerant of the Login item's non-identifier field names) plus the HelmRelease's `valuesFrom` (helm-controller, not Flux substitution) — so the constraint that forced barman-cloud's workaround doesn't apply here.
 
@@ -42,8 +37,8 @@ Together this is the cluster's only backup/disaster-recovery path for applicatio
 No HTTPRoute anywhere in this app — everything is cluster-internal.
 
 - `kubernetes/apps/velero/app/ciliumnetworkpolicy.yaml`: egress-only for `app.kubernetes.io/name: velero` (server + node-agent) — kube-dns, `kube-apiserver` entity, and `world:443` labeled "S3-compatible backup storage (Intercolo)".
-- `kubernetes/apps/velero/restore-test/ciliumnetworkpolicy.yaml`: egress-only, scoped to `app: velero-restore-test` specifically — **not** the generic `batch.kubernetes.io/job-name` selector, because Velero's own controller spawns other Jobs in this namespace (repo maintenance, etc.) that need their own unrestricted S3 egress and shouldn't be constrained by this policy (in-file comment). Allows kube-dns (with an L7 `dns` rule, required so Cilium learns the IP behind the `toFQDNs` entry below), `kube-apiserver`, OpenSearch REST (`logging` namespace, port 9200), and `toFQDNs: api.pushover.net:443`.
-- `kubernetes/apps/logging/opensearch-cluster/app/ciliumnetworkpolicy.yaml:60-66` has the matching ingress rule on the OpenSearch side, scoped to `namespace: velero, app: velero-restore-test`.
+
+One design note worth keeping from the removed restore-test policy: it selected `app: velero-restore-test` specifically rather than the generic `batch.kubernetes.io/job-name`, because Velero's own controller spawns other Jobs in this namespace (repo maintenance and similar) that need unrestricted S3 egress. Any future Job added here should follow the same rule.
 
 ## Storage
 - The Velero server/node-agent own no PVC of their own — they read/write to the existing PVCs of the namespaces they back up, plus the S3 destination.
@@ -58,6 +53,12 @@ No HTTPRoute anywhere in this app — everything is cluster-internal.
   - `paperless-consume-pvc` (`kubernetes/apps/paperless/paperless-ngx/app/pvc.yaml:44`) carries `velero.io/exclude-from-backup: "true"` — it's a scanner drop-folder statically bound to a fixed PV via `claimRef`, so any restore into a different namespace can never bind (`git show 8f3bfd2`); it's also just a transient inbox with nothing worth backing up.
 
 ## Known quirks
+
+> Several entries below cite `restore-test/` paths. Those files no longer exist — they were
+> removed on 2026-09-20 and live only in git history (`git show 27a0a06^:kubernetes/apps/velero/restore-test/...`).
+> The findings are kept because they are properties of **Velero and this storage backend**, not of the
+> test harness, and they will bite again on any manual restore.
+
 - **AWS plugin pinned to v1.8.2, Renovate-excluded, do not bump without live testing.** `app/helmrelease.yaml:40-52` — v1.9+ moved to AWS SDK v2, which signs `PutObject` with a chunked trailer signature Intercolo doesn't support ("SigV4 Chunk signatures are not supported", per Intercolo's own compat docs cited in-file). This regressed silently once already (`ca97746` bumped to v1.14.2, `9703a41` re-pinned to v1.8.2 and added the Renovate exclusion in `.renovaterc.json5:90-94`). `AWS_REQUEST_CHECKSUM_CALCULATION`/`AWS_RESPONSE_CHECKSUM_VALIDATION=when_required` do **not** work around it for this plugin's upload path — confirmed live 2026-08-09 per the in-file comment.
 - **Server OOM-killed mid-restore before `excludedResources` existed.** A namespace-scoped restore without exclusions pulled in every cluster-wide CRD backed up alongside app data, OOM-killing the 512Mi-limited server; fixed by adding `excludedResources` to all three Schedules (and, defense-in-depth, to the restore-test script itself) plus bumping the server memory limit to 1Gi (`git show 7134f21`, comment preserved at `app/helmrelease.yaml:99-101`).
 - **Restoring more than one namespace at once causes node-agent contention.** The node-agent allows only one restore per node at a time; restoring all 4 covered namespaces simultaneously made a smaller restore hang indefinitely behind a large (1.1GB) one that happened to land on the same node (`git show 8f3bfd2`). This is why the restore-test picks exactly one namespace per run via a shuffled, without-replacement rotation persisted in the `velero-restore-test-state` ConfigMap (`restore-test/configmap-restore-test.yaml:186-210`) rather than testing all of them.
@@ -70,9 +71,8 @@ No HTTPRoute anywhere in this app — everything is cluster-internal.
 - Upgrade the Velero chart: edit `app/helmrelease.yaml`'s `chart.spec.version`, commit, push, Flux reconciles within `interval: 1h` (or force with `flux reconcile helmrelease velero -n velero`). **Do not** let Renovate auto-bump the pinned `velero/velero-plugin-for-aws:v1.8.2` init container image — it's explicitly excluded (`.renovaterc.json5:90-94`); any bump needs a real backup tested against Intercolo first.
 - Rotate S3 credentials: update the `intercolo` 1Password item, then `kubectl annotate externalsecret velero-credentials -n velero force-sync=$(date +%s)` (this also affects `plugin-barman-cloud`, which reads the same item).
 - Trigger an on-demand backup: create a `Backup` CR referencing one of the three `Schedule`s' template, or `velero backup create <name> --from-schedule daily` if the Velero CLI is available against this cluster.
-- Manually run a restore test: `kubectl create job --from=cronjob/velero-restore-test velero-restore-test-manual -n velero`.
-- Pause reconciliation of any of the three stages: `flux suspend kustomization velero -n flux-system` / `velero-schedules` / `velero-restore-test` (respect the dependency chain — suspending `velero` also blocks the other two's health from being meaningfully re-evaluated).
-- Check restore-test history: `kubectl get jobs -n velero -l app=velero-restore-test` (or the OpenSearch Dashboards view built by `kubernetes/apps/logging/opensearch-cluster/config/job-velero-dashboard.yaml`, index `velero-restore-tests`).
+- Pause reconciliation: `flux suspend kustomization velero -n velero` / `velero-schedules` (respect the chain — suspending `velero` also blocks the other's health from being meaningfully re-evaluated).
+- Verify a backup by hand, now that nothing does it automatically: `velero restore create --from-backup <name> --namespace-mappings <ns>:<ns>-verify`, then check pod health in the scratch namespace and delete it. The **Known quirks** below explain why this needs a generous timeout and why only one namespace should be restored at a time.
 
 ## TODOs / unknowns
 - Whether the 8h `itemOperationTimeout` is enough headroom for the *largest* covered namespace's volume (open-webui's ~1.1GB restore was the one observed contending for a node-agent slot, per `git show 8f3bfd2`) under worse-than-observed conditions is not independently re-verified for this doc — only that it was sufficient in the incidents found in commit history.

@@ -35,7 +35,7 @@ A single-container shell sandbox (`ghcr.io/open-webui/open-terminal`) that Open 
 ## Storage
 - `open-terminal-home-pvc`: 20Gi, `storageClassName: zfs-nfs`, `ReadWriteMany`, mounted at `/home`. `/tmp` is a plain `emptyDir`, not persisted.
 - The HelmRelease pins `replicas: 1` and `strategy: Recreate` with an explicit comment: "Single writer to the shared /home PVC — never run two pods at once" — scaling this up would risk concurrent writers on the same RWX volume.
-- Backup coverage: the `open-webui` namespace (which includes this PVC) is included in Velero's daily (14-day retention), weekly (90-day), and monthly GFS schedules, and in the automated restore-test job.
+- Backup coverage: the `open-webui` namespace (which includes this PVC) is included in Velero's daily (14-day retention), weekly (90-day), and monthly GFS schedules. Restores are no longer verified automatically — the restore-test CronJob was removed on 2026-09-20 (`docs/apps/velero.md`).
 
 ## Known quirks
 - **Runs as root by design.** `securityContext.runAsNonRoot: false` / `runAsUser: 0` is explicit, not an oversight — multi-user mode manages Linux accounts and uses `sudo` for runtime package installs inside the container, which needs root. The same comment reiterates the container is not externally exposed as the compensating control.

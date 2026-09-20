@@ -5,11 +5,11 @@
 > **Hostname**   none — no HTTPRoute; both components are internal-only, reached via ClusterIP/eBPF, not the ingress path
 
 ## What it does here
-Falco is the cluster's runtime intrusion-detection layer: a DaemonSet reading kernel syscalls via eBPF on every worker node, matched against a mix of upstream and homelab-specific rules (`kubernetes/apps/security/falco/app/helmrelease-falco.yaml:88-181`). Falcosidekick, deployed as a fully separate HelmRelease rather than the chart's built-in subchart (`falcosidekick.enabled: false` in `helmrelease-falco.yaml:52-53`, with the comment "deployed as separate HelmRelease"), fans each Falco event out to Loki, OpenSearch, and Pushover. This pairing is documented as one app because they're one Flux Kustomization and one operational unit — Falco without Falcosidekick just logs to stdout with nowhere to go.
+Falco is the cluster's runtime intrusion-detection layer: a DaemonSet reading kernel syscalls via eBPF on every worker node, matched against a mix of upstream and homelab-specific rules (`kubernetes/apps/security/falco/app/helmrelease-falco.yaml:88-181`). Falcosidekick, deployed as a fully separate HelmRelease rather than the chart's built-in subchart (`falcosidekick.enabled: false` in `helmrelease-falco.yaml:52-53`, with the comment "deployed as separate HelmRelease"), fans each Falco event out to Loki and Pushover. This pairing is documented as one app because they're one Flux Kustomization and one operational unit — Falco without Falcosidekick just logs to stdout with nowhere to go.
 
 ## Architecture at a glance
 - **Depends on:** Flux Kustomization `kube-prometheus-stack` and `loki` (namespace `monitoring`) and `external-secrets-stores` (namespace `security`), all via `dependsOn` (`kubernetes/apps/security/falco/ks.yaml:12-18`) — `loki` specifically because Falcosidekick needs it up before it can ship logs (also noted from the other side in `docs/apps/loki.md:14`); `external-secrets-stores` because the `onepassword` ClusterSecretStore must exist before the two ExternalSecrets below can sync.
-- **Depended on by:** `loki` (log destination for warning+ events), the `opensearch-cluster` (SIEM index for warning+ events — `docs/apps/opensearch-cluster.md:12` lists Falco's falcosidekick as a consumer), Pushover (critical+ alerting), and `kube-prometheus-stack`'s Prometheus (scrapes both ServiceMonitors). At the Flux level, this Kustomization's own health gates nothing else, but `docs/apps/kube-prometheus-stack.md:12` and `:43` note that `falco` itself is one of six Kustomizations that stall if `kube-prometheus-stack` fails to converge. `docs/apps/metrics-server.md:12` also notes Falcosidekick's HPA (`helmrelease-sidekick.yaml:94-98`) depends on `metrics-server` for scaling decisions.
+- **Depended on by:** `loki` (log destination for warning+ events), Pushover (critical+ alerting), and `kube-prometheus-stack`'s Prometheus (scrapes both ServiceMonitors). At the Flux level, this Kustomization's own health gates nothing else, but `docs/apps/kube-prometheus-stack.md:12` and `:43` note that `falco` itself is one of six Kustomizations that stall if `kube-prometheus-stack` fails to converge. `docs/apps/metrics-server.md:12` also notes Falcosidekick's HPA (`helmrelease-sidekick.yaml:94-98`) depends on `metrics-server` for scaling decisions.
 
 ## Repo layout
 | File | Purpose |
@@ -19,7 +19,6 @@ Falco is the cluster's runtime intrusion-detection layer: a DaemonSet reading ke
 | `kubernetes/apps/security/falco/app/helmrelease-falco.yaml` | Falco DaemonSet: driver, resources, custom rules |
 | `kubernetes/apps/security/falco/app/helmrelease-sidekick.yaml` | Falcosidekick Deployment: output routing, HPA |
 | `kubernetes/apps/security/falco/app/externalsecret.yaml` | Pushover credentials for Falcosidekick |
-| `kubernetes/apps/security/falco/app/externalsecret-opensearch.yaml` | OpenSearch admin password for Falcosidekick |
 | `kubernetes/apps/security/falco/app/ciliumnetworkpolicy.yaml` | Two CiliumNetworkPolicies — one per component |
 | `kubernetes/apps/security/falco/app/namespace.yaml` | `falco` namespace (prune disabled) |
 
@@ -27,19 +26,18 @@ Falco is the cluster's runtime intrusion-detection layer: a DaemonSet reading ke
 | ExternalSecret | 1Password item / field | Consumed by |
 | --- | --- | --- |
 | `falcosidekick-pushover` (`kubernetes/apps/security/falco/app/externalsecret.yaml`) | item `pushover`, fields `ALERTMANAGER_PUSHOVER_API_TOKEN` → `PUSHOVER_APITOKEN`, `PUSHOVER_USER_KEY` → `PUSHOVER_USERKEY` | Falcosidekick container env, via `extraEnv` (`helmrelease-sidekick.yaml:57-67`) |
-| `falcosidekick-opensearch` (`kubernetes/apps/security/falco/app/externalsecret-opensearch.yaml`) | item `opensearch`, field `OPENSEARCH_ADMIN_PASSWORD` → `ELASTICSEARCH_PASSWORD` | Falcosidekick container env, via `extraEnv` (`helmrelease-sidekick.yaml:68-72`), used to auth against the `admin` user for the `elasticsearch` output (`helmrelease-sidekick.yaml:44-52`) |
 
-Both ExternalSecrets pull from the `onepassword` ClusterSecretStore (`externalsecret.yaml:8-9`, `externalsecret-opensearch.yaml:7-8`).
+The remaining ExternalSecret pulls from the `onepassword` ClusterSecretStore (`externalsecret.yaml:8-9`). The `falcosidekick-opensearch` one, which fed the `elasticsearch` output, was removed on 2026-09-20 together with OpenSearch.
 
 ## Routing & access
 No HTTPRoute — nothing here is meant to be reached from outside the cluster. Two CiliumNetworkPolicies in `kubernetes/apps/security/falco/app/ciliumnetworkpolicy.yaml`:
 - **`falco`** (lines 2-37): egress-only — DNS to `kube-dns`, port 2801/TCP to `falcosidekick` (event forwarding), and port 443/TCP to `world` for the `falcoctl-artifact-install` init container, which fetches rule updates from `falcosecurity.github.io`.
-- **`falcosidekick`** (lines 39-108): ingress from `falco` (2801, event intake), from `prometheus` in `monitoring` (2802, metrics scrape), and from the `host` entity (2801, kubelet probes); egress to DNS, `loki` (3100), the `opensearch-cluster` in `logging` (9200), and `world` (443, for the Pushover webhook).
+- **`falcosidekick`** (lines 39-108): ingress from `falco` (2801, event intake), from `prometheus` in `monitoring` (2802, metrics scrape), and from the `host` entity (2801, kubelet probes); egress to DNS, `loki` (3100), and `world` (443, for the Pushover webhook).
 
 No OIDC/SSO — neither component has a web UI exposed to end users in this deployment.
 
 ## Storage
-No PVCs. Falco is a DaemonSet reading the host's eBPF/syscall stream directly; Falcosidekick is stateless (forward-only). Neither appears in `kubernetes/apps/velero/` schedules or restore-test config — nothing here needs backup coverage.
+No PVCs. Falco is a DaemonSet reading the host's eBPF/syscall stream directly; Falcosidekick is stateless (forward-only). Neither appears in `kubernetes/apps/velero/` schedules — nothing here needs backup coverage.
 
 ## Known quirks
 - **Talos requires the modern eBPF driver plus `SYS_RESOURCE`.** `driver.kind: modern_ebpf` (`helmrelease-falco.yaml:28-29`) and the `SYS_RESOURCE` capability (`helmrelease-falco.yaml:193`) are both necessary on Talos — without the capability, Falco can't bump `RLIMIT_MEMLOCK` for the eBPF driver and crashes with "Operation not permitted" (commit `9dc0a0b`, corroborated by the auto-memory note on Talos compatibility).
@@ -56,7 +54,7 @@ No PVCs. Falco is a DaemonSet reading the host's eBPF/syscall stream directly; F
 ## Common operations
 - Upgrade either chart: edit the relevant `version:` in `helmrelease-falco.yaml` or `helmrelease-sidekick.yaml`, commit, push, Flux reconciles within `interval: 1h` (or force with `flux reconcile helmrelease falco -n falco` / `flux reconcile helmrelease falcosidekick -n falco`).
 - Add/adjust a custom rule or exception: edit the `customRules.homelab-rules.yaml` block in `helmrelease-falco.yaml`, commit, push — Flux applies the ConfigMap and the chart restarts the DaemonSet to pick it up.
-- Rotate a secret: update the relevant 1Password item (`pushover` or `opensearch`), then `kubectl annotate externalsecret falcosidekick-pushover -n falco force-sync=$(date +%s)` (or the `-opensearch` one), or wait for the refresh interval.
+- Rotate a secret: update the `pushover` 1Password item, then `kubectl annotate externalsecret falcosidekick-pushover -n falco force-sync=$(date +%s)`, or wait for the refresh interval.
 - Pause reconciliation: `flux suspend kustomization falco -n security` / `flux suspend helmrelease falco -n falco` / `flux suspend helmrelease falcosidekick -n falco`.
 
 ## TODOs / unknowns

@@ -5,18 +5,18 @@
 > **Hostname**   `id.${SECRET_DOMAIN}` (public via `envoy-external`, and internally via `envoy-internal` — see Routing below)
 
 ## What it does here
-SSO/OIDC broker for every user-facing app in the cluster (Grafana, Paperless, Open WebUI, Nextcloud, OpenSearch Dashboards, Proxmox, plus the Kubernetes API server itself) and the sole gate for Pushover-based alert delivery credentials. If `authentik-server` has no Service endpoints, nothing behind it can authenticate — this is the single most cluster-wide-impactful app in the deployment (confirmed live 2026-08-16, see `docs/incidents/2026-08-16-authentik-geoip-sidecar-sso-outage.md`).
+SSO/OIDC broker for every user-facing app in the cluster (Grafana, Paperless, Open WebUI, Nextcloud, the Wazuh dashboard, Proxmox, plus the Kubernetes API server itself) and the sole gate for Pushover-based alert delivery credentials. If `authentik-server` has no Service endpoints, nothing behind it can authenticate — this is the single most cluster-wide-impactful app in the deployment (confirmed live 2026-08-16, see `docs/incidents/2026-08-16-authentik-geoip-sidecar-sso-outage.md`).
 
 ## Architecture at a glance
 - **Depends on:** CNPG postgres (`postgres-rw.database.svc.cluster.local`, database `authentik`), Dragonfly (`dragonfly.database.svc.cluster.local`, redis DB 1), 1Password (`ClusterSecretStore/onepassword`) for `authentik-secret` and 7 per-client OIDC secrets. MaxMind GeoLite2 via the `geoip` sidecar is *not* currently a live dependency — `geoip.enabled: false` since commit `aff638d` and unchanged since (see Known quirks).
-- **Depended on by:** Grafana, OpenSearch Dashboards, Proxmox, Paperless, Open WebUI, Nextcloud, Immich (OIDC clients — blueprints `01`–`08` in `kubernetes/apps/security/authentik/app/blueprints/`, `07` added for Immich in commit `214b2a6`), plus 7 numbered `00N-cisotop-*` blueprints for password/MFA/enrollment/Turnstile/passwordless/notification flows.
+- **Depended on by:** Grafana, Proxmox, Paperless, Open WebUI, Nextcloud, Immich, Wazuh (OIDC clients — numbered blueprints in `kubernetes/apps/security/authentik/app/blueprints/`; `07` added for Immich in commit `214b2a6`, `09` for Wazuh; `02` was OpenSearch and was removed with it on 2026-09-20, leaving a gap in the numbering), plus 7 numbered `00N-cisotop-*` blueprints for password/MFA/enrollment/Turnstile/passwordless/notification flows.
 
 ## Repo layout
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/security/authentik/app/helmrelease.yaml` | Chart version, server/worker autoscaling, geoip sidecar, resources |
 | `kubernetes/apps/security/authentik/app/externalsecret.yaml` | Core secret (DB/redis creds, MaxMind, Turnstile) from 1Password |
-| `kubernetes/apps/security/authentik/app/externalsecret-*-oidc.yaml` | One per OIDC client (grafana, opensearch, proxmox, paperless, open-webui, nextcloud, pushover) |
+| `kubernetes/apps/security/authentik/app/externalsecret-*-oidc.yaml` | One per OIDC client (grafana, proxmox, paperless, open-webui, nextcloud, immich, wazuh, pushover) |
 | `kubernetes/apps/security/authentik/app/blueprints/` | OAuth2Provider + flow blueprints, hash-triggered re-apply |
 | `kubernetes/apps/security/authentik/app/httproute.yaml` | Dual-gateway routing (see Routing) |
 
@@ -24,13 +24,13 @@ SSO/OIDC broker for every user-facing app in the cluster (Grafana, Paperless, Op
 | ExternalSecret | 1Password source | Consumed by |
 | --- | --- | --- |
 | `authentik` | `authentik-secret` item — `AUTHENTIK_SECRET_KEY`, Postgres/Dragonfly creds, MaxMind account/license, Turnstile site/secret keys | `authentik-server`/`authentik-worker` env, `geoip` sidecar |
-| `authentik-grafana-oidc` etc. (×7 — grafana, opensearch, proxmox, paperless, open-webui, nextcloud, immich) | per-app OAuth2 client id/secret | matching app's OIDC config + the corresponding blueprint in `blueprints/` |
+| `authentik-grafana-oidc` etc. (one per client — grafana, proxmox, paperless, open-webui, nextcloud, immich, wazuh) | per-app OAuth2 client id/secret | matching app's OIDC config + the corresponding blueprint in `blueprints/` |
 | `authentik-pushover` | Pushover OIDC client (optional — `envFrom` marks it `optional: true`) | Alertmanager's OIDC-gated Pushover delivery path |
 
 `secret.reloader.stakater.com/reload` annotation on `global.deploymentAnnotations` (helmrelease.yaml) restarts server/worker automatically when any of these secrets change.
 
 ## Routing & access
-- **Dual-gateway HTTPRoute** (`httproute.yaml`): `id.${SECRET_DOMAIN}` is attached to both `envoy-external` (public) and `envoy-internal`. The internal attachment exists because in-cluster OIDC clients (OpenSearch Dashboards, data nodes validating JWKS) hitting the public hostname get hairpinned through Cloudflare, which drops it as a CDN loop — breaking token/JWKS validation. CoreDNS split-horizon (`kubernetes/apps/kube-system/coredns/app/helmrelease.yaml`, `hosts` plugin) resolves `id.${SECRET_DOMAIN}` in-cluster straight to the internal gateway ClusterIP instead of forwarding upstream.
+- **Dual-gateway HTTPRoute** (`httproute.yaml`): `id.${SECRET_DOMAIN}` is attached to both `envoy-external` (public) and `envoy-internal`. The internal attachment exists because in-cluster OIDC clients (the Wazuh dashboard, and its indexer validating JWKS) hitting the public hostname get hairpinned through Cloudflare, which drops it as a CDN loop — breaking token/JWKS validation. CoreDNS split-horizon (`kubernetes/apps/kube-system/coredns/app/helmrelease.yaml`, `hosts` plugin) resolves `id.${SECRET_DOMAIN}` in-cluster straight to the internal gateway ClusterIP instead of forwarding upstream.
 - OIDC issuer for every dependent app is `https://id.${SECRET_DOMAIN}/application/o/<slug>/` — also used directly by the Kubernetes API server itself (`talos/patches/controller/cluster.yaml`, `cluster.apiServer.extraArgs.oidc-issuer-url`) as an *additive* auth method alongside the Talos-generated client-cert admin kubeconfig.
 
 ## Storage

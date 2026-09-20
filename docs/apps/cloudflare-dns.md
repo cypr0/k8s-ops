@@ -15,7 +15,7 @@ Runs upstream `external-dns` against the Cloudflare API to keep public DNS recor
 - **Depended on by:**
   - HTTPRoutes parented to Gateway `envoy-external`: `nextcloud`, `whiteboard`, `collabora`, `flux-instance`, `authentik`, and `echo`'s inline HTTPRoute.
   - `DNSEndpoint` CRDs: `cloudflare-tunnel`'s (the tunnel's CNAME record) and `mailu`'s (`kubernetes/apps/mail/mailu/app/dnsendpoint.yaml`) — by far the largest consumer, publishing DKIM/DMARC/autoconfig/autodiscover records across all four secondary domains (`${SECRET_SECOND_DOMAIN}` through `${SECRET_FIFTH_DOMAIN}`), plus `mail.${SECRET_DOMAIN}`'s own A record and `webmail.${SECRET_DOMAIN}`'s CNAME. MX, apex SPF TXT, and SRV records for those domains are created directly via the Cloudflare API instead — see `docs/apps/mailu.md` for why `external-dns` can't handle those record types/positions. If `cloudflare-dns`'s `domainFilters` doesn't include a CRD's zone, `external-dns` silently ignores that `DNSEndpoint` — no error, just no record.
-  - **Not** depended on by anything behind `envoy-internal` (`open-webui`, `gatus`, `grafana`, `opensearch-cluster`, `paperless-ngx`, and `nextcloud`'s internal listener) — those resolve via `k8s-gateway` instead, a separate internal-only DNS path this app has no role in.
+  - **Not** depended on by anything behind `envoy-internal` (`open-webui`, `gatus`, `grafana`, `wazuh`, `paperless-ngx`, and `nextcloud`'s internal listener) — those resolve via `k8s-gateway` instead, a separate internal-only DNS path this app has no role in.
 
 ## Repo layout
 | File | Purpose |

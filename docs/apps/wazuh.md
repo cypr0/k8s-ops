@@ -9,8 +9,12 @@
 Host-based SIEM/XDR for machines *outside* the cluster: the MacBook, the
 Proxmox host the Talos cluster runs on, and any VMs added later. It gives those
 hosts file integrity monitoring, rootcheck, software inventory and vulnerability
-detection, and correlates the resulting alerts — none of which the syslog feed
-into OpenSearch provides.
+detection, and correlates the resulting alerts — none of which the raw syslog
+feed it replaced ever provided.
+
+Since 2026-09-20 it is also where the firewall reports: OPNsense and its
+Suricata IDS run the `os-wazuh-agent` plugin, so their events arrive decoded
+against Wazuh's bundled pfSense and Suricata rulesets instead of as text.
 
 It deliberately does not watch the Kubernetes nodes. Talos has no package
 manager and no writable root filesystem, so a Wazuh agent cannot run there;
@@ -31,18 +35,21 @@ Three workloads, all single-replica:
   IPAM (the agent VIP), `zfs-nfs` StorageClass.
 - **Depended on by:** nothing. Wazuh being down costs visibility, not service.
 
-### Why a separate indexer, given the OpenSearch cluster in `logging`
+### Why its own indexer rather than the cluster's shared one
 
 Two independent reasons:
 
 1. Wazuh's [OpenSearch integration](https://documentation.wazuh.com/current/integrations-guide/opensearch/index.html)
    is a *forwarder* (Logstash reading from the Wazuh indexer and writing
    elsewhere). It does not replace the Wazuh indexer — that stays mandatory.
-2. Wazuh 4.14 is built against OpenSearch 2.19; the cluster in `logging` runs
-   3.8.0 (`kubernetes/apps/logging/opensearch-cluster/app/cluster.yaml`).
+2. Wazuh 4.14 is built against OpenSearch 2.19; the cluster in `logging` ran
+   3.8.0. Pointing Wazuh at it would also have meant editing that cluster's
+   working `securityconfig` — historically the most fragile part of that setup.
 
-Pointing Wazuh at the existing cluster would also mean editing that cluster's
-working `securityconfig` — historically the most fragile part of this setup.
+That shared cluster no longer exists: OpenSearch was removed on 2026-09-20 and
+Wazuh's own indexer is now the only one in the cluster. The reasoning is kept
+because it is the answer to "why not reuse the logging cluster" whenever a
+shared search backend is proposed again.
 
 ## Repo layout
 
@@ -76,8 +83,8 @@ All from the single 1Password item **`wazuh`**, via `ClusterSecretStore/onepassw
 | `authentik-wazuh-oidc` (security ns) | `WAZUH_OIDC_CLIENT_ID`, `WAZUH_OIDC_CLIENT_SECRET` | Authentik, so blueprint `!Env` lookups resolve |
 
 **The two `*_HASH` fields are not optional.** Unlike the operator-managed
-cluster in `logging`, a bare `wazuh-indexer` does not hash passwords — it wants
-finished bcrypt in `internal_users.yml`. Generate with:
+OpenSearch cluster this repo used to run, a bare `wazuh-indexer` does not hash
+passwords — it wants finished bcrypt in `internal_users.yml`. Generate with:
 
 ```sh
 htpasswd -bnBC 12 "" '<password>' | tr -d ':\n'
@@ -122,8 +129,8 @@ Worth being explicit about, because it looks like duplication and is not:
 | `wazuh-indexer-wazuh-indexer-0` | 20 Gi | Alert indices, vulnerability state |
 | `wazuh-manager-master-wazuh-manager-master-0` | 10 Gi | `/var/ossec/{etc,logs,queue,…}`, filebeat state |
 
-Both on `zfs-nfs`. **Not covered by Velero**, matching the treatment of
-`logging` (`kubernetes/apps/velero/schedules/schedule-daily.yaml`): alert data is
+Both on `zfs-nfs`. **Not covered by Velero**
+(`kubernetes/apps/velero/schedules/schedule-daily.yaml`): alert data is
 reproducible and configuration lives in Git. The one genuinely
 non-reproducible file is `/var/ossec/etc/client.keys` — losing the manager PVC
 means re-enrolling every agent.
@@ -261,9 +268,10 @@ kubectl exec -n wazuh wazuh-manager-master-0 -- \
 
 ## TODOs / unknowns
 
-- Forwarding alerts into the OpenSearch cluster in `logging` (for a single pane
-  of glass) is possible with Fluent Bit or Alloy, both already in the cluster.
-  Not built.
+- Wazuh is now the only place security events land, and the only place they are
+  queryable. Everything else moved to Loki or disappeared with OpenSearch on
+  2026-09-20, so an outage here is a genuine blind spot rather than a degraded
+  view. Gatus watches the agent listener on 1514 for exactly this reason.
 - `client.keys` is not backed up; see Storage.
 - Wazuh 5.0 is still in beta as of 2026-09. The upgrade path from 4.14 will need
   its own review — 5.x agents enroll over a single HTTPS channel on port 1517,

@@ -20,7 +20,6 @@ The cluster's document management system: ingests scanned business documents (fr
   - `hermes-agent` — its Workflow "Webhook" action (trigger: Document Added) calls hermes-agent's webhook front-end on port 8644 (`ciliumnetworkpolicy.yaml`); see `docs/apps/hermes-agent.md`.
   - `paperless-mcp` (namespace `hermes-agent`) — reads/writes this app's REST API on hermes-agent's behalf; see `docs/apps/paperless-mcp.md`.
   - Open WebUI's `paperless_full` Tool — same REST API, its own token/ExternalSecret (`kubernetes/apps/open-webui/open-webui/app/externalsecret-paperless-token.yaml`).
-  - `paperless-stats-exporter` CronJob (own Flux Kustomization, `config/` — see Repo layout) — polls `statistics`/`status`/`tasks` and writes to OpenSearch.
   - Gatus health check (`ciliumnetworkpolicy.yaml`).
 
 ## Repo layout
@@ -35,8 +34,6 @@ The cluster's document management system: ingests scanned business documents (fr
 | `kubernetes/apps/paperless/paperless-ngx/app/jobs.yaml` | `paperless-cronjob-fix-ownership` CronJob — **currently disabled**, see Known quirks |
 | `kubernetes/apps/paperless/paperless-ngx/app/kustomization.yaml` | Resource list — note `jobs.yaml` is commented out |
 | `kubernetes/apps/paperless/paperless-ngx/ks.yaml` | Two Flux Kustomizations: `paperless` (path `app/`, `dependsOn` CNPG/csi-driver-nfs/external-secrets-stores) and `paperless-stats` (path `config/`, deliberately no `dependsOn` on the main one) |
-| `kubernetes/apps/paperless/paperless-ngx/config/cronjob-stats-exporter.yaml` | `paperless-stats-exporter` CronJob (every 15 min) → OpenSearch |
-| `kubernetes/apps/paperless/paperless-ngx/config/externalsecret-opensearch.yaml` | OpenSearch write credentials for the exporter |
 | `kubernetes/apps/paperless/paperless-ngx/config/ciliumnetworkpolicy.yaml` | Network policy for the exporter CronJob |
 
 ## Secrets
@@ -49,7 +46,7 @@ The cluster's document management system: ingests scanned business documents (fr
 | `PAPERLESS_REDIS` (assembled connection string) | item `dragonfly`, field `DRAGONFLY_PASSWORD` | Dragonfly cache/task-queue connection |
 | `PAPERLESS_SOCIALACCOUNT_PROVIDERS` (assembled JSON) | item `paperless`, fields `PAPERLESS_OPENID_CLIENT_ID`/`PAPERLESS_OPENID_CLIENT_SECRET` | Authentik OIDC provider config |
 
-Two more ExternalSecrets outside this app's own directory pull the same `paperless` item: `kubernetes/apps/database/cloudnative-pg/databases/externalsecret-paperless.yaml` (feeds the CNPG-managed `paperlessusr` role) and `kubernetes/apps/open-webui/open-webui/app/externalsecret-paperless-token.yaml` (Open WebUI's `paperless_full` Tool — explicitly documented there as reusing this app's own `PAPERLESS_API_TOKEN`, no separate credential provisioned). A fourth, `kubernetes/apps/paperless/paperless-ngx/config/externalsecret-opensearch.yaml`, pulls item `opensearch` (field `OPENSEARCH_ADMIN_PASSWORD`) for the stats-exporter CronJob's write access.
+Two more ExternalSecrets outside this app's own directory pull the same `paperless` item: `kubernetes/apps/database/cloudnative-pg/databases/externalsecret-paperless.yaml` (feeds the CNPG-managed `paperlessusr` role) and `kubernetes/apps/open-webui/open-webui/app/externalsecret-paperless-token.yaml` (Open WebUI's `paperless_full` Tool — explicitly documented there as reusing this app's own `PAPERLESS_API_TOKEN`, no separate credential provisioned).
 
 The Deployment carries `reloader.stakater.com/auto`/`secret.reloader.stakater.com/reload: "paperless-secret"` annotations (`helmrelease.yaml`) — unlike hermes-agent or paperless-mcp, a `paperless-secret` change auto-rolls this pod; no manual restart needed after a force-sync.
 
@@ -57,7 +54,7 @@ The Deployment carries `reloader.stakater.com/auto`/`secret.reloader.stakater.co
 - `paperless.${SECRET_DOMAIN}` via `httproute.yaml`, attached only to `envoy-internal` — internal-only, no cloudflare-tunnel path.
 - SSO: OIDC via Authentik, blueprint `kubernetes/apps/security/authentik/app/blueprints/04-paperless-oidc.yaml` (application slug `paperless-ngx`). `PAPERLESS_DISABLE_REGULAR_LOGIN: "true"` (`helmrelease.yaml`) means OIDC is the only login path. `PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS` is deliberately `"false"` — locally-managed Paperless groups aren't in Authentik's `groups` claim, so syncing would wipe them on every login (inline comment, `helmrelease.yaml`).
 - CiliumNetworkPolicy (`ciliumnetworkpolicy.yaml`), three policies in one file:
-  - `paperless-ngx`: ingress from envoy (network ns, port 80), Prometheus, `paperless-stats-exporter` (same ns), `openclaw`, Open WebUI, Gatus, and `paperless-mcp` (namespace `hermes-agent`) — all restricted to port 80. Egress: DNS, `database` namespace (5432/6379), Tika (9998), Gotenberg (3000), Authentik direct (9000/9443) plus a second Authentik rule allowing the envoy pod's DNAT'd port 10443 — per the inline comment, OIDC discovery/token calls resolve to the internal gateway's ClusterIP and get DNAT'd to that container port, so policy is enforced post-DNAT there. Also: the external IMAP FQDN on 993 (both bare and namespace-suffixed forms, since `ndots:5` search-domain resolution can produce either), `world` on 443 (OpenRouter), and hermes-agent's webhook port 8644.
+  - `paperless-ngx`: ingress from envoy (network ns, port 80), Prometheus, `openclaw`, Open WebUI, Gatus, and `paperless-mcp` (namespace `hermes-agent`) — all restricted to port 80. Egress: DNS, `database` namespace (5432/6379), Tika (9998), Gotenberg (3000), Authentik direct (9000/9443) plus a second Authentik rule allowing the envoy pod's DNAT'd port 10443 — per the inline comment, OIDC discovery/token calls resolve to the internal gateway's ClusterIP and get DNAT'd to that container port, so policy is enforced post-DNAT there. Also: the external IMAP FQDN on 993 (both bare and namespace-suffixed forms, since `ndots:5` search-domain resolution can produce either), `world` on 443 (OpenRouter), and hermes-agent's webhook port 8644.
   - `tika`/`gotenberg`: ingress from `paperless-ngx` only, on 9998/3000 respectively; egress is DNS-only.
 
 ## Storage
@@ -79,7 +76,6 @@ The Deployment carries `reloader.stakater.com/auto`/`secret.reloader.stakater.co
 ## Common operations
 - Upgrade the app image or `app-template` chart: edit `helmrelease.yaml`/`ocirepository.yaml`, commit, push; Flux reconciles within `interval: 1h` (or `flux reconcile helmrelease paperless -n paperless`).
 - Rotate a secret: update the relevant 1Password item (`paperless`, `openrouter`, or `dragonfly`), then `kubectl annotate externalsecret paperless -n paperless force-sync=$(date +%s)` — the Stakater Reloader annotations on the Deployment auto-roll the pod once `paperless-secret` changes, no manual restart step needed here (unlike hermes-agent/paperless-mcp).
-- Rotate the OpenSearch write credential for the stats exporter: update 1Password item `opensearch`, then `kubectl annotate externalsecret opensearch-write-credentials -n paperless force-sync=$(date +%s)`.
 - Re-enable the ownership-fix CronJob: uncomment `- ./jobs.yaml` in `kubernetes/apps/paperless/paperless-ngx/app/kustomization.yaml`.
 - Pause reconciliation: `flux suspend kustomization paperless -n flux-system` (main app) or `flux suspend kustomization paperless-stats -n flux-system` (stats exporter — independent lifecycle, per `ks.yaml`).
 

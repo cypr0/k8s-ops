@@ -59,7 +59,7 @@ Postgres is deliberately excluded from Velero's volume-backup scope since it has
 - Trigger an on-demand backup: create a `Backup` CR with `method: plugin` and `pluginConfiguration.name: barman-cloud.cloudnative-pg.io` / `parameters.barmanObjectName: postgres-backup`, mirroring `kubernetes/apps/database/cloudnative-pg/cluster/scheduledbackup.yaml`'s shape.
 
 ## TODOs / unknowns
-- Whether the 30d flat `retentionPolicy` on `postgres-backup` has ever been exercised by an actual restore is not verified from this repo — no restore-test automation for Postgres analogous to Velero's daily restore-test CronJob (`kubernetes/apps/velero/restore-test/`) was found under `kubernetes/apps/database/`.
+- Whether the 30d flat `retentionPolicy` on `postgres-backup` has ever been exercised by an actual restore is not verified from this repo. There is no restore automation for Postgres, and since 2026-09-20 there is none for Velero's volumes either — nothing in this cluster currently proves any backup is replayable.
 - Cross-reference to `docs/apps/cloudnative-pg.md` for the `Cluster`/`ScheduledBackup` side of this pipeline.
 
 ---

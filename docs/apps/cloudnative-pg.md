@@ -75,7 +75,7 @@ Two independent, non-overlapping backup paths:
 - Check cluster health: `kubectl get cluster postgres -n database` / `kubectl cnpg status postgres -n database` (if the `kubectl-cnpg` plugin is installed).
 
 ## TODOs / unknowns
-- Whether the barman-cloud daily backup or the automated Velero restore-test pattern (`kubernetes/apps/velero/`) has ever been used to actually restore this Postgres cluster is not verified from this repo — only that the schedule exists and runs.
+- Whether the barman-cloud daily backup has ever been used to actually restore this Postgres cluster is not verified from this repo — only that the schedule exists and runs. Velero's restore-test, which never covered Postgres anyway, was removed on 2026-09-20.
 - CNPG's own Grafana dashboard is enabled (`monitoring.grafanaDashboard.create: true`, `app/helmrelease.yaml`) but this doc doesn't verify it's actually surfaced/used in `kubernetes/apps/monitoring/grafana/` dashboards — not checked for this pass.
 - Gatus's TCP health check (`kubernetes/apps/monitoring/gatus/app/configmap.yaml`, group "Database") and a CoreDNS comment referencing `postgres-rw.database.svc.cluster.local` as an example hostname in an unrelated AAAA/NXDOMAIN fix are the only other repo hits for this Service name — confirmed neither is a functional dependency, just noted here so a future grep doesn't have to redo that check.
 
