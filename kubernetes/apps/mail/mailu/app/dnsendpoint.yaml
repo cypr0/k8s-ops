@@ -22,15 +22,24 @@
 # (SECRET_MAIL_PUBLIC_IP) rather than as a plaintext literal here, same
 # treatment as SECRET_SECOND_DOMAIN.
 #
-# providerSpecific key prefix is "external-dns.alpha.kubernetes.io/", NOT
-# "external-dns.kubernetes.io/" (the latter is master/HEAD's renamed
-# constant, introduced after v0.21.0 -- confirmed against the actual
-# external-dns image tag this cluster runs, source/annotations/annotations.go
-# at the v0.21.0 tag). Getting this wrong doesn't error, it's just silently
-# ignored -- confirmed live: the record was created proxied despite the
-# override, and external-dns then looped re-issuing an identical no-op
-# UPDATE every reconcile forever, since its computed desired state and
-# Cloudflare's actual state never converged.
+# providerSpecific key prefix: BOTH are declared below, deliberately.
+# external-dns renamed its default annotation prefix between releases --
+# DefaultAnnotationPrefix is "external-dns.alpha.kubernetes.io/" in v0.21.0
+# and "external-dns.kubernetes.io/" in v0.22.0 (source/annotations/
+# annotations.go, verified against both tags). This cluster now runs v0.22.0.
+#
+# That rename broke this record once already, on 2026-09-20: the earlier
+# version of this comment pinned the alpha prefix as correct, a Renovate bump
+# to v0.22.0 made it wrong, and the wrong key does not error -- it is silently
+# ignored. mail.${SECRET_DOMAIN} was then recreated PROXIED, which put
+# Cloudflare's HTTP proxy in front of an MX target. Cloudflare accepts the TCP
+# connection on port 25 and never speaks SMTP, so senders connect, wait for a
+# greeting and time out. Mail to the domains whose MX points here simply
+# vanished, with no bounce and nothing in this cluster's logs.
+#
+# An unrecognised providerSpecific key is ignored rather than rejected, so
+# declaring both costs nothing and makes this survive the rename in either
+# direction.
 #
 # ${SECRET_SECOND_DOMAIN}'s mail records (DKIM/DMARC/autoconfig/
 # autodiscover below) were generated from Mailu's own Admin UI DNS tab for
@@ -80,6 +89,10 @@ spec:
       targets:
         - "${SECRET_MAIL_PUBLIC_IP}"
       providerSpecific:
+        # v0.22.0 and later
+        - name: external-dns.kubernetes.io/cloudflare-proxied
+          value: "false"
+        # v0.21.0 and earlier -- see the header comment
         - name: external-dns.alpha.kubernetes.io/cloudflare-proxied
           value: "false"
     # ${SECRET_DOMAIN}'s own DKIM, from Mailu's Admin UI DNS tab for this
