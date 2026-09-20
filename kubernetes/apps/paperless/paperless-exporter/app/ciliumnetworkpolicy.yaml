@@ -35,12 +35,15 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # The Paperless API itself. Port 80 is the Service port; Cilium matches
-    # post-DNAT, and paperless-ngx listens on 80 in the pod too.
+    # The Paperless API itself. The pod label is "paperless", NOT
+    # "paperless-ngx" -- that is the Flux Kustomization's name, not the app
+    # label the chart sets. Getting it wrong produces no error anywhere: Cilium
+    # simply drops the packets and the exporter reports paperless_up 0 with a
+    # urlopen timeout.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": paperless
-            app.kubernetes.io/name: paperless-ngx
+            app.kubernetes.io/name: paperless
       toPorts:
         - ports:
             - port: "80"

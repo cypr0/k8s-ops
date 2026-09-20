@@ -61,6 +61,15 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # paperless-exporter reads /api/statistics/ and /api/status/ at scrape time.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless-exporter
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
     # paperless-mcp: standalone MCP server exposing this API to hermes-agent
     # (kubernetes/apps/hermes-agent/paperless-mcp/)
     - fromEndpoints:
