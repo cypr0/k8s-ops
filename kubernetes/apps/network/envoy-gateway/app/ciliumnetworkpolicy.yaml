@@ -135,7 +135,7 @@ spec:
             - port: "10443"
               protocol: TCP
     # Wazuh: dashboard (OIDC discovery/token exchange) + indexer (JWKS
-    # validation), mirroring the OpenSearch entry above. Both halves are
+    # validation). Both halves are
     # needed and they fail differently: without the dashboard rule the
     # securityDashboards plugin hangs and the container exits on its 30s setup
     # timeout; without the indexer rule login completes but every request comes

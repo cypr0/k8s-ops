@@ -45,8 +45,8 @@ spec:
           # Split-horizon DNS: resolve id.${SECRET_DOMAIN} (Authentik) in-cluster
           # to the envoy-INTERNAL gateway ClusterIP instead of the public Cloudflare
           # edge. The authentik-ui HTTPRoute is attached to envoy-internal too, so
-          # in-cluster OIDC clients (opensearch dashboards + data nodes validating
-          # tokens/JWKS) reach Authentik via the internal gateway rather than the
+          # in-cluster OIDC clients (the Wazuh dashboard, and its indexer
+          # validating tokens/JWKS) reach Authentik via the internal gateway rather than the
           # public Cloudflare hairpin (which Cloudflare drops as a cdn-loop and
           # which broke OIDC).
           # Using `hosts` plugin with static IP instead of `rewrite` because:
