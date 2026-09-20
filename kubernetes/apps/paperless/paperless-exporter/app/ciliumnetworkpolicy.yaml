@@ -45,10 +45,3 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
-    # Alpine package index at startup, to install python3.
-    - toEntities:
-        - world
-      toPorts:
-        - ports:
-            - port: "443"
-              protocol: TCP

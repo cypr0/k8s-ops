@@ -23,16 +23,19 @@ spec:
           type: RuntimeDefault
       containers:
         - name: exporter
-          # Plain alpine + its own python3, never a python:*-alpine image: those
-          # ship a second CPython under /usr/local that collides with anything
-          # installed via apk. That exact collision broke proxmox-ansible (see
+          # python:*-alpine is fine HERE because nothing is installed on top
+          # of it. The rule it looks like it breaks -- never mix this image with
+          # apk -- is about installing a SECOND CPython alongside the image's
+          # own, which is what broke proxmox-ansible (see
           # kubernetes/apps/automation/proxmox-ansible/app/cronjob.yaml).
-          image: alpine:3.24.2
+          # The script is stdlib-only, so there is nothing to install: the
+          # container runs as nobody with a read-only root filesystem, which the
+          # earlier "alpine + apk add" version could not do (apk needs root).
+          # renovate: datasource=docker depName=python
+          image: python:3.13-alpine
           command:
-            - "/bin/sh"
-            - "-c"
-          args:
-            - apk add --no-cache python3 >/dev/null && exec python3 /scripts/exporter.py
+            - "python3"
+            - "/scripts/exporter.py"
           ports:
             - name: metrics
               containerPort: 9877
@@ -68,8 +71,7 @@ spec:
               memory: 96Mi
           securityContext:
             allowPrivilegeEscalation: false
-            # apk needs to write into the image's own filesystem at startup.
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - "ALL"
