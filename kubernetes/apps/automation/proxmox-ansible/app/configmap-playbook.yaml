@@ -165,6 +165,14 @@ data:
         # kubernetes/apps/security/wazuh/app/.
         wazuh_agent_version: "4.14.7-1"
         wazuh_authd_pass: "{{ lookup('env', 'WAZUH_AUTHD_PASS') }}"
+        # Wazuh names an agent after the host's SHORT hostname, so this machine
+        # would appear as bare "proxmox" next to the firewall's
+        # "secsrv.${SECRET_DOMAIN}". Overridden at enrollment only -- the PVE node
+        # name itself stays "proxmox", because renaming a Proxmox node rewrites
+        # /etc/pve/nodes/<name> and every guest, storage and replication entry
+        # beneath it. Editing /etc/hosts would not help either: the agent reads
+        # the kernel hostname, not the resolver's idea of the FQDN.
+        wazuh_agent_name: "proxmox.${SECRET_DOMAIN}"
 
       tasks:
 
@@ -199,10 +207,10 @@ data:
             name: fail2ban
             state: present
 
-        # Send fail2ban's own activity (bans/unbans/detections) to syslog so
-        # the existing rsyslog `*.*` forwarder ships it to Fluent-Bit/OpenSearch
-        # alongside the rest of the Proxmox host logs. Without this, fail2ban
-        # only writes to /var/log/fail2ban.log, which nothing forwards.
+        # Send fail2ban's own activity (bans/unbans/detections) to syslog, which
+        # rsyslog writes into /var/log/syslog -- one of the files the Wazuh agent
+        # tails. Left at its default, fail2ban only writes /var/log/fail2ban.log,
+        # which is not in the agent's localfile list and would go unseen.
         - name: Deploy fail2ban.local (log to syslog)
           ansible.builtin.copy:
             dest: /etc/fail2ban/fail2ban.local
@@ -506,39 +514,25 @@ data:
             group: root
             mode: "0600"
 
-        # ── Syslog Forwarding to Fluent-Bit ──────────────────────────────────
-        # Proxmox uses systemd-journald by default. Install rsyslog for remote forwarding.
-        # Network path: Proxmox reaches the K8s LAN (192.168.10.110) directly via
-        # vmbr1, which already carries the host's own 192.168.10.0/24 address -
-        # no route via OPNsense/vmbr0 is needed or wanted. A previous version of
-        # this playbook forced a `post-up ip route add 192.168.10.0/24 via
-        # 192.168.100.1` on vmbr0, which raced the kernel's own connected vmbr1
-        # route and, after a Proxmox reboot, won - blackholing all host-to-K8s
-        # traffic (including NFS) through OPNsense. Do not re-add that route.
-        - name: Install rsyslog for remote log forwarding
+        # ── Local syslog ─────────────────────────────────────────────────────
+        # rsyslog stays installed and running, but no longer forwards anywhere.
+        # Proxmox defaults to systemd-journald; rsyslog is what writes the plain
+        # files /var/log/syslog and /var/log/auth.log, and those are exactly what
+        # the Wazuh agent tails. Removing the package would leave the agent with
+        # nothing to read.
+        - name: Install rsyslog (writes the files the Wazuh agent reads)
           ansible.builtin.apt:
             name: rsyslog
             state: present
 
-        - name: Configure rsyslog to forward logs to Fluent-Bit (RFC5424 format)
-          ansible.builtin.copy:
-            dest: /etc/rsyslog.d/90-fluentbit.conf
-            owner: root
-            group: root
-            mode: "0644"
-            content: |
-              # Forward all logs to Fluent-Bit syslog-ingress in Kubernetes
-              # RFC5424 format matching Fluent-Bit parser: <PRI>1 TIMESTAMP HOST APP PID MSGID SD MSG
-              # UDP for performance (@ = UDP, @@ = TCP)
-
-              # RFC5424 template - must match Fluent-Bit regex:
-              # ^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>...) (?<message>.+)$
-              template(name="FluentBitRFC5424" type="string"
-                string="<%PRI%>1 %TIMESTAMP:::date-rfc3339% %HOSTNAME% %APP-NAME% %PROCID% - - %msg%\n"
-              )
-
-              # Forward all logs using RFC5424 over TCP (@@ = TCP, more reliable)
-              *.* @@192.168.10.110:514;FluentBitRFC5424
+        # Superseded by the Wazuh agent above, which ships the same events over
+        # an authenticated, encrypted channel and gets them decoded into alerts
+        # instead of dumped as text. Keeping both meant every sshd and fail2ban
+        # line was counted twice -- once as an agent event, once as syslog.
+        - name: Remove the Fluent-Bit syslog forwarder
+          ansible.builtin.file:
+            path: /etc/rsyslog.d/90-fluentbit.conf
+            state: absent
           notify: Restart rsyslog
 
         - name: Ensure rsyslog is enabled and running
@@ -676,6 +670,15 @@ data:
         # rootcheck, software inventory and vulnerability detection. The
         # firewall reaches the same manager over syslog instead, because
         # OPNsense cannot run an agent.
+        #
+        # Network path: Proxmox reaches the K8s LAN (192.168.10.0/24, and with it
+        # the Wazuh VIP .111 and the NFS server) directly via vmbr1, which already
+        # carries the host's own address in that subnet - no route via
+        # OPNsense/vmbr0 is needed or wanted. A previous version of this playbook
+        # forced a `post-up ip route add 192.168.10.0/24 via 192.168.100.1` on
+        # vmbr0, which raced the kernel's own connected vmbr1 route and, after a
+        # Proxmox reboot, won - blackholing all host-to-K8s traffic, NFS included.
+        # Do not re-add that route.
         - name: Fetch the Wazuh signing key
           ansible.builtin.get_url:
             url: https://packages.wazuh.com/key/GPG-KEY-WAZUH
@@ -721,7 +724,8 @@ data:
           notify: Restart wazuh-agent
 
         # Wazuh 4.x auto-enrolls on first start and uses this file when it is
-        # present, so no separate agent-auth run is needed.
+        # present. agent-auth below picks it up from the same path, so the
+        # password never has to appear on a command line where `ps` would show it.
         - name: Install the enrollment password
           ansible.builtin.copy:
             content: "{{ wazuh_authd_pass }}"
@@ -730,6 +734,29 @@ data:
             group: wazuh
             mode: "0640"
           no_log: true
+          notify: Restart wazuh-agent
+
+        # Auto-enrollment would register the short hostname, so register
+        # explicitly instead -- but only when the name on record actually
+        # differs, otherwise every nightly run would re-key and restart the
+        # agent. client.keys holds a single line: "<id> <name> <ip> <key>".
+        # This also self-heals: if the manager ever loses the key and the agent
+        # re-enrolls itself as "proxmox", the next run puts the name back.
+        - name: Read the name the agent is registered under
+          ansible.builtin.slurp:
+            src: /var/ossec/etc/client.keys
+          register: wazuh_client_keys
+          failed_when: false
+
+        - name: Register the agent under its fully-qualified name
+          ansible.builtin.command:
+            cmd: >-
+              /var/ossec/bin/agent-auth
+              -m {{ wazuh_manager }}
+              -A {{ wazuh_agent_name }}
+          when: >-
+            ((wazuh_client_keys.content | default('') | b64decode).split() + ['', ''])[1]
+            != wazuh_agent_name
           notify: Restart wazuh-agent
 
         - name: Enable and start the Wazuh agent
