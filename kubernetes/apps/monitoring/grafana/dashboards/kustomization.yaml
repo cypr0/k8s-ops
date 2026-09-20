@@ -1,0 +1,40 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# One ConfigMap per dashboard folder, referenced by name from the Grafana
+# HelmRelease's dashboardsConfigMaps. The name must stay stable, hence
+# disableNameSuffixHash: a content hash in the name would rename the ConfigMap
+# on every dashboard edit and leave the HelmRelease pointing at nothing.
+#
+# The trade-off: Grafana does not restart when a dashboard changes. Its
+# provisioning loop re-reads each directory every 60s (updateIntervalSeconds in
+# the HelmRelease), so edits still arrive -- just not instantly.
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: grafana-dashboards-cluster
+    files:
+      - cluster/k8s-global.json
+      - cluster/k8s-namespaces.json
+      - cluster/k8s-pods.json
+      - cluster/talos.json
+  - name: grafana-dashboards-network
+    files:
+      - network/coredns.json
+  - name: grafana-dashboards-platform
+    files:
+      - platform/flux.json
+  - name: grafana-dashboards-security
+    files:
+      - security/falco.json
+  - name: grafana-dashboards-observability
+    files:
+      - observability/alertmanager.json
+      - observability/gatus.json
+  - name: grafana-dashboards-apps
+    files:
+      - apps/open-webui.json
+      - apps/paperless.json

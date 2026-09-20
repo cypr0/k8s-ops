@@ -31,3 +31,41 @@ spec:
   targetNamespace: *namespace
   timeout: 10m
   wait: true
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: grafana
+  # Separate from the `grafana` Kustomization above for one reason, and it is
+  # not cosmetic: that one carries postBuild.substituteFrom, and Flux runs
+  # envsubst over EVERY manifest it builds. Grafana dashboard JSON is full of
+  # ${...} -- template variables like ${datasource}, field references like
+  # ${__field.labels.pod} -- and envsubst either fails outright ("missing
+  # closing brace") or, worse, silently replaces Grafana's own variables with
+  # empty strings and leaves dashboards that render but show nothing.
+  #
+  # These ConfigMaps need no substitution at all, so the simplest correct
+  # answer is to build them without it. Escaping every $ as $$ across 330 KiB
+  # of generated JSON would be the alternative, and would have to be redone
+  # every time a dashboard is regenerated.
+  #
+  # No dependsOn grafana: the ConfigMaps are inert on their own and Grafana
+  # mounts them when it starts. Coupling them would mean losing the ability to
+  # ship a dashboard fix while the release itself is unhealthy.
+  interval: 1h
+  path: ./kubernetes/apps/monitoring/grafana/dashboards
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: monitoring
+  timeout: 5m
+  wait: true
