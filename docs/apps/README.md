@@ -54,6 +54,7 @@ check here before assuming a gap means "not interesting."
 | OIDC RBAC | security | [oidc-rbac.md](oidc-rbac.md) |
 | Open Terminal | open-webui | [open-terminal.md](open-terminal.md) |
 | Open WebUI | open-webui | [open-webui.md](open-webui.md) |
+| paperless-exporter | paperless | [paperless-exporter.md](paperless-exporter.md) |
 | paperless-mcp | hermes-agent | [paperless-mcp.md](paperless-mcp.md) |
 | paperless-ngx | paperless | [paperless-ngx.md](paperless-ngx.md) |
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
