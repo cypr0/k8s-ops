@@ -55,6 +55,13 @@ spec:
         - ports:
             - port: "3100"
               protocol: TCP
+            # The loki-canary pods carry app.kubernetes.io/name: loki too, so
+            # this policy governs them as well -- but they serve metrics on
+            # 3500, which was never allowed. All four canaries had been unable
+            # to report, which is the one job whose whole purpose is to prove
+            # the log pipeline works end to end.
+            - port: "3500"
+              protocol: TCP
     # Loki memberlist (gossip between loki pods)
     - fromEndpoints:
         - matchLabels:

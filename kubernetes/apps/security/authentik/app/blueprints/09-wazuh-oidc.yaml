@@ -96,7 +96,10 @@ entries:
       slug: wazuh
     attrs:
       name: Wazuh
-      group: Security
+      # Same group as Grafana on purpose: after OpenSearch Dashboards was
+      # removed, "Monitoring" held one entry and "Security" held one, and the
+      # two tiles people actually go looking at data in belong side by side.
+      group: Monitoring
       provider: !KeyOf wazuh-oidc-provider
       meta_launch_url: https://wazuh.${SECRET_DOMAIN}
       meta_icon: https://wazuh.com/uploads/2022/05/wazuh-logo.png

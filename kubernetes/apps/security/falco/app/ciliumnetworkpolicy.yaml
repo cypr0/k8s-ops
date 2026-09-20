@@ -61,7 +61,10 @@ spec:
             app.kubernetes.io/name: prometheus
       toPorts:
         - ports:
-            - port: "2802"
+            # 2801, not 2802. Falcosidekick serves both its event intake and its
+            # /metrics on 2801; 2802 is the separate falcosidekick-ui. The typo
+            # meant this scrape job had never once succeeded.
+            - port: "2801"
               protocol: TCP
     # Kubelet readiness/liveness probes (host network → host entity)
     - fromEntities:

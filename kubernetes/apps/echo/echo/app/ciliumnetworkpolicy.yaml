@@ -25,6 +25,15 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Prometheus scrapes /metrics on the same port the app serves.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
