@@ -206,12 +206,46 @@ days and pinned to zero replicas.
   ```sh
   curl -O https://packages.wazuh.com/4.x/macos/wazuh-agent-4.14.7-1.arm64.pkg
   echo "WAZUH_MANAGER='192.168.10.111'
+  WAZUH_AGENT_NAME='macbook.cisotop.de'
   WAZUH_REGISTRATION_PASSWORD='<WAZUH_AUTHD_PASS>'" > /tmp/wazuh_envs
   sudo installer -pkg wazuh-agent-4.14.7-1.arm64.pkg -target /
   sudo launchctl bootstrap system /Library/LaunchDaemons/com.wazuh.agent.plist
   ```
-  Note the manager is only reachable on the LAN or over the VPN, so a roaming
-  MacBook goes quiet while disconnected and catches up on reconnect.
+  Two things worth knowing before you do this:
+
+  - The manager is reachable on the LAN and over the VPN only, so a roaming
+    MacBook goes quiet while disconnected and catches up on reconnect. Expect
+    `disconnected` in the agent list to be the normal state, not an alert.
+  - macOS needs **Full Disk Access** for `/Library/Ossec/bin/wazuh-agentd` under
+    *System Settings → Privacy & Security*, otherwise FIM and log collection
+    silently return nothing for `~/Library`, `/Users` and the unified log. The
+    agent does not warn about this — it simply reports an empty scan.
+
+### Agent naming
+
+Wazuh registers an agent under the host's **short** hostname unless told
+otherwise, which is why the firewall arrived as `secsrv.cisotop.de` (its
+hostname *is* the FQDN) while Proxmox arrived as bare `proxmox`. Set the name
+explicitly at enrollment instead:
+
+| Host | Mechanism |
+| --- | --- |
+| Proxmox | `agent-auth -A proxmox.cisotop.de`, driven by the Ansible playbook |
+| macOS | `WAZUH_AGENT_NAME` in `/tmp/wazuh_envs` before `installer` |
+| OPNsense | nothing to do — already enrolls as its FQDN |
+
+Do **not** rename the Proxmox node to fix this. A PVE node rename rewrites
+`/etc/pve/nodes/<name>` and every guest, storage and replication entry beneath
+it — far too much blast radius for a display name. Editing `/etc/hosts` would
+not help either: the agent reads the kernel hostname, not the resolver's FQDN.
+
+Renaming produces a **new** agent ID; the old entry lingers as `disconnected`
+and has to be removed by hand:
+
+```sh
+kubectl exec -n wazuh wazuh-manager-master-0 -- \
+  /var/ossec/bin/manage_agents -r <old-id>
+```
 - **Re-run the setup Job:** bump `setup-version` in
   `kubernetes/apps/security/wazuh/config/job-setup.yaml`, commit, push.
 - **Rotate a credential:** update the 1Password item, then
