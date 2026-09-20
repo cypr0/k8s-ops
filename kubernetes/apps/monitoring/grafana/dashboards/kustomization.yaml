@@ -3,14 +3,20 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# One ConfigMap per dashboard folder, referenced by name from the Grafana
-# HelmRelease's dashboardsConfigMaps. The name must stay stable, hence
-# disableNameSuffixHash: a content hash in the name would rename the ConfigMap
-# on every dashboard edit and leave the HelmRelease pointing at nothing.
+# One ConfigMap per Grafana folder. The name must stay stable, hence
+# disableNameSuffixHash: a content hash would rename the ConfigMap on every
+# dashboard edit and leave the HelmRelease's dashboardsConfigMaps pointing at
+# nothing. The cost is that Grafana does not restart on a dashboard change --
+# its provisioning loop re-reads each directory every 60s instead.
 #
-# The trade-off: Grafana does not restart when a dashboard changes. Its
-# provisioning loop re-reads each directory every 60s (updateIntervalSeconds in
-# the HelmRelease), so edits still arrive -- just not instantly.
+# Two kinds of file live here, and they are formatted differently on purpose:
+#   * minified  -- vendored unchanged from grafana.com. Regenerated wholesale,
+#                  never hand-edited, so a readable diff buys nothing. Each
+#                  carries a __source key with its gnetId and revision.
+#   * indented  -- written here, or adapted from an upstream dashboard. These
+#                  are maintained by hand and their diffs are meant to be read.
+#                  Adapted ones additionally carry a __patched key recording
+#                  what was renamed, rewritten or removed.
 generatorOptions:
   disableNameSuffixHash: true
 
@@ -19,22 +25,42 @@ configMapGenerator:
     files:
       - cluster/k8s-global.json
       - cluster/k8s-namespaces.json
+      - cluster/k8s-nodes.json
       - cluster/k8s-pods.json
+      - cluster/node-exporter-full.json
       - cluster/talos.json
   - name: grafana-repo-dashboards-network
     files:
+      - network/cilium-policy-verdicts.json
+      - network/cilium.json
+      - network/cloudflare-tunnel.json
       - network/coredns.json
+      - network/envoy-global.json
+      - network/envoy-overview.json
+  - name: grafana-repo-dashboards-storage
+    files:
+      - storage/cloudnative-pg.json
+      - storage/dragonfly.json
+      - storage/velero.json
   - name: grafana-repo-dashboards-platform
     files:
+      - platform/cert-manager.json
+      - platform/external-secrets.json
       - platform/flux.json
+      - platform/spegel.json
   - name: grafana-repo-dashboards-security
     files:
       - security/falco.json
+      - security/kyverno.json
+      - security/trivy-operator.json
   - name: grafana-repo-dashboards-observability
     files:
       - observability/alertmanager.json
       - observability/gatus.json
+      - observability/grafana.json
+      - observability/prometheus.json
   - name: grafana-repo-dashboards-apps
     files:
+      - apps/nextcloud.json
       - apps/open-webui.json
       - apps/paperless.json

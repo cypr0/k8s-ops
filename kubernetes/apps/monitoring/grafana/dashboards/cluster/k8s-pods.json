@@ -58,7 +58,7 @@
    }
   ]
  },
- "description": "This is a modern 'Pods View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes\n\nAdapted from grafana.com dashboard 15760 revision 39 to the metrics this cluster actually exposes: 0 metric names renamed, 1 queries rewritten, 0 panels and 0 individual queries removed for metrics that cannot exist here. The full record is in the __patched key of this dashboard's JSON in kubernetes/apps/monitoring/grafana/app/dashboards/.",
+ "description": "This is a modern 'Pods View' dashboard for your Kubernetes cluster(s). Made for kube-prometheus-stack and take advantage of the latest Grafana features. GitHub repository: https://github.com/dotdc/grafana-dashboards-kubernetes",
  "editable": true,
  "fiscalYearStartMonth": 0,
  "graphTooltip": 1,
@@ -2774,8 +2774,8 @@
  "refresh": "30s",
  "schemaVersion": 42,
  "tags": [
-  "cluster",
   "kubernetes",
+  "cluster",
   "patched"
  ],
  "templating": {
@@ -2945,9 +2945,12 @@
  "version": 39,
  "weekStart": "",
  "gnetId": 15760,
+ "__source": {
+  "gnetId": 15760,
+  "revision": 39,
+  "name": "Kubernetes / Views / Pods"
+ },
  "__patched": {
-  "source_gnetId": 15760,
-  "source_revision": 39,
   "renamed": 0,
   "rewritten": 1,
   "removed_panels": [],

@@ -156,14 +156,23 @@ spec:
               handleGrafanaManagedAlerts: false
 
     # ── Dashboard folders ─────────────────────────────────────────────────
-    # Two providers per folder, pointing at the same Grafana folder from two
-    # different paths. The chart cannot mix its own gnetId downloads and a
-    # user-supplied ConfigMap in one directory -- they would collide -- so
-    # community imports and the dashboards kept in this repo each get their own
-    # provider. Both land in the same folder in the UI.
+    # One provider per folder, every dashboard supplied as a file from this
+    # repo (kubernetes/apps/monitoring/grafana/dashboards/).
     #
-    # foldersFromFilesStructure is deliberately off: the folder name is set
-    # explicitly here so renaming a directory cannot silently move dashboards.
+    # The chart's own `dashboards:` gnetId mechanism is deliberately NOT used.
+    # It substitutes the datasource with a sed that only matches the legacy
+    # string form ("datasource": "Prometheus"); modern exports carry an object
+    # ({"type":"prometheus","uid":"${DS_PROMETHEUS}"}) and pass through
+    # untouched. Nine of eighteen imported dashboards arrived that way, with up
+    # to 226 unresolved placeholders each -- and the failure is invisible, since
+    # a panel pointing at a non-existent datasource renders as an empty graph.
+    #
+    # Vendoring the JSON instead means the datasource is resolved once, at
+    # commit time, and verified there. It also removes the runtime dependency
+    # on grafana.com at pod start.
+    #
+    # foldersFromFilesStructure stays off: folder names are set explicitly so
+    # renaming a directory cannot silently move dashboards.
     dashboardProviders:
       dashboardproviders.yaml:
         apiVersion: 1
@@ -177,15 +186,6 @@ spec:
             updateIntervalSeconds: 60
             options:
               path: /var/lib/grafana/dashboards/cluster
-          - name: cluster-repo
-            orgId: 1
-            folder: "Cluster"
-            type: file
-            disableDeletion: false
-            allowUiUpdates: true
-            updateIntervalSeconds: 60
-            options:
-              path: /var/lib/grafana/dashboards/cluster-repo
           - name: network
             orgId: 1
             folder: "Netzwerk"
@@ -195,15 +195,6 @@ spec:
             updateIntervalSeconds: 60
             options:
               path: /var/lib/grafana/dashboards/network
-          - name: network-repo
-            orgId: 1
-            folder: "Netzwerk"
-            type: file
-            disableDeletion: false
-            allowUiUpdates: true
-            updateIntervalSeconds: 60
-            options:
-              path: /var/lib/grafana/dashboards/network-repo
           - name: storage
             orgId: 1
             folder: "Storage & Datenbanken"
@@ -222,15 +213,6 @@ spec:
             updateIntervalSeconds: 60
             options:
               path: /var/lib/grafana/dashboards/platform
-          - name: platform-repo
-            orgId: 1
-            folder: "Plattform"
-            type: file
-            disableDeletion: false
-            allowUiUpdates: true
-            updateIntervalSeconds: 60
-            options:
-              path: /var/lib/grafana/dashboards/platform-repo
           - name: security
             orgId: 1
             folder: "Sicherheit"
@@ -240,15 +222,6 @@ spec:
             updateIntervalSeconds: 60
             options:
               path: /var/lib/grafana/dashboards/security
-          - name: security-repo
-            orgId: 1
-            folder: "Sicherheit"
-            type: file
-            disableDeletion: false
-            allowUiUpdates: true
-            updateIntervalSeconds: 60
-            options:
-              path: /var/lib/grafana/dashboards/security-repo
           - name: observability
             orgId: 1
             folder: "Observability"
@@ -258,15 +231,6 @@ spec:
             updateIntervalSeconds: 60
             options:
               path: /var/lib/grafana/dashboards/observability
-          - name: observability-repo
-            orgId: 1
-            folder: "Observability"
-            type: file
-            disableDeletion: false
-            allowUiUpdates: true
-            updateIntervalSeconds: 60
-            options:
-              path: /var/lib/grafana/dashboards/observability-repo
           - name: apps
             orgId: 1
             folder: "Anwendungen"
@@ -276,66 +240,19 @@ spec:
             updateIntervalSeconds: 60
             options:
               path: /var/lib/grafana/dashboards/apps
-          - name: apps-repo
-            orgId: 1
-            folder: "Anwendungen"
-            type: file
-            disableDeletion: false
-            allowUiUpdates: true
-            updateIntervalSeconds: 60
-            options:
-              path: /var/lib/grafana/dashboards/apps-repo
 
-    # ── Dashboards kept in this repo ──────────────────────────────────────
-    # See kubernetes/apps/monitoring/grafana/app/dashboards/. Four are upstream
-    # dashboards adapted to the metrics this cluster actually has (each carries
-    # a __patched block recording what was renamed, rewritten or removed); the
-    # rest exist because no community dashboard does.
-    #
-    # The names must NOT follow the chart's own grafana-dashboards-<provider>
-    # convention: the chart creates a ConfigMap under exactly that name for
-    # every entry in `dashboards:` below. Colliding would leave one object
-    # carrying both Helm and Flux ownership labels, with the two controllers
-    # overwriting each other's contents on every reconcile.
+    # Names must not collide with the chart's own grafana-dashboards-<provider>
+    # convention -- an object carrying both Helm and Flux ownership ends up
+    # being rewritten by each controller in turn. Generated by
+    # kubernetes/apps/monitoring/grafana/dashboards/kustomization.yaml.
     dashboardsConfigMaps:
-      cluster-repo: grafana-repo-dashboards-cluster
-      network-repo: grafana-repo-dashboards-network
-      platform-repo: grafana-repo-dashboards-platform
-      security-repo: grafana-repo-dashboards-security
-      observability-repo: grafana-repo-dashboards-observability
-      apps-repo: grafana-repo-dashboards-apps
-
-    # ── Community dashboards (downloaded at pod start by gnetId) ──────────
-    # Every revision is pinned. Coverage figures below were measured against
-    # this cluster's live metric names, not assumed -- the tooling is described
-    # in docs/apps/grafana.md. Anything that scored poorly was either adapted
-    # into dashboards/ above or replaced by one built here.
-    dashboards:
-      cluster:
-        k8s-nodes: {gnetId: 15759, revision: 40, datasource: Prometheus} # 98%
-        node-exporter: {gnetId: 1860, revision: 45, datasource: Prometheus} # 88%, gaps are hwmon/systemd collectors Talos does not ship
-      network:
-        cilium: {gnetId: 21431, revision: 6, datasource: Prometheus} # 84%, gaps are kvstore metrics (CRD mode, no etcd)
-        cilium-policy: {gnetId: 18015, revision: 4, datasource: Prometheus} # 100% once hubble policy metrics were enabled
-        envoy-overview: {gnetId: 24459, revision: 3, datasource: Prometheus} # 100%
-        envoy-global: {gnetId: 11022, revision: 1, datasource: Prometheus} # 100%
-        cloudflare-tunnel: {gnetId: 17457, revision: 6, datasource: Prometheus} # 100%
-      storage:
-        cloudnative-pg: {gnetId: 20417, revision: 4, datasource: Prometheus} # 91%
-        dragonfly: {gnetId: 21444, revision: 1, datasource: Prometheus} # 87%
-        velero: {gnetId: 11055, revision: 2, datasource: Prometheus} # 82%
-      platform:
-        cert-manager: {gnetId: 20340, revision: 1, datasource: Prometheus} # 100%
-        external-secrets: {gnetId: 21640, revision: 4, datasource: Prometheus} # 100%
-        spegel: {gnetId: 18089, revision: 1, datasource: Prometheus} # 75%
-      security:
-        kyverno: {gnetId: 15987, revision: 2, datasource: Prometheus} # 100%
-        trivy-operator: {gnetId: 16337, revision: 16, datasource: Prometheus} # 100%
-      observability:
-        prometheus: {gnetId: 3662, revision: 2, datasource: Prometheus} # 79%, gaps are cloud service-discovery that cannot apply here
-        grafana: {gnetId: 3590, revision: 3, datasource: Prometheus} # 96%
-      apps:
-        nextcloud: {gnetId: 9632, revision: 1, datasource: Prometheus} # 88%
+      cluster: grafana-repo-dashboards-cluster
+      network: grafana-repo-dashboards-network
+      storage: grafana-repo-dashboards-storage
+      platform: grafana-repo-dashboards-platform
+      security: grafana-repo-dashboards-security
+      observability: grafana-repo-dashboards-observability
+      apps: grafana-repo-dashboards-apps
 
     # ── Monitoring ────────────────────────────────────────────────────────
     serviceMonitor:

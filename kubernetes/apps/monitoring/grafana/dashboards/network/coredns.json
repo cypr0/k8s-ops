@@ -12,7 +12,7 @@
    }
   ]
  },
- "description": "A dashboard for the CoreDNS DNS server with updated metrics for version 1.7.0+.  Based on the CoreDNS 1.7.0+ dashboard by ejkinger\n\nAdapted from grafana.com dashboard 14981 revision 2 to the metrics this cluster actually exposes: 9 metric names renamed, 0 queries rewritten, 1 panels and 4 individual queries removed for metrics that cannot exist here. The full record is in the __patched key of this dashboard's JSON in kubernetes/apps/monitoring/grafana/app/dashboards/.",
+ "description": "A dashboard for the CoreDNS DNS server with updated metrics for version 1.7.0+.  Based on the CoreDNS 1.7.0+ dashboard by ejkinger",
  "editable": true,
  "gnetId": 14981,
  "graphTooltip": 0,
@@ -2004,9 +2004,12 @@
  "title": "CoreDNS",
  "uid": "coredns",
  "version": 134,
+ "__source": {
+  "gnetId": 14981,
+  "revision": 2,
+  "name": "CoreDNS"
+ },
  "__patched": {
-  "source_gnetId": 14981,
-  "source_revision": 2,
   "renamed": 9,
   "rewritten": 0,
   "removed_panels": [
