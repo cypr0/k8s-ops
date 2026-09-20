@@ -28,7 +28,13 @@ spec:
                         operator: DoesNotExist
           containers:
             - name: ansible
-              image: python:3.14-alpine
+              # Plain Alpine, NOT python:*-alpine. run.sh installs Ansible with
+              # `apk add`, which pulls Alpine's own python3 into /usr -- while a
+              # python:* image ships a separate CPython in /usr/local. Both were
+              # 3.14 but built differently, so Ansible's stdlib extensions
+              # failed to relocate ("_PyType_AllocNoTrack: symbol not found")
+              # and the playbook never started. One interpreter, no collision.
+              image: alpine:3.24.2
               command:
                 - "/bin/sh"
                 - "/scripts/run.sh"
