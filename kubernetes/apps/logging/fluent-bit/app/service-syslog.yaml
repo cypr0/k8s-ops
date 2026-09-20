@@ -1,9 +1,15 @@
 ---
-# LoadBalancer for external log collection
-# Proxmox:  System > Syslog → UDP/TCP 514 → 192.168.10.110
-# OPNsense: System > Log Files > Settings → Remote Logging → 192.168.10.110:514
-# Talos:    machine.logging.destinations / install.extraKernelArgs → 192.168.10.110:5170
-# Selector now points to Fluent Bit in logging namespace
+# LoadBalancer for Talos node logs.
+#   Talos: machine.logging.destinations / install.extraKernelArgs
+#          -> 192.168.10.110:5170
+#
+# The VIP and the name stay as they are even though only one port is left:
+# every node's machine config points at this address, and changing it means a
+# config patch plus a rolling reboot of the whole cluster.
+#
+# Syslog on 514 is gone. Proxmox and OPNsense (incl. its Suricata IDS) now
+# report to the Wazuh manager on 192.168.10.111 instead, where the events are
+# decoded into alerts rather than stored as raw lines.
 apiVersion: v1
 kind: Service
 metadata:
@@ -17,14 +23,6 @@ spec:
   selector:
     app.kubernetes.io/name: fluent-bit
   ports:
-    - name: syslog-udp
-      port: 514
-      protocol: UDP
-      targetPort: 5514
-    - name: syslog-tcp
-      port: 514
-      protocol: TCP
-      targetPort: 5514
     - name: talos-log-tcp
       port: 5170
       protocol: TCP

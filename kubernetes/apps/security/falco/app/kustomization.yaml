@@ -6,7 +6,6 @@ resources:
   - ./namespace.yaml
   - ./helmrepository.yaml
   - ./externalsecret.yaml
-  - ./externalsecret-opensearch.yaml
   - ./helmrelease-falco.yaml
   - ./helmrelease-sidekick.yaml
   - ./ciliumnetworkpolicy.yaml

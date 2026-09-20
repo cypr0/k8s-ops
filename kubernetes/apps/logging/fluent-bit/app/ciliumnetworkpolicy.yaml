@@ -1,5 +1,5 @@
 ---
-# Fluent Bit: syslog ingestion from external + forward to OpenSearch and Loki
+# Fluent Bit: Talos node logs in, Loki out. Nothing else.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -10,15 +10,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: fluent-bit
   ingress:
-    # Syslog from external hosts (Proxmox, OPNsense) via LoadBalancer
-    - fromEntities:
-        - world
-      toPorts:
-        - ports:
-            - port: "5514"
-              protocol: TCP
-            - port: "5514"
-              protocol: UDP
     # Talos kernel/service logs via LoadBalancer. Traffic originates from the
     # node's own host network stack (kernel logging starts before CNI is up),
     # so it's classified as remote-node/host, not world.
@@ -50,15 +41,7 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # OpenSearch REST API
-    - toEndpoints:
-        - matchLabels:
-            opensearch.org/opensearch-cluster: opensearch
-      toPorts:
-        - ports:
-            - port: "9200"
-              protocol: TCP
-    # Loki (dual-write)
+    # Loki -- the only sink left.
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring

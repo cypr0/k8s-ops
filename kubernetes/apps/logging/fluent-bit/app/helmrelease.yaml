@@ -24,10 +24,9 @@ spec:
       retries: 3
       strategy: rollback
   values:
-    # Run on ALL nodes (incl. control-plane): app pods like Nextcloud are
-    # scheduled on CP nodes too (allowSchedulingOnControlPlanes), so the
-    # container-log tail must cover them. Toleration lets it schedule on any
-    # CP taint if present.
+    # Run on ALL nodes (incl. control-plane): every node ships its own kernel
+    # and service logs to the LoadBalancer, and the Service only routes to
+    # ready endpoints. Toleration lets it schedule on any CP taint if present.
     affinity: {}
     tolerations:
       - operator: Exists
@@ -39,13 +38,12 @@ spec:
       limits:
         memory: 256Mi
 
+    # Root is no longer strictly required (the syslog listeners and the
+    # container-log tail are gone, and 5170 is unprivileged), but the chart's
+    # DaemonSet still mounts /var/log. Left as-is deliberately; tightening it
+    # is a separate change that needs its own verification.
     podSecurityContext:
-      runAsNonRoot: false # needs root for syslog socket
-
-    # Inject OpenSearch password
-    envFrom:
-      - secretRef:
-          name: fluent-bit-opensearch
+      runAsNonRoot: false
 
     serviceMonitor:
       enabled: true
@@ -63,40 +61,6 @@ spec:
             HTTP_Port     2020
 
       customParsers: |
-        # RFC5424 with optional fractional seconds (Proxmox rsyslog, OPNsense)
-        # Matches: <PRI>1 TIMESTAMP HOST APP PID MSGID SD MSG
-        # rsyslog sends: <38>1 2026-06-21T16:06:29.738928+02:00 proxmox sshd 12345 - - message
-        [PARSER]
-            Name        syslog-rfc5424-nofrac
-            Format      regex
-            Regex       ^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>(\[(.*?)\]|-)) (?<message>.+)$
-            Time_Key    time
-            Time_Format %Y-%m-%dT%H:%M:%S.%L%z
-            Time_Keep   Off
-
-        # Fallback parser without fractional seconds
-        [PARSER]
-            Name        syslog-rfc5424-simple
-            Format      regex
-            Regex       ^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>(\[(.*?)\]|-)) (?<message>.+)$
-            Time_Key    time
-            Time_Format %Y-%m-%dT%H:%M:%S%z
-            Time_Keep   Off
-
-        # NOTE: the CRI (containerd) parser is BUILT IN to fluent-bit
-        # (parsers.conf) — defining our own "cri" here collides with it and
-        # makes fluent-bit skip the rest of this file (so later parsers like
-        # talos_audit_type never register → crash). We reference the built-in
-        # "cri" parser in the tail input instead.
-
-        # Extract pod/namespace/container from the container log FILENAME
-        # (/var/log/containers/<pod>_<ns>_<container>-<id>.log) so we get
-        # per-app metadata WITHOUT needing the Kubernetes API filter (no RBAC).
-        [PARSER]
-            Name        k8s_file_meta
-            Format      regex
-            Regex       ^/var/log/containers/(?<pod>[^_]+)_(?<namespace>[^_]+)_(?<container>.+)-(?<containerid>[a-f0-9]{64})\.log$
-
         # Talos auditd: extract the Linux audit record type from msg, e.g.
         # "type=NETFILTER_CFG msg=audit(...)..." -> audit_type=NETFILTER_CFG.
         # Only auditd lines start with "type="; every other Talos log line
@@ -108,24 +72,18 @@ spec:
             Regex       ^type=(?<audit_type>[A-Z0-9_]+)
 
       inputs: |
-        # ── Syslog from Proxmox + OPNsense ──────────────────────────────
-        # Fluent-Bit syslog plugin uses built-in decoder, not external parser
-        [INPUT]
-            Name          syslog
-            Listen        0.0.0.0
-            Port          5514
-            Mode          udp
-            Tag           syslog.udp
-
-        [INPUT]
-            Name          syslog
-            Listen        0.0.0.0
-            Port          5514
-            Mode          tcp
-            Tag           syslog.tcp
-
         # ── Talos kernel + service logs (CIS Talos 6.1.1/6.2.1) ─────────
-        # Talos ships these as raw JSON-lines over plain TCP, not syslog framing
+        # The only remaining input. Talos ships these as raw JSON-lines over
+        # plain TCP, not syslog framing, which is why Fluent Bit is still here
+        # at all: Alloy's loki.source.syslog expects RFC5424 and Talos offers
+        # no syslog format.
+        #
+        # Everything else that used to arrive here has moved to Wazuh, which
+        # decodes it into alerts instead of storing raw text: OPNsense and its
+        # Suricata IDS via the os-wazuh-agent plugin, Proxmox via a native
+        # agent (see kubernetes/apps/automation/proxmox-ansible/). Container
+        # logs are collected cluster-wide by Alloy, which needs no per-namespace
+        # glob here.
         [INPUT]
             Name          tcp
             Listen        0.0.0.0
@@ -133,69 +91,7 @@ spec:
             Format        json
             Tag           talos.log
 
-        # ── App container logs -> OpenSearch (per-app dashboards) ────────
-        # Scoped by filename glob to the monitored app namespaces only, so we
-        # don't ingest every container in the cluster. CRI format (containerd).
-        [INPUT]
-            Name              tail
-            Tag               kube.app
-            Path              /var/log/containers/*_nextcloud_*.log,/var/log/containers/*_paperless_*.log,/var/log/containers/*_open-webui_*.log,/var/log/containers/*_hermes-agent_*.log
-            Parser            cri
-            Path_Key          filename
-            DB                /var/log/flb_kube_apps.db
-            Mem_Buf_Limit     20MB
-            Skip_Long_Lines   On
-            Refresh_Interval  10
-            Read_from_Head    On
-
       filters: |
-        # Retag Suricata Eve-JSON records before any other processing
-        [FILTER]
-            Name              rewrite_tag
-            Match             syslog.*
-            Rule              $ident ^suricata$ suricata.$TAG false
-
-        # Parse Eve-JSON message field into structured fields
-        [FILTER]
-            Name              parser
-            Match             suricata.*
-            Key_Name          message
-            Parser            json
-            Reserve_Data      On
-            Preserve_Key      Off
-
-        # Default source fallback (overwritten by specific rules below)
-        [FILTER]
-            Name          modify
-            Match         syslog.*
-            Add           source syslog
-
-        # Label Proxmox by hostname
-        [FILTER]
-            Name          modify
-            Match         syslog.*
-            Condition     Key_value_matches host ^pve|^proxmox
-            Set           source proxmox
-
-        # Label OPNsense by hostname (secsrv = security server = OPNsense)
-        [FILTER]
-            Name          modify
-            Match         syslog.*
-            Condition     Key_value_matches host ^OPNsense|^opnsense|^fw|^secsrv
-            Set           source opnsense
-
-        # Add job label for Loki
-        [FILTER]
-            Name          modify
-            Match         syslog.*
-            Add           job syslog
-
-        # Add job label for Loki (Suricata)
-        [FILTER]
-            Name          modify
-            Match         suricata.*
-            Add           job suricata
-
         # Add job label for Loki (Talos kernel/service logs)
         [FILTER]
             Name          modify
@@ -213,98 +109,7 @@ spec:
             Reserve_Data  On
             Preserve_Key  On
 
-        # App container logs: derive pod/namespace/container from the filename
-        [FILTER]
-            Name          parser
-            Match         kube.app
-            Key_Name      filename
-            Parser        k8s_file_meta
-            Reserve_Data  On
-            Preserve_Key  Off
-
-        [FILTER]
-            Name          modify
-            Match         kube.app
-            Add           job k8s-apps
-
       outputs: |
-        # ── OpenSearch (SIEM) ────────────────────────────────────────────
-        [OUTPUT]
-            Name             opensearch
-            Match            syslog.*
-            Host             opensearch.logging.svc.cluster.local
-            Port             9200
-            HTTP_User        admin
-            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
-            Type             _doc
-            Logstash_Format  On
-            Logstash_Prefix  syslog
-            Logstash_Prefix_Key  $source
-            Time_Key         @timestamp
-            tls              On
-            tls.verify       Off
-            net.keepalive    off
-            Retry_Limit      5
-            Suppress_Type_Name On
-
-        # ── OpenSearch (Suricata Eve-JSON) ──────────────────────────────
-        [OUTPUT]
-            Name             opensearch
-            Match            suricata.*
-            Host             opensearch.logging.svc.cluster.local
-            Port             9200
-            HTTP_User        admin
-            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
-            Type             _doc
-            Logstash_Format  On
-            Logstash_Prefix  suricata
-            Time_Key         @timestamp
-            tls              On
-            tls.verify       Off
-            net.keepalive    off
-            Retry_Limit      5
-            Suppress_Type_Name On
-
-        # ── Loki (Grafana dashboards) ────────────────────────────────────
-        [OUTPUT]
-            Name             loki
-            Match            syslog.*
-            Host             loki.monitoring.svc.cluster.local
-            Port             3100
-            Labels           job=syslog
-            Label_Keys       $source,$host
-            Line_Format      json
-            Retry_Limit      5
-
-        # ── Loki (Suricata) ──────────────────────────────────────────────
-        [OUTPUT]
-            Name             loki
-            Match            suricata.*
-            Host             loki.monitoring.svc.cluster.local
-            Port             3100
-            Labels           job=suricata
-            Label_Keys       $event_type,$host
-            Line_Format      json
-            Retry_Limit      5
-
-        # ── OpenSearch (Talos kernel/service logs) ───────────────────────
-        [OUTPUT]
-            Name             opensearch
-            Match            talos.log
-            Host             opensearch.logging.svc.cluster.local
-            Port             9200
-            HTTP_User        admin
-            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
-            Type             _doc
-            Logstash_Format  On
-            Logstash_Prefix  talos
-            Time_Key         @timestamp
-            tls              On
-            tls.verify       Off
-            net.keepalive    off
-            Retry_Limit      5
-            Suppress_Type_Name On
-
         # ── Loki (Talos kernel/service logs) ─────────────────────────────
         [OUTPUT]
             Name             loki
@@ -316,41 +121,10 @@ spec:
             Line_Format      json
             Retry_Limit      5
 
-        # ── OpenSearch (app container logs -> apps-<date> index) ─────────
-        # App logs already go to Loki via Alloy; this adds them to OpenSearch
-        # for the per-app OpenSearch dashboards. namespace/pod/container fields
-        # come from the filename parser above.
-        [OUTPUT]
-            Name             opensearch
-            Match            kube.app
-            Host             opensearch.logging.svc.cluster.local
-            Port             9200
-            HTTP_User        admin
-            HTTP_Passwd      ${OPENSEARCH_PASSWORD}
-            Type             _doc
-            Logstash_Format  On
-            Logstash_Prefix  apps
-            Time_Key         @timestamp
-            tls              On
-            tls.verify       Off
-            net.keepalive    off
-            Retry_Limit      5
-            Suppress_Type_Name On
-
-    # Expose syslog port on pods. The chart also adds these entries to the
+    # Expose the Talos log port on pods. The chart also adds this entry to the
     # Service, which requires a valid `port` (1-65535); without it the Service
     # port defaults to 0 and the Helm upgrade fails ("port: Invalid value: 0").
     extraPorts:
-      - name: syslog-udp
-        port: 5514
-        containerPort: 5514
-        protocol: UDP
-        targetPort: 5514
-      - name: syslog-tcp
-        port: 5514
-        containerPort: 5514
-        protocol: TCP
-        targetPort: 5514
       - name: talos-log-tcp
         port: 5170
         containerPort: 5170

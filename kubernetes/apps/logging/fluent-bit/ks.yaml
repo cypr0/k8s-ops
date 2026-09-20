@@ -9,11 +9,11 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: fluent-bit
-  dependsOn:
-    - name: opensearch-cluster
-      namespace: logging
-    - name: external-secrets-stores
-      namespace: security
+  # No dependsOn: the only sink is Loki in `monitoring`, and Fluent Bit buffers
+  # and retries if Loki is not up yet. Waiting on it here would only couple two
+  # namespaces for no gain. The former dependency on opensearch-cluster is gone
+  # with the OpenSearch outputs, and the ExternalSecret that once needed
+  # external-secrets-stores no longer exists either.
   interval: 1h
   path: ./kubernetes/apps/logging/fluent-bit/app
   prune: true

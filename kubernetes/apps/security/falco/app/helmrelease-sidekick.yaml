@@ -39,17 +39,6 @@ spec:
         tenant: ""
         extralabels: "source=falco"
 
-      # OpenSearch for SIEM / Security Analytics
-      elasticsearch:
-        hostport: "https://opensearch.logging.svc.cluster.local:9200"
-        index: "falco"
-        type: "falco"
-        username: "admin"
-        minimumpriority: warning
-        mutualtls: false
-        checkcert: false
-        extralabels: "source=falco"
-
       pushover:
         minimumpriority: critical
 
@@ -64,11 +53,6 @@ spec:
             secretKeyRef:
               name: falcosidekick-pushover
               key: PUSHOVER_USERKEY
-        - name: ELASTICSEARCH_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: falcosidekick-opensearch
-              key: ELASTICSEARCH_PASSWORD
 
     resources:
       requests:
