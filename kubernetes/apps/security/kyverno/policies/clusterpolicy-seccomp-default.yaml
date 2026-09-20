@@ -28,7 +28,6 @@ spec:
                 - kube-system
                 - falco
                 - monitoring
-                - logging
       mutate:
         patchStrategicMerge:
           spec:

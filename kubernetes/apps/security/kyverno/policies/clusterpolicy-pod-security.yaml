@@ -6,7 +6,7 @@
 # a PolicyException allow-list instead of the other way around.
 #
 # Namespace exemptions mirror the ones in talos/patches/controller/cluster.yaml
-# (kube-system, falco, monitoring, logging) — verified via live
+# (kube-system, falco, monitoring) — verified via live
 # pod scan to be exactly the namespaces that legitimately run
 # privileged/hostNetwork/hostPID/hostPath workloads (Cilium, csi-driver-nfs,
 # Falco, node-exporter, OpenSearch, fluent-bit, spegel).
@@ -31,7 +31,6 @@ spec:
                 - kube-system
                 - falco
                 - monitoring
-                - logging
       validate:
         podSecurity:
           level: baseline
@@ -62,7 +61,6 @@ spec:
                 - kube-system
                 - falco
                 - monitoring
-                - logging
       validate:
         podSecurity:
           level: restricted

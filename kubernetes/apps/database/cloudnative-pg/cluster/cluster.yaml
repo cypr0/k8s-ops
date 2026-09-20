@@ -21,6 +21,22 @@ spec:
 
   primaryUpdateStrategy: unsupervised
 
+  # A full REPLACEMENT of the operator's default, not a merge -- so every field
+  # below is the operator's own value, read off a live pod, and only
+  # fsGroupChangePolicy is new. Dropping any of them would silently run Postgres
+  # as root. Re-check this block when upgrading the operator.
+  #
+  # The policy itself avoids a recursive chown of the whole data directory on
+  # every restart, which on NFS is slow enough to trip the startup probe.
+  podSecurityContext:
+    fsGroup: 26
+    fsGroupChangePolicy: OnRootMismatch
+    runAsGroup: 26
+    runAsUser: 26
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+
   storage:
     size: 20Gi
     storageClass: zfs-nfs

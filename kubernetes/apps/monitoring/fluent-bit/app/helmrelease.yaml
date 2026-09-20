@@ -10,10 +10,13 @@ spec:
     spec:
       chart: fluent-bit
       version: "0.57.6"
+      # No explicit namespace: it defaults to this HelmRelease's own, which is
+      # where helmrepository.yaml puts the source anyway. Spelling it out here
+      # silently stops Renovate from detecting the chart for updates -- the same
+      # trap that hid version bumps for authentik, falco and kubescape.
       sourceRef:
         kind: HelmRepository
         name: fluent
-        namespace: logging
   maxHistory: 2
   install:
     remediation:

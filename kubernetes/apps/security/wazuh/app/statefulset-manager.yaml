@@ -23,6 +23,8 @@ spec:
     spec:
       securityContext:
         fsGroup: 101
+        # Without this, every restart chowns the whole /var/ossec tree.
+        fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: wazuh-manager
           image: wazuh/wazuh-manager:4.14.7

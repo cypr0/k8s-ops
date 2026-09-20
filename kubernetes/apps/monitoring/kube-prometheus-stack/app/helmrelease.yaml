@@ -47,6 +47,9 @@ spec:
             memory: 128Mi
         podSecurityContext:
           runAsNonRoot: true
+          # Merges with the chart default (fsGroup 2000); skips the
+          # recursive chown on restart when the volume root already matches.
+          fsGroupChangePolicy: OnRootMismatch
           seccompProfile:
             type: RuntimeDefault
         containerSecurityContext:
@@ -84,6 +87,9 @@ spec:
             memory: 3Gi
         podSecurityContext:
           runAsNonRoot: true
+          # Merges with the chart default (fsGroup 2000); skips the
+          # recursive chown on restart when the volume root already matches.
+          fsGroupChangePolicy: OnRootMismatch
           seccompProfile:
             type: RuntimeDefault
         containerSecurityContext:

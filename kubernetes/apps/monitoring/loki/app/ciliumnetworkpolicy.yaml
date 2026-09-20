@@ -28,10 +28,10 @@ spec:
         - ports:
             - port: "3100"
               protocol: TCP
-    # Fluent Bit log push (logging namespace)
+    # Fluent Bit log push (Talos node logs)
     - fromEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": logging
+            "k8s:io.kubernetes.pod.namespace": monitoring
             app.kubernetes.io/name: fluent-bit
       toPorts:
         - ports:

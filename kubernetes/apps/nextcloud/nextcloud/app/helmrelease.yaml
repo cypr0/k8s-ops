@@ -23,6 +23,25 @@ spec:
     remediation:
       retries: 3
       remediateLastFailure: true
+  # The chart accepts podSecurityContext but only emits a fixed set of keys from
+  # it -- fsGroupChangePolicy below is passed in values and silently dropped
+  # during templating (verified: `helm get values` shows it, the rendered
+  # Deployment's securityContext is just {"fsGroup":82}). A post-render patch is
+  # the only way to reach it without forking the chart.
+  #
+  # It matters most here: the Nextcloud data volume holds tens of thousands of
+  # files on NFS, and the default policy walks and chowns every one on each
+  # restart.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: nextcloud
+            patch: |
+              - op: add
+                path: /spec/template/spec/securityContext/fsGroupChangePolicy
+                value: OnRootMismatch
   values:
     replicaCount: 1
     image:

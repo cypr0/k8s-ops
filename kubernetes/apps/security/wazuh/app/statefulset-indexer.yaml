@@ -18,6 +18,9 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
+        # Skips the recursive chown when the volume root already matches --
+        # an index directory has a lot of files to walk on every restart.
+        fsGroupChangePolicy: OnRootMismatch
       # Only one init container. Upstream's privileged
       # `increase-the-vm-max-map-count` is deliberately absent: vm.max_map_count
       # is set to 262144 on every node through

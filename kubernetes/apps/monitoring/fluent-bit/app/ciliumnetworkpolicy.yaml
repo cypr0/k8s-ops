@@ -4,7 +4,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: fluent-bit
-  namespace: logging
+  namespace: monitoring
 spec:
   endpointSelector:
     matchLabels:

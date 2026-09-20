@@ -48,6 +48,7 @@ spec:
       runAsUser: 472
       runAsGroup: 472
       fsGroup: 472
+      fsGroupChangePolicy: OnRootMismatch
       seccompProfile:
         type: RuntimeDefault
 
