@@ -62,11 +62,19 @@ kind: Gateway
 metadata:
   name: envoy-external
   annotations:
+    # Both prefixes on purpose: external-dns renamed its default annotation
+    # prefix from "external-dns.alpha.kubernetes.io/" (v0.21.0) to
+    # "external-dns.kubernetes.io/" (v0.22.0). The wrong one is ignored
+    # silently, and without this target external-dns falls back to the
+    # Gateway's own address -- 192.168.10.103, a LAN IP that Cloudflare
+    # refuses for a proxied record. The result is no public record at all.
+    external-dns.kubernetes.io/target: external.${SECRET_DOMAIN}
     external-dns.alpha.kubernetes.io/target: external.${SECRET_DOMAIN}
 spec:
   gatewayClassName: envoy
   infrastructure:
     annotations:
+      external-dns.kubernetes.io/hostname: external.${SECRET_DOMAIN}
       external-dns.alpha.kubernetes.io/hostname: external.${SECRET_DOMAIN}
       lbipam.cilium.io/ips: "192.168.10.103"
   listeners:
@@ -92,11 +100,13 @@ kind: Gateway
 metadata:
   name: envoy-internal
   annotations:
+    external-dns.kubernetes.io/target: internal.${SECRET_DOMAIN}
     external-dns.alpha.kubernetes.io/target: internal.${SECRET_DOMAIN}
 spec:
   gatewayClassName: envoy
   infrastructure:
     annotations:
+      external-dns.kubernetes.io/hostname: internal.${SECRET_DOMAIN}
       external-dns.alpha.kubernetes.io/hostname: internal.${SECRET_DOMAIN}
       lbipam.cilium.io/ips: "192.168.10.101"
   listeners:
@@ -169,6 +179,7 @@ kind: HTTPRoute
 metadata:
   name: https-redirect
   annotations:
+    external-dns.kubernetes.io/controller: none
     external-dns.alpha.kubernetes.io/controller: none
 spec:
   parentRefs:
