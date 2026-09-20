@@ -1,0 +1,27 @@
+---
+# Dragonfly serves 238 Prometheus metrics on its admin port (9999, /metrics) --
+# verified live 2026-09-20. Nothing had ever scraped them.
+#
+# A PodMonitor, not a ServiceMonitor: the operator's Service publishes only the
+# "redis" port, so there is no Service endpoint on 9999 to select.
+#
+# The per-pod "role" label (master/replica) rides along automatically, which is
+# what makes replication lag and failover legible.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dragonfly
+  namespace: database
+  labels:
+    app.kubernetes.io/name: dragonfly
+spec:
+  namespaceSelector:
+    matchNames:
+      - database
+  selector:
+    matchLabels:
+      app: dragonfly
+  podMetricsEndpoints:
+    - port: admin
+      path: /metrics
+      interval: 60s

@@ -75,7 +75,11 @@ spec:
       interval: 15s
 
     serviceMonitor:
-      enabled: true
+      # "create", NOT "enabled". The chart has no serviceMonitor.enabled key and
+      # Helm drops unknown values without a word, so this block had been inert
+      # since it was written -- falco-metrics existed as a Service the whole
+      # time with nothing scraping it.
+      create: true
 
     resources:
       requests:

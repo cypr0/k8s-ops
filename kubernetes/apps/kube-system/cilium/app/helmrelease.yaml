@@ -65,6 +65,12 @@ spec:
         enabled:
           - dns:query;ignoreAAAA
           - drop
+          # Policy verdicts. Added 2026-09-20 after a CiliumNetworkPolicy gap
+          # silently dropped 28% of all Prometheus scrape targets for an unknown
+          # period -- a dropped packet shows up as a scrape timeout, not as a
+          # policy error, and nothing in the cluster surfaced it. This metric is
+          # what makes that class of failure visible.
+          - policy
           - tcp
           - flow
           - port-distribution

@@ -37,6 +37,19 @@ spec:
       valuesKey: S3_REGION
       targetPath: configuration.backupStorageLocation[0].config.region
   values:
+    # The restore-test CronJob was removed on 2026-09-20, so these metrics are
+    # now the ONLY signal that backups are working at all. Chief ones to watch:
+    # velero_backup_last_successful_timestamp (staleness),
+    # velero_backup_failure_total and velero_backup_partial_failure_total.
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        # The chart also probes for the ServiceMonitor CRD on its own; pinning
+        # this to false keeps the decision here rather than in chart logic.
+        autodetect: false
+      nodeAgentPodMonitor:
+        enabled: true
     # Pinned to v1.8.2 (last release on AWS SDK v1) — v1.9+ moved to SDK v2,
     # which sends chunked/trailer-signed PutObject requests
     # ("x-amz-trailer-signature" BadHeader). Per Intercolo's own compat docs

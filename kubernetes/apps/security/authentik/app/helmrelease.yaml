@@ -124,10 +124,14 @@ spec:
           memory: 512Mi
         limits:
           memory: 1Gi
+      # No ".prometheus" level exists in this chart, and metrics.enabled was
+      # missing entirely -- which is why authentik-server's Service never even
+      # carried a metrics port despite the pod listening on 9300. Same class of
+      # silently-ignored value as falco's serviceMonitor.enabled.
       metrics:
-        prometheus:
-          serviceMonitor:
-            enabled: true
+        enabled: true
+        serviceMonitor:
+          enabled: true
       podDisruptionBudget:
         enabled: true
         minAvailable: 1
@@ -147,9 +151,9 @@ spec:
         limits:
           memory: 1Gi
       metrics:
-        prometheus:
-          serviceMonitor:
-            enabled: true
+        enabled: true
+        serviceMonitor:
+          enabled: true
       podDisruptionBudget:
         enabled: true
         minAvailable: 1

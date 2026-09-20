@@ -1,0 +1,39 @@
+---
+# The GitOps Toolkit controllers expose Prometheus metrics on the pod port
+# "http-prom" (8080). Nothing scraped them until 2026-09-20 -- only the
+# flux-operator was monitored, and that reports on the operator's own
+# reconciliation of the FluxInstance, not on whether Kustomizations and
+# HelmReleases are actually converging.
+#
+# A PodMonitor rather than a ServiceMonitor because the controllers ship no
+# Service for their metrics port; source-controller's Service is the artifact
+# server on a different port entirely.
+#
+# What this unlocks: gotk_reconcile_condition (ready/failed/suspended per
+# object) and gotk_reconcile_duration_seconds. In a cluster where every change
+# arrives through Flux, a stalled Kustomization is currently invisible unless
+# someone runs `flux get ks -A` by hand.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: flux-controllers
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: flux
+spec:
+  namespaceSelector:
+    matchNames:
+      - flux-system
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - helm-controller
+          - kustomize-controller
+          - notification-controller
+          - source-controller
+  podMetricsEndpoints:
+    - port: http-prom
+      path: /metrics
+      interval: 60s

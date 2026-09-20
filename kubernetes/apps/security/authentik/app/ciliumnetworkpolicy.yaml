@@ -19,6 +19,18 @@ spec:
     - fromEndpoints:
         - matchLabels:
             io.kubernetes.pod.namespace: security
+    # Prometheus metrics on 9300. Authentik is the single most impactful app in
+    # this cluster -- with no endpoints, nothing anywhere can authenticate (see
+    # docs/incidents/2026-08-16-authentik-geoip-sidecar-sso-outage.md) -- and it
+    # was entirely unmonitored until 2026-09-20.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9300"
+              protocol: TCP
   egress:
     # postgres + dragonfly
     - toEndpoints:

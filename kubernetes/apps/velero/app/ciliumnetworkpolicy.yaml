@@ -9,6 +9,17 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: velero
+  ingress:
+    # Backup/restore metrics on 8085. Since the restore-test was removed these
+    # are the only evidence that backups are running at all.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "8085"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:

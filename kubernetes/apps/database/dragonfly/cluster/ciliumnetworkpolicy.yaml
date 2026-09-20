@@ -17,6 +17,17 @@ spec:
         - ports:
             - port: "6379"
               protocol: TCP
+    # Admin port, scraped by Prometheus for the 238 dragonfly_* metrics. Kept
+    # separate from the blanket 6379 rule above on purpose -- the admin port
+    # also serves control commands and should not be reachable cluster-wide.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9999"
+              protocol: TCP
   egress:
     - toEntities:
         - cluster

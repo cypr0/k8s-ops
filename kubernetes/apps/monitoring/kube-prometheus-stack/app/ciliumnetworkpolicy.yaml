@@ -104,7 +104,13 @@ spec:
               protocol: TCP
             - port: "19001" # envoy proxy admin/stats (NOT 8001)
               protocol: TCP
-            - port: "8080" # kube-state-metrics, gatus, various
+            - port: "8080" # kube-state-metrics, gatus, flux controllers, various
+              protocol: TCP
+            - port: "8085" # velero
+              protocol: TCP
+            - port: "8765" # falco
+              protocol: TCP
+            - port: "9300" # authentik
               protocol: TCP
             - port: "9090" # prometheus self-scrape
               protocol: TCP
@@ -123,6 +129,8 @@ spec:
             - port: "8000" # cnpg patroni REST API
               protocol: TCP
             - port: "9205" # nextcloud-exporter
+              protocol: TCP
+            - port: "9999" # dragonfly admin
               protocol: TCP
 ---
 # Alertmanager: receives alerts from Prometheus, queried by Grafana
