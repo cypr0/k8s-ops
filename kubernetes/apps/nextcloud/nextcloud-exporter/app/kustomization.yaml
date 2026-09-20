@@ -7,7 +7,3 @@ resources:
   - ./helmrelease.yaml
   - ./servicemonitor.yaml
   - ./ciliumnetworkpolicy.yaml
-  - ./externalsecret-opensearch.yaml
-  - ./configmap-stats-exporter.yaml
-  - ./cronjob-stats-exporter.yaml
-  - ./ciliumnetworkpolicy-stats.yaml

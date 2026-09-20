@@ -116,19 +116,6 @@ spec:
     # CoreDNS hosts plugin resolves id.cisotop.de to envoy-internal ClusterIP.
     # These pods then connect to ClusterIP:443 which is DNAT'd to container:10443.
     # Policy is evaluated POST-DNAT, so we allow container port 10443.
-    #
-    # OpenSearch: dashboards (OIDC login) + masters (JWKS validation)
-    - fromEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": logging
-            opensearch.cluster.dashboards: opensearch
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": logging
-            opensearch.org/opensearch-cluster: opensearch
-      toPorts:
-        - ports:
-            - port: "10443"
-              protocol: TCP
     # Grafana: OIDC token exchange with Authentik
     - fromEndpoints:
         - matchLabels:
@@ -247,14 +234,6 @@ spec:
             - port: "3000"
               protocol: TCP
             - port: "8080"
-              protocol: TCP
-    # Backend: logging namespace (OpenSearch Dashboards :5601)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": logging
-      toPorts:
-        - ports:
-            - port: "5601"
               protocol: TCP
     # Backend: security namespace (Authentik :9000)
     - toEndpoints:

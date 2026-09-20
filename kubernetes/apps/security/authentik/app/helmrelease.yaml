@@ -53,8 +53,6 @@ spec:
         - secretRef:
             name: authentik-grafana-oidc
         - secretRef:
-            name: authentik-opensearch-oidc
-        - secretRef:
             name: authentik-proxmox-oidc
         - secretRef:
             name: authentik-paperless-oidc

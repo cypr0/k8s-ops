@@ -66,16 +66,6 @@ spec:
               protocol: TCP
             - port: "3000"
               protocol: TCP
-    # Logging namespace health checks (opensearch, dashboards)
-    - toEndpoints:
-        - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": logging
-      toPorts:
-        - ports:
-            - port: "9200"
-              protocol: TCP
-            - port: "5601"
-              protocol: TCP
     # Database health checks (postgres, dragonfly)
     - toEndpoints:
         - matchLabels:
