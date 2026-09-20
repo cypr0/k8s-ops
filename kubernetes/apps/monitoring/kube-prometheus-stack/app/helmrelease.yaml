@@ -79,6 +79,9 @@ spec:
     # Prometheus
     prometheus:
       prometheusSpec:
+        # Accepts the OTLP-derived metrics Alloy forwards on behalf of Open
+        # WebUI, which cannot be scraped at all. Nothing else writes here.
+        enableRemoteWriteReceiver: true
         retention: 30d
         retentionSize: 18GiB
         # Scrape all ServiceMonitors/PodMonitors/Rules regardless of labels
@@ -155,6 +158,7 @@ spec:
         - statefulsets=[app.kubernetes.io/name,app.kubernetes.io/instance]
         - daemonsets=[app.kubernetes.io/name,app.kubernetes.io/instance]
         - namespaces=[kubernetes.io/metadata.name]
+        - horizontalpodautoscalers=[app.kubernetes.io/name]
       resources:
         requests:
           cpu: 10m

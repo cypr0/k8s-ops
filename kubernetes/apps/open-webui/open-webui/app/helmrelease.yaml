@@ -31,6 +31,27 @@ spec:
               # renovate: datasource=docker depName=ghcr.io/open-webui/open-webui
               tag: v0.11.3
             env:
+              # ── OpenTelemetry metrics ──────────────────────────────────
+              # Open WebUI exposes no /metrics endpoint; it only PUSHES OTLP.
+              # Target is Alloy's receiver, which converts to Prometheus format
+              # and remote-writes into Prometheus.
+              #
+              # Exactly two metrics arrive: http.server.requests and
+              # http.server.duration, labelled by method, route and status.
+              # Traces and logs stay off -- there is no Tempo here, and pod logs
+              # already reach Loki via Alloy's own pipeline.
+              #
+              # 60s instead of the 10s default: at 10s this is ~6 datapoints per
+              # minute per route/status combination, and the whole cluster runs
+              # on one host.
+              ENABLE_OTEL: "true"
+              ENABLE_OTEL_METRICS: "true"
+              ENABLE_OTEL_TRACES: "false"
+              ENABLE_OTEL_LOGS: "false"
+              OTEL_SERVICE_NAME: open-webui
+              OTEL_METRICS_EXPORTER_OTLP_ENDPOINT: http://alloy.monitoring.svc.cluster.local:4317
+              OTEL_EXPORTER_OTLP_INSECURE: "true"
+              OTEL_METRICS_EXPORT_INTERVAL_MILLIS: "60000"
               CORS_ALLOW_ORIGIN: https://ai.${SECRET_DOMAIN}
               WEBUI_URL: https://ai.${SECRET_DOMAIN}
               PORT: &webuiPort 8090

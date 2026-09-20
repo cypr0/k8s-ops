@@ -10,6 +10,16 @@ spec:
     matchLabels:
       app.kubernetes.io/name: alloy
   ingress:
+    # OTLP intake from Open WebUI (see otelcol.receiver.otlp in the HelmRelease).
+    # Scoped to that one app -- this is not a general-purpose collector.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
     # Prometheus metrics scraping
     - fromEndpoints:
         - matchLabels:
@@ -49,6 +59,15 @@ spec:
       toPorts:
         - ports:
             - port: "3100"
+              protocol: TCP
+    # Prometheus remote-write, carrying the OTLP metrics received above.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9090"
               protocol: TCP
     # External: Grafana update checks (grafana.com via Cloudflare CDN)
     - toEntities:

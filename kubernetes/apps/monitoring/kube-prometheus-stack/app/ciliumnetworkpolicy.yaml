@@ -29,6 +29,15 @@ spec:
         - ports:
             - port: "9090"
               protocol: TCP
+    # Alloy remote-writes the OTLP metrics it receives from Open WebUI.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: alloy
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
     # Kubelet readiness/liveness probes (host network → host entity)
     - fromEntities:
         - host
@@ -129,6 +138,8 @@ spec:
             - port: "8000" # cnpg patroni REST API
               protocol: TCP
             - port: "9205" # nextcloud-exporter
+              protocol: TCP
+            - port: "9877" # paperless-exporter
               protocol: TCP
             - port: "9999" # dragonfly admin
               protocol: TCP

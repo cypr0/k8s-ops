@@ -1,0 +1,26 @@
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app paperless-exporter
+  namespace: paperless
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  # dependsOn paperless deliberately omitted: this is a read-only observer and
+  # coupling it to the main app's release lifecycle would mean losing the
+  # metrics exactly when the app is unhealthy and they matter most. It reuses
+  # the paperless-secret that app already owns, so nothing is provisioned here.
+  interval: 1h
+  path: ./kubernetes/apps/paperless/paperless-exporter/app
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: paperless
+  timeout: 5m
+  wait: true

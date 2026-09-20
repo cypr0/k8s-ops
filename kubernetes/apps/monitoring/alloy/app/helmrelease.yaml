@@ -25,6 +25,13 @@ spec:
       strategy: rollback
   values:
     alloy:
+      # Needed for the OTLP receiver below; the chart only opens its own
+      # listenPort (12345) otherwise.
+      extraPorts:
+        - name: otlp-grpc
+          port: 4317
+          targetPort: 4317
+          protocol: TCP
       configMap:
         create: true
         content: |
@@ -34,6 +41,40 @@ spec:
             endpoint {
               url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
             }
+          }
+
+          prometheus.remote_write "default" {
+            endpoint {
+              url = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+            }
+          }
+
+          // ── OTLP INTAKE (Open WebUI) ─────────────────────────────────────
+          // Open WebUI cannot be scraped: it only PUSHES via OTLP and exposes no
+          // /metrics endpoint of its own. This receiver is the bridge.
+          //
+          // Scope is deliberately narrow. Open WebUI emits exactly two metrics --
+          // http.server.requests and http.server.duration, both plain FastAPI
+          // instrumentation -- so this adds request rate and latency broken down
+          // by internal route. Everything at the HTTP edge is already covered by
+          // envoy_cluster_* for httproute/open-webui/open-webui, which needs no
+          // agent at all; the gain here is seeing /api/chat/completions apart
+          // from the rest rather than one number for the whole app.
+          //
+          // Traces and logs are NOT enabled on the sender: there is no Tempo in
+          // this cluster, and pod logs already reach Loki through the pipeline
+          // below.
+          otelcol.receiver.otlp "default" {
+            grpc {
+              endpoint = "0.0.0.0:4317"
+            }
+            output {
+              metrics = [otelcol.exporter.prometheus.default.input]
+            }
+          }
+
+          otelcol.exporter.prometheus "default" {
+            forward_to = [prometheus.remote_write.default.receiver]
           }
 
           // ── KUBERNETES POD LOGS ──────────────────────────────────────────
@@ -94,8 +135,6 @@ spec:
             forward_to = [loki.write.loki.receiver]
           }
 
-
-
     controller:
       type: daemonset
       tolerations: []
@@ -106,7 +145,6 @@ spec:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
-
 
     resources:
       requests:

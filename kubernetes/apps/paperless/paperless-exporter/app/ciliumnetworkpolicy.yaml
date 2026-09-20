@@ -1,0 +1,54 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: paperless-exporter
+  namespace: paperless
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: paperless-exporter
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9877"
+              protocol: TCP
+    # Kubelet readiness probe
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "9877"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # The Paperless API itself. Port 80 is the Service port; Cilium matches
+    # post-DNAT, and paperless-ngx listens on 80 in the pod too.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": paperless
+            app.kubernetes.io/name: paperless-ngx
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+    # Alpine package index at startup, to install python3.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

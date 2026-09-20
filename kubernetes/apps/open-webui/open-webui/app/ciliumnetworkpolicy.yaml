@@ -29,6 +29,16 @@ spec:
             - port: "8090"
               protocol: TCP
   egress:
+    # OTLP metrics push to Alloy. Open WebUI exposes no scrapeable endpoint, so
+    # this egress is the only way its metrics reach Prometheus at all.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: alloy
+      toPorts:
+        - ports:
+            - port: "4317"
+              protocol: TCP
     # DNS resolution
     - toEndpoints:
         - matchLabels:
