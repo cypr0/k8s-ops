@@ -159,6 +159,12 @@ data:
       vars:
         allowed_ip: "{{ allowed_ip }}"
         ftp_password: "{{ lookup('env', 'FTP_SCANNER_PASSWORD') }}"
+        wazuh_manager: "192.168.10.111"
+        # Must not exceed the manager's version -- an agent newer than its
+        # manager is unsupported. Bump together with the image tags in
+        # kubernetes/apps/security/wazuh/app/.
+        wazuh_agent_version: "4.14.7-1"
+        wazuh_authd_pass: "{{ lookup('env', 'WAZUH_AUTHD_PASS') }}"
 
       tasks:
 
@@ -664,7 +670,80 @@ data:
             enabled: yes
             state: started
 
+        # ── Wazuh Agent ─────────────────────────────────────────────────────
+        # Reports this host to the in-cluster Wazuh manager (see
+        # kubernetes/apps/security/wazuh/): file integrity monitoring,
+        # rootcheck, software inventory and vulnerability detection. The
+        # firewall reaches the same manager over syslog instead, because
+        # OPNsense cannot run an agent.
+        - name: Fetch the Wazuh signing key
+          ansible.builtin.get_url:
+            url: https://packages.wazuh.com/key/GPG-KEY-WAZUH
+            dest: /usr/share/keyrings/wazuh.gpg.key
+            mode: "0644"
+
+        - name: Convert the Wazuh key into a keyring
+          ansible.builtin.command:
+            cmd: >-
+              gpg --batch --yes --dearmor
+              -o /usr/share/keyrings/wazuh.gpg
+              /usr/share/keyrings/wazuh.gpg.key
+            creates: /usr/share/keyrings/wazuh.gpg
+
+        - name: Add the Wazuh apt repository
+          ansible.builtin.apt_repository:
+            repo: >-
+              deb [signed-by=/usr/share/keyrings/wazuh.gpg]
+              https://packages.wazuh.com/4.x/apt/ stable main
+            filename: wazuh
+            state: present
+            update_cache: yes
+
+        - name: Install the Wazuh agent
+          ansible.builtin.apt:
+            name: "wazuh-agent={{ wazuh_agent_version }}"
+            state: present
+          notify: Restart wazuh-agent
+
+        # This play also runs "Apply security and safe upgrades" further up.
+        # Without a hold, that would eventually pull the agent past the
+        # manager's version and break the pairing.
+        - name: Hold the agent at the manager's version
+          ansible.builtin.dpkg_selections:
+            name: wazuh-agent
+            selection: hold
+
+        - name: Point the agent at the manager
+          ansible.builtin.replace:
+            path: /var/ossec/etc/ossec.conf
+            regexp: '<address>[^<]*</address>'
+            replace: "<address>{{ wazuh_manager }}</address>"
+          notify: Restart wazuh-agent
+
+        # Wazuh 4.x auto-enrolls on first start and uses this file when it is
+        # present, so no separate agent-auth run is needed.
+        - name: Install the enrollment password
+          ansible.builtin.copy:
+            content: "{{ wazuh_authd_pass }}"
+            dest: /var/ossec/etc/authd.pass
+            owner: root
+            group: wazuh
+            mode: "0640"
+          no_log: true
+          notify: Restart wazuh-agent
+
+        - name: Enable and start the Wazuh agent
+          ansible.builtin.service:
+            name: wazuh-agent
+            enabled: yes
+            state: started
+
       handlers:
+        - name: Restart wazuh-agent
+          ansible.builtin.service:
+            name: wazuh-agent
+            state: restarted
+
         - name: Restart fail2ban
           ansible.builtin.service:
             name: fail2ban

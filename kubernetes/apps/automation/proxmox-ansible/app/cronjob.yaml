@@ -51,6 +51,11 @@ spec:
                     secretKeyRef:
                       name: proxmox-ansible-credentials
                       key: FTP_SCANNER_PASSWORD
+                - name: WAZUH_AUTHD_PASS
+                  valueFrom:
+                    secretKeyRef:
+                      name: proxmox-ansible-credentials
+                      key: WAZUH_AUTHD_PASS
                 # Flux substitutes ${SECRET_ALLOWED_IP} from cluster-secrets
                 - name: ALLOWED_IP
                   value: "${SECRET_ALLOWED_IP}"
