@@ -38,3 +38,9 @@ spec:
       port: 1515
       targetPort: 1515
       protocol: TCP
+    # Remote syslog for OPNsense and its Suricata IDS, which cannot run an
+    # agent. See the second <remote> block in configmap-manager.yaml.
+    - name: syslog
+      port: 514
+      targetPort: 514
+      protocol: UDP

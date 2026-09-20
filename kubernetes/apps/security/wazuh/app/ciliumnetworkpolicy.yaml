@@ -25,6 +25,11 @@ spec:
               protocol: TCP
             - port: "1515"
               protocol: TCP
+            # Remote syslog from OPNsense/Suricata. Restricted a second time at
+            # the application layer by <allowed-ips> in configmap-manager.yaml,
+            # since "world" here covers the whole LAN.
+            - port: "514"
+              protocol: UDP
     # Wazuh API, consumed only by the dashboard.
     - fromEndpoints:
         - matchLabels:

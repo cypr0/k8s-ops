@@ -41,6 +41,9 @@ spec:
               containerPort: 1514
             - name: registration
               containerPort: 1515
+            - name: syslog
+              containerPort: 514
+              protocol: UDP
             - name: cluster
               containerPort: 1516
             - name: api

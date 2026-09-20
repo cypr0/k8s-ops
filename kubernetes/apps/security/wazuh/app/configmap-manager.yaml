@@ -46,6 +46,20 @@ data:
         <queue_size>131072</queue_size>
       </remote>
 
+      <!-- Remote syslog, for devices that cannot run an agent: OPNsense and its
+           Suricata IDS. Wazuh ships decoders and rules for both, so these arrive
+           as classified alerts rather than the raw text they were in OpenSearch.
+           Senders appear by source IP, not as agents -- that is expected for
+           this connection type.
+           allowed-ips is the guard here: the LoadBalancer VIP is reachable from
+           the whole LAN, so without it any host could inject events. -->
+      <remote>
+        <connection>syslog</connection>
+        <port>514</port>
+        <protocol>udp</protocol>
+        <allowed-ips>192.168.10.0/24</allowed-ips>
+      </remote>
+
       <!-- Agent enrollment. Password-protected; the password is mounted from
            the wazuh-authd-pass secret at /wazuh-config-mount/etc/authd.pass. -->
       <auth>
