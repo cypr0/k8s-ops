@@ -25,6 +25,7 @@ check here before assuming a gap means "not interesting."
 | Collabora | nextcloud | [collabora.md](collabora.md) |
 | CoreDNS | kube-system | [coredns.md](coredns.md) |
 | csi-driver-nfs | kube-system | [csi-driver-nfs.md](csi-driver-nfs.md) |
+| dmarc-exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
 | Dragonfly | database | [dragonfly.md](dragonfly.md) |
 | Echo | echo | [echo.md](echo.md) |
 | Elasticsearch (Nextcloud) | nextcloud | [elasticsearch.md](elasticsearch.md) |
