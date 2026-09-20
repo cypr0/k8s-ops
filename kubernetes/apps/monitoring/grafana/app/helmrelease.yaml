@@ -291,13 +291,19 @@ spec:
     # dashboards adapted to the metrics this cluster actually has (each carries
     # a __patched block recording what was renamed, rewritten or removed); the
     # rest exist because no community dashboard does.
+    #
+    # The names must NOT follow the chart's own grafana-dashboards-<provider>
+    # convention: the chart creates a ConfigMap under exactly that name for
+    # every entry in `dashboards:` below. Colliding would leave one object
+    # carrying both Helm and Flux ownership labels, with the two controllers
+    # overwriting each other's contents on every reconcile.
     dashboardsConfigMaps:
-      cluster-repo: grafana-dashboards-cluster
-      network-repo: grafana-dashboards-network
-      platform-repo: grafana-dashboards-platform
-      security-repo: grafana-dashboards-security
-      observability-repo: grafana-dashboards-observability
-      apps-repo: grafana-dashboards-apps
+      cluster-repo: grafana-repo-dashboards-cluster
+      network-repo: grafana-repo-dashboards-network
+      platform-repo: grafana-repo-dashboards-platform
+      security-repo: grafana-repo-dashboards-security
+      observability-repo: grafana-repo-dashboards-observability
+      apps-repo: grafana-repo-dashboards-apps
 
     # ── Community dashboards (downloaded at pod start by gnetId) ──────────
     # Every revision is pinned. Coverage figures below were measured against

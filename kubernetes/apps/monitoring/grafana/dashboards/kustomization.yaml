@@ -15,26 +15,26 @@ generatorOptions:
   disableNameSuffixHash: true
 
 configMapGenerator:
-  - name: grafana-dashboards-cluster
+  - name: grafana-repo-dashboards-cluster
     files:
       - cluster/k8s-global.json
       - cluster/k8s-namespaces.json
       - cluster/k8s-pods.json
       - cluster/talos.json
-  - name: grafana-dashboards-network
+  - name: grafana-repo-dashboards-network
     files:
       - network/coredns.json
-  - name: grafana-dashboards-platform
+  - name: grafana-repo-dashboards-platform
     files:
       - platform/flux.json
-  - name: grafana-dashboards-security
+  - name: grafana-repo-dashboards-security
     files:
       - security/falco.json
-  - name: grafana-dashboards-observability
+  - name: grafana-repo-dashboards-observability
     files:
       - observability/alertmanager.json
       - observability/gatus.json
-  - name: grafana-dashboards-apps
+  - name: grafana-repo-dashboards-apps
     files:
       - apps/open-webui.json
       - apps/paperless.json
