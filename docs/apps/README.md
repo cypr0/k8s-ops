@@ -45,6 +45,7 @@ check here before assuming a gap means "not interesting."
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
 | Kyverno | kyverno | [kyverno.md](kyverno.md) |
 | Loki | monitoring | [loki.md](loki.md) |
+| DMARC Exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
 | Mailu | mail | [mailu.md](mailu.md) |
 | mailu-mcp | hermes-agent | [mailu-mcp.md](mailu-mcp.md) |
 | Metrics Server | kube-system | [metrics-server.md](metrics-server.md) |

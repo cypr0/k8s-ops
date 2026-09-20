@@ -1,0 +1,142 @@
+---
+# Prunes DMARC reports the exporter has already processed.
+#
+# dmarc-metrics-exporter moves each report it reads into Archive, and anything
+# it cannot parse into Invalid. Neither is ever emptied, so without this the
+# mailbox grows for the life of the cluster -- a few hundred XML attachments a
+# month once all five domains are reporting.
+#
+# The numbers behind the retention: the exporter's own deduplication window is
+# 7 days, and Prometheus keeps the derived metrics for 30. Holding the raw
+# reports for 90 days therefore leaves a real forensic window that outlives the
+# metrics, without keeping anything indefinitely. Invalid is cut shorter -- an
+# unparseable report is only useful while someone might still look at why.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dmarc-prune
+data:
+  prune.py: |
+    #!/usr/bin/env python3
+    """Delete processed DMARC reports older than the configured retention."""
+    import datetime
+    import imaplib
+    import os
+    import ssl
+    import sys
+
+    HOST = os.environ["IMAP_HOST"]
+    USER = os.environ["IMAP_USER"]
+    PASSWORD = os.environ["IMAP_PASSWORD"]
+    RETENTION = {
+        "Archive": int(os.environ.get("RETAIN_ARCHIVE_DAYS", "90")),
+        "Invalid": int(os.environ.get("RETAIN_INVALID_DAYS", "30")),
+    }
+
+    # Full verification: CoreDNS resolves the mail hostname to the in-cluster
+    # Service IP and the serving certificate names it, so there is no reason to
+    # weaken this. See the CiliumNetworkPolicy for why plain IMAP is not used.
+    conn = imaplib.IMAP4_SSL(HOST, 993, ssl_context=ssl.create_default_context())
+    conn.login(USER, PASSWORD)
+
+    failed = False
+    for folder, days in RETENTION.items():
+        cutoff = datetime.date.today() - datetime.timedelta(days=days)
+        # IMAP BEFORE takes the internal date, i.e. when the message arrived
+        # here -- not the period the report covers. That is what we want: the
+        # question is how long we have held it.
+        criterion = cutoff.strftime("%d-%b-%Y")
+        status, _ = conn.select(folder)
+        if status != "OK":
+            print(f"{folder}: not present, skipping")
+            continue
+        status, data = conn.search(None, "BEFORE", criterion)
+        if status != "OK":
+            print(f"{folder}: SEARCH failed")
+            failed = True
+            continue
+        ids = data[0].split()
+        if not ids:
+            print(f"{folder}: nothing older than {days} days")
+            continue
+        # Mark and expunge in one pass. imaplib wants a comma-separated set.
+        conn.store(b",".join(ids), "+FLAGS", "\\Deleted")
+        conn.expunge()
+        print(f"{folder}: deleted {len(ids)} reports older than {days} days "
+              f"(before {criterion})")
+
+    conn.logout()
+    sys.exit(1 if failed else 0)
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dmarc-prune
+spec:
+  # Weekly is plenty: reports arrive daily and the retention is measured in
+  # months, so nothing accumulates meaningfully between runs.
+  schedule: "40 4 * * 0"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: dmarc-prune
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: prune
+              # Stdlib only, so a stock python image with nothing installed --
+              # see kubernetes/apps/paperless/paperless-exporter/ for why that
+              # matters with this image family.
+              # renovate: datasource=docker depName=python
+              image: python:3.13-alpine
+              command:
+                - "python3"
+                - "/scripts/prune.py"
+              env:
+                - name: IMAP_HOST
+                  value: "mail.${SECRET_DOMAIN}"
+                - name: IMAP_USER
+                  value: "dmarc@${SECRET_DOMAIN}"
+                - name: IMAP_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: dmarc-exporter-config
+                      key: imap-password
+                - name: RETAIN_ARCHIVE_DAYS
+                  value: "90"
+                - name: RETAIN_INVALID_DAYS
+                  value: "30"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 48Mi
+                limits:
+                  memory: 96Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - "ALL"
+          volumes:
+            - name: scripts
+              configMap:
+                name: dmarc-prune
+                defaultMode: 0555

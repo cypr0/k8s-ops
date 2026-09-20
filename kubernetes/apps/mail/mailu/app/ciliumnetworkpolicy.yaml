@@ -111,6 +111,9 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": mail
             app.kubernetes.io/name: dmarc-exporter
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: dmarc-prune
       toPorts:
         - ports:
             - port: "993"

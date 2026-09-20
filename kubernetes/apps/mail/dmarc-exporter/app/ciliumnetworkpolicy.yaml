@@ -51,3 +51,36 @@ spec:
         - ports:
             - port: "993"
               protocol: TCP
+---
+# The weekly pruning CronJob. Separate policy because it is a different
+# workload with a different label -- it needs only DNS and IMAPS, never the
+# metrics port.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dmarc-prune
+  namespace: mail
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: dmarc-prune
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+            app.kubernetes.io/component: front
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP

@@ -79,7 +79,9 @@ For each of the 5 domains Mailu now serves mail for (`${SECRET_DOMAIN}`, `${SECR
 1. **MX record**: `<domain> MX 10 mail.${SECRET_DOMAIN}`.
 2. **SPF** (TXT on `<domain>`): `v=spf1 mx ~all` (adjust if any other systems send as that domain).
 3. **DKIM**: Admin UI → Domain → DKIM shows the generated public key/selector — publish the TXT record it gives you at `<selector>._domainkey.<domain>`. Mailu generates and stores the private key itself; nothing publishes this automatically (see Architecture at a glance above — no Cloudflare token is given to Mailu, unlike Stalwart).
-4. **DMARC** (TXT at `_dmarc.<domain>`): start permissive, e.g. `v=DMARC1; p=none; rua=mailto:postmaster@${SECRET_DOMAIN}`, tighten to `p=quarantine`/`p=reject` once SPF/DKIM alignment is confirmed working across all sending paths.
+4. **DMARC** (TXT at `_dmarc.<domain>`): start permissive, e.g. `v=DMARC1; p=none; rua=mailto:dmarc@${SECRET_DOMAIN}`, tighten to `p=quarantine`/`p=reject` once SPF/DKIM alignment is confirmed working across all sending paths. **Always set `rua=`**, from the very first record — see below.
+
+   All five domains here ran `p=reject; adkim=s; aspf=s` with **no `rua=` at all** until 2026-09-20 — the strictest policy DMARC defines, with zero feedback, for as long as they had existed. Reports are now collected and turned into metrics by a separate app: `docs/apps/dmarc-exporter.md`. The `rua=` tags live in `kubernetes/apps/mail/mailu/app/dnsendpoint.yaml` alongside the `<domain>._report._dmarc.${SECRET_DOMAIN}` authorisations, which are what permit four of the domains to send reports to an address under a fifth.
 5. **PTR record** for `192.168.10.104`'s public-facing IP, matching `mail.${SECRET_DOMAIN}` — needed for deliverability regardless of how many domains route through this one server.
 
 ## Common operations
