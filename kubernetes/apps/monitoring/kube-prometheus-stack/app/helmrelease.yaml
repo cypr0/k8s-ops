@@ -45,11 +45,19 @@ spec:
             memory: 64Mi
           limits:
             memory: 128Mi
-        podSecurityContext:
-          runAsNonRoot: true
-          # Merges with the chart default (fsGroup 2000); skips the
-          # recursive chown on restart when the volume root already matches.
+        # "securityContext", NOT "podSecurityContext": the operator CRs carry a
+        # PodSecurityContext under spec.securityContext, and the chart has no
+        # podSecurityContext key at all. Helm drops unknown values without a
+        # word, so the podSecurityContext block that used to stand here never
+        # did anything -- the pods were running on operator defaults, which
+        # happened to include runAsNonRoot and so hid the mistake.
+        # Spelled out in full because this may replace rather than merge.
+        securityContext:
+          fsGroup: 2000
           fsGroupChangePolicy: OnRootMismatch
+          runAsGroup: 2000
+          runAsUser: 1000
+          runAsNonRoot: true
           seccompProfile:
             type: RuntimeDefault
         containerSecurityContext:
@@ -85,11 +93,19 @@ spec:
             memory: 1Gi
           limits:
             memory: 3Gi
-        podSecurityContext:
-          runAsNonRoot: true
-          # Merges with the chart default (fsGroup 2000); skips the
-          # recursive chown on restart when the volume root already matches.
+        # "securityContext", NOT "podSecurityContext": the operator CRs carry a
+        # PodSecurityContext under spec.securityContext, and the chart has no
+        # podSecurityContext key at all. Helm drops unknown values without a
+        # word, so the podSecurityContext block that used to stand here never
+        # did anything -- the pods were running on operator defaults, which
+        # happened to include runAsNonRoot and so hid the mistake.
+        # Spelled out in full because this may replace rather than merge.
+        securityContext:
+          fsGroup: 2000
           fsGroupChangePolicy: OnRootMismatch
+          runAsGroup: 2000
+          runAsUser: 1000
+          runAsNonRoot: true
           seccompProfile:
             type: RuntimeDefault
         containerSecurityContext:
