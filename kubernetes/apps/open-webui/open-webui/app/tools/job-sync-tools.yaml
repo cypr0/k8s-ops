@@ -67,7 +67,7 @@ spec:
         # the module, and the fix is one line here -- rather than a pip
         # permission error that reads like an infrastructure problem.
         - name: install-tool-deps
-          image: python:3.11-slim
+          image: python:3.14-slim
           command:
             - "sh"
             - "-c"
