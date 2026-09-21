@@ -1,0 +1,112 @@
+---
+# Post-reconcile Job that applies workspace.yaml (groups + workspace
+# models) to the Open WebUI database. Groups and models live only in the
+# DB -- there is no file mount or env autoload for a group's permission set
+# or a model's system prompt -- so this Job is the GitOps bridge. See
+# sync_workspace.py's module docstring for the full rationale, and
+# ../tools/job-sync-tools.yaml for the Tools equivalent this mirrors.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sync-openwebui-workspace
+  namespace: open-webui
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: "enabled"
+spec:
+  # Deliberately NO ttlSecondsAfterFinished -- same reasoning as
+  # ../tools/job-sync-tools.yaml: with a TTL the completed Job is
+  # garbage-collected, the next reconcile finds it absent and recreates
+  # it, and the sync degenerates into a timed re-run loop instead of
+  # running on change. Keeping the finished Job also keeps its logs
+  # readable.
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-webui
+        app.kubernetes.io/component: workspace-sync
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sync
+          # Must be the Open WebUI image: the sync script writes Group and
+          # Model rows directly using open_webui's own SQLAlchemy models
+          # and reads DEFAULT_USER_PERMISSIONS from open_webui.config, so
+          # a group created here gets exactly the permission shape this
+          # version of Open WebUI expects. Keep this tag in sync with the
+          # open-webui HelmRelease (../helmrelease.yaml) and with
+          # ../tools/job-sync-tools.yaml.
+          image: ghcr.io/open-webui/open-webui:v0.11.3
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          env:
+            - name: WORKSPACE_FILE
+              value: "/workspace-src/workspace.yaml"
+            # Same admin account ../tools/job-sync-tools.yaml uses as
+            # TOOL_OWNER_EMAIL: created groups and models are owned by it.
+            - name: WORKSPACE_OWNER_EMAIL
+              value: "mail@cisotop.de"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: HOME
+              value: "/tmp"
+            # open_webui.config unconditionally mkdir()s UPLOAD_DIR/
+            # CACHE_DIR under DATA_DIR and copies static assets into
+            # STATIC_DIR at import time -- both read-only under this Job's
+            # hardened SecurityContext otherwise. Point them at the
+            # writable /tmp emptyDir; this Job never persists either.
+            # (Identical to ../tools/job-sync-tools.yaml's note.)
+            - name: DATA_DIR
+              value: "/tmp/data"
+            - name: STATIC_DIR
+              value: "/tmp/data/static"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          # DATABASE_URL and WEBUI_SECRET_KEY both live in the single
+          # open-webui-secret -- see ../externalsecret.yaml.
+          # WEBUI_SECRET_KEY is required because Open WebUI hard-fails
+          # app startup/imports without it.
+          envFrom:
+            - secretRef:
+                name: open-webui-secret
+          command:
+            - "sh"
+            - "-c"
+          args:
+            - |
+              set -eu
+              cd /app/backend
+              export PYTHONPATH=/app/backend
+              echo "==> Syncing Open WebUI workspace (direct DB)..."
+              exec python /code/sync_workspace.py
+          volumeMounts:
+            - name: code
+              mountPath: /code
+              readOnly: true
+            - name: workspace-src
+              mountPath: /workspace-src
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: code
+          configMap:
+            name: openwebui-workspace-sync-code
+        - name: workspace-src
+          configMap:
+            name: openwebui-workspace-src
+        - name: tmp
+          emptyDir: {}

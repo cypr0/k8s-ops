@@ -1,0 +1,29 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - job-sync-workspace.yaml
+
+# Same content-hash trick as ../tools/kustomization.yaml: the workspace
+# declaration and the sync script are shipped as hash-suffixed ConfigMaps,
+# kustomize rewrites the Job's volume references to the hashed names, and
+# the Job's kustomize.toolkit.fluxcd.io/force annotation makes Flux
+# delete-and-recreate it whenever that spec changes -- so editing
+# workspace.yaml (a system prompt, a permission, a base model) re-runs the
+# sync automatically on the next reconcile, with no manual trigger.
+#
+# Separate from ../tools/ rather than folded into it because
+# configMapGenerator refuses file paths that escape its own kustomization
+# directory, and because a change to a tool .py should not re-run the
+# workspace sync or vice versa -- two hashes, two triggers.
+configMapGenerator:
+  - name: openwebui-workspace-src
+    files:
+      - workspace.yaml
+  - name: openwebui-workspace-sync-code
+    files:
+      - sync_workspace.py
+
+generatorOptions:
+  disableNameSuffixHash: false

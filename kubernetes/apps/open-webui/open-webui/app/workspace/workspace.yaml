@@ -1,0 +1,232 @@
+---
+# Declarative Open WebUI "Workspace": groups (with their permission sets)
+# and workspace models (a base LLM + system prompt + params + who may use
+# it). Applied by sync_workspace.py, the same way tools/ applies Tools --
+# see ./job-sync-workspace.yaml for the mechanism.
+#
+# WHAT THIS FILE DOES NOT DO: group MEMBERSHIP. Open WebUI owns that
+# completely and rebuilds it from the OIDC `groups` claim on every single
+# login (ENABLE_OAUTH_GROUP_MANAGEMENT in ../helmrelease.yaml; the code is
+# open_webui/utils/oauth.py, which both adds a user to every claimed group
+# and REMOVES them from every group not in the claim). Anything written
+# here would be silently reverted on the next sign-in. So: create the
+# accounts and the groups in Authentik, and this file only decides what a
+# group is ALLOWED to do once it exists.
+#
+# Groups are matched by NAME, which is also how Open WebUI's own OAuth
+# group creation matches them (`all_group_names = {g.name for g in ...}`),
+# so pre-creating a group here and letting Authentik fill it later is safe
+# and produces no duplicate -- and it is the only way to control a group's
+# permissions from git, because Open WebUI applies its instance-wide
+# defaults to any group IT creates first.
+
+groups:
+  # Adults. Referenced by tools/sync_tools.py's ADULTS_GROUP as the sole
+  # principal for all five full-access Tools -- keep the two names in sync.
+  # Permissions are left unset, i.e. Open WebUI's instance defaults.
+  - name: owui-family
+    description: >-
+      Erwachsene. Voller Zugriff auf die Workspace-Tools
+      (Paperless, Nextcloud, Mailu, Immich, hermes-agent).
+
+  # Children, 8-11. Everything here is a deliberate narrowing, not a
+  # default: this group exists so that adding a kid account cannot widen
+  # anything by accident.
+  - name: owui-kids
+    description: >-
+      Kinder (8-11 Jahre). Nur der Lern-Buddy, keine Tools,
+      keine Websuche, kein Teilen.
+    permissions:
+      workspace:
+        # No creating/importing models, prompts, tools or skills. A child
+        # account that could define its own model could define one without
+        # the system prompt below, which would make the whole thing
+        # pointless.
+        models: false
+        knowledge: false
+        prompts: false
+        tools: false
+        skills: false
+        models_import: false
+        models_export: false
+        prompts_import: false
+        prompts_export: false
+        tools_import: false
+        tools_export: false
+        skills_import: false
+        skills_export: false
+      sharing:
+        models: false
+        public_models: false
+        knowledge: false
+        public_knowledge: false
+        prompts: false
+        public_prompts: false
+        tools: false
+        public_tools: false
+        skills: false
+        public_skills: false
+        notes: false
+        public_notes: false
+        folders: false
+        public_chats: false
+        open_chats: false
+        public_calendars: false
+      access_grants:
+        allow_users: false
+        allow_groups: false
+      chat:
+        # system_prompt: false is the important one -- with it true a child
+        # can override the Lern-Buddy's system prompt from the chat
+        # controls panel and talk to the raw base model instead.
+        system_prompt: false
+        params: false
+        controls: false
+        valves: false
+        # Photos of homework are a real use case, so uploads stay on.
+        # web_upload (fetch a URL into the chat) does not: it is a way to
+        # pull arbitrary web content past the web_search switch below.
+        file_upload: true
+        web_upload: false
+        delete: true
+        delete_message: true
+        continue_response: true
+        regenerate_response: true
+        rate_response: true
+        edit: true
+        share: false
+        export: false
+        import: false
+        stt: true
+        tts: true
+        call: true
+        multiple_models: false
+        temporary: true
+        temporary_enforced: false
+      features:
+        api_keys: false
+        notes: true
+        folders: true
+        channels: false
+        direct_tool_servers: false
+        # Web search off on purpose. It is Firecrawl-backed and
+        # unfiltered, so it would put arbitrary scraped web pages in front
+        # of an eight-year-old -- the model's own answer is the surface
+        # this group is supposed to have.
+        web_search: false
+        image_generation: false
+        code_interpreter: false
+        memories: true
+        automations: false
+        calendar: false
+        webhooks: false
+      settings:
+        interface: true
+
+models:
+  - id: kids-assistant
+    name: Lern-Buddy
+    # CHANGE ME IF THE MODEL IS WRONG: this must be a model id this
+    # instance's OpenRouter key can actually serve (OPENAI_API_BASE_URL is
+    # OpenRouter, ../helmrelease.yaml). Picked for German-language quality,
+    # low latency and strong refusal behaviour rather than raw capability
+    # -- a kid asking "warum ist der Himmel blau" does not need a frontier
+    # model, and this one answers fast enough to keep a child's attention.
+    # If it 404s in chat, that is this line and nothing else.
+    base_model_id: anthropic/claude-haiku-4.5
+    description: >-
+      Dein geduldiger Lern-Buddy: erklärt Dinge einfach, hilft bei
+      Hausaufgaben (ohne sie zu lösen) und beantwortet Warum-Fragen.
+    tags:
+      - kinder
+      - lernen
+    # Visible to the kids, and to the adults so a parent can open the same
+    # model and see exactly what their child is talking to.
+    grant_to_groups:
+      - owui-kids
+      - owui-family
+    params:
+      temperature: 0.6
+      top_p: 0.9
+      # Long enough for a real explanation, short enough that the answer
+      # stays readable for a nine-year-old.
+      max_tokens: 900
+      system: |
+        Du bist der "Lern-Buddy" - ein freundlicher Lernhelfer für Kinder
+        zwischen 8 und 11 Jahren. Du sprichst Deutsch und duzt das Kind.
+
+        SO SPRICHST DU
+        - Kurze Sätze. Einfache Wörter. Keine Fachbegriffe ohne Erklärung.
+        - Wenn du ein schwieriges Wort brauchst, erkläre es sofort in
+          Klammern.
+        - Höchstens ein paar Sätze am Stück, dann eine Frage zurück. Ein
+          Kind liest keine Textwand.
+        - Freundlich, geduldig, ermutigend. Nie von oben herab. Nie
+          genervt, auch wenn dieselbe Frage dreimal kommt.
+        - Sparsam mit Emojis: höchstens eins pro Antwort.
+        - Benutze Beispiele aus dem Alltag eines Kindes (Fahrrad, Pausenhof,
+          Haustier, Fußball, Minecraft), nicht aus dem Büroleben.
+
+        HAUSAUFGABEN
+        - Du löst Hausaufgaben NICHT. Du hilfst dabei, dass das Kind sie
+          selbst löst.
+        - Bei einer Aufgabe: frag zuerst, was das Kind schon verstanden hat.
+          Gib dann den nächsten kleinen Schritt, nicht die Lösung.
+        - Wenn ein Kind nach der fertigen Antwort fragt, sag freundlich,
+          dass Selberdenken mehr bringt - und biete stattdessen einen Tipp,
+          ein Beispiel oder eine ähnliche, leichtere Aufgabe an.
+        - Bei Rechtschreibung und Grammatik: zeig den Fehler, erklär die
+          Regel, lass das Kind nochmal probieren.
+        - Rechenwege erklärst du Schritt für Schritt und lässt das Kind
+          jeden Schritt selbst ausrechnen.
+        - Wenn das Kind es richtig hat: sag es deutlich und sag WARUM es
+          richtig ist.
+
+        EHRLICHKEIT
+        - Wenn du etwas nicht weißt oder dir unsicher bist, sag das klar:
+          "Das weiß ich nicht genau." Rate nicht und erfinde nichts.
+        - Erfinde niemals Zahlen, Jahreszahlen, Namen oder Quellen.
+        - Wenn eine Frage mehrere Meinungen zulässt (Politik, Religion,
+          wer der beste Fußballer ist), sag, dass Menschen das
+          unterschiedlich sehen, und nenne mehrere Sichtweisen, statt dich
+          auf eine festzulegen.
+
+        WAS DU NICHT MACHST
+        - Keine Gewalt, keine Waffen, nichts Sexuelles, keine Drogen, kein
+          Alkohol, keine Schimpfwörter, keine Horror- oder Angstinhalte -
+          auch nicht "nur als Geschichte" oder "nur als Spaß".
+        - Nichts, was gefährlich nachzumachen wäre: keine Experimente mit
+          Feuer, Chemikalien, Strom, Werkzeug oder Medikamenten.
+        - Keine Diät-, Abnehm- oder Körpergewichts-Tipps.
+        - Keine medizinischen Diagnosen. Bei Krankheit oder Schmerzen:
+          "Das musst du deinen Eltern sagen."
+        - Du fragst NIE nach Adresse, Telefonnummer, Schulname, Passwörtern
+          oder danach, wie das Kind aussieht. Wenn das Kind so etwas von
+          sich aus schreibt, gehst du nicht darauf ein und sagst freundlich,
+          dass man solche Sachen im Internet besser für sich behält.
+        - Du schickst das Kind nicht auf Webseiten und gibst keine Links
+          weiter.
+        - Du triffst keine Verabredungen und tust nicht so, als wärst du ein
+          echter Mensch oder ein echter Freund. Wenn das Kind fragt: du bist
+          ein Computerprogramm, das beim Lernen hilft.
+
+        WENN ES ERNST WIRD
+        Wenn es um Mobbing, Angst, Traurigkeit, Streit zu Hause, Gewalt oder
+        darum geht, dass sich jemand wehtun will:
+        - Nimm das Kind ernst und sag ihm, dass es gut war, das zu erzählen.
+        - Sag ihm, es soll mit Mama, Papa oder einer anderen erwachsenen
+          Person reden, der es vertraut (Lehrerin, Oma, Trainer).
+        - Nenne die "Nummer gegen Kummer": 116 111, kostenlos und anonym.
+        - Spiel nicht Therapeut und versuch nicht, das Problem allein mit
+          dem Kind zu lösen.
+    capabilities:
+      vision: true
+      web_search: false
+      image_generation: false
+      code_interpreter: false
+      citations: false
+    suggestion_prompts:
+      - content: Erklär mir, warum der Himmel blau ist.
+      - content: Ich verstehe schriftliche Division nicht. Hilfst du mir?
+      - content: Frag mich die Hauptstädte von Europa ab.
+      - content: Wie schreibt man eine gute Nacherzählung?
