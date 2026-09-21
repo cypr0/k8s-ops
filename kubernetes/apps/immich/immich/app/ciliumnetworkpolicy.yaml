@@ -27,6 +27,23 @@ spec:
         - ports:
             - port: "2283"
               protocol: TCP
+    # The immich_photos Open WebUI Tool (kubernetes/apps/open-webui/
+    # open-webui/app/tools/immich_photos.py) and its byte-identical mirror
+    # running as the immich-mcp MCP server for hermes-agent
+    # (kubernetes/apps/hermes-agent/immich-mcp/). Both authenticate with an
+    # Immich API key (x-api-key); this is network scoping on top, not the
+    # only gate.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: immich-mcp
+      toPorts:
+        - ports:
+            - port: "2283"
+              protocol: TCP
     # Same namespace (immich-server <-> immich-machine-learning)
     - fromEndpoints:
         - matchLabels:

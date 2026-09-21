@@ -1,0 +1,62 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: immich-mcp
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: immich-mcp
+  ingress:
+    # hermes-agent, as an MCP client (see hermes-agent's configmap.yaml
+    # mcp_servers section)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Gatus health check
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: gatus
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    # DNS resolution
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Immich's REST API. The app-template Service is
+    # immich-immich-server:2283 and the container listens on 2283 too, so
+    # unlike the nextcloud/paperless rules there is no port rewrite to
+    # account for here -- Cilium enforces post-DNAT on the container port
+    # either way.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": immich
+            app.kubernetes.io/name: immich
+      toPorts:
+        - ports:
+            - port: "2283"
+              protocol: TCP
+    # pip install (init container) needs PyPI access.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

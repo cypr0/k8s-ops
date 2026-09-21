@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-mcp
+  labels:
+    app.kubernetes.io/name: immich-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: immich-mcp
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP

@@ -18,6 +18,9 @@ configMapGenerator:
     files:
       - paperless_full.py
       - nextcloud_full.py
+      - mailu_full.py
+      - immich_photos.py
+      - hermes_agent.py
   - name: openwebui-tool-sync-code
     files:
       - sync_tools.py

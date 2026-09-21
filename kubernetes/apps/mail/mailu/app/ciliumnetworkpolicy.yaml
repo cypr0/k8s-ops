@@ -144,6 +144,21 @@ spec:
               protocol: TCP
             - port: "443"
               protocol: TCP
+    # The mailu_full Open WebUI Tool (kubernetes/apps/open-webui/open-webui/
+    # app/tools/mailu_full.py) -- a byte-identical mirror of the file
+    # mailu-mcp runs, so the same IMAP + CalDAV/CardDAV ports, reached the
+    # same way. Kept as its own rule rather than folded into the mailu-mcp
+    # one above so revoking either caller is a single-block deletion.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
     # Authentik, Immich and Nextcloud's outbound notification mail, all
     # migrated off the old external mail server onto this shared "noreply"
     # mailbox (authenticated submission port). Same in-cluster-via-

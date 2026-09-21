@@ -28,6 +28,19 @@ spec:
         - ports:
             - port: "8644"
               protocol: TCP
+    # Open WebUI's hermes_agent Tool (kubernetes/apps/open-webui/open-webui/
+    # app/tools/hermes_agent.py) posting to the owui-task webhook route, so
+    # a chat user can hand a task to this agent. Same shared-secret auth as
+    # the paperless caller above (X-Gitlab-Token); this rule is network
+    # scoping on top, not the only gate.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": open-webui
+            app.kubernetes.io/name: open-webui
+      toPorts:
+        - ports:
+            - port: "8644"
+              protocol: TCP
     # Gatus health check
     - fromEndpoints:
         - matchLabels:
@@ -92,6 +105,14 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": hermes-agent
             app.kubernetes.io/name: mailu-mcp
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: immich-mcp
       toPorts:
         - ports:
             - port: "8000"

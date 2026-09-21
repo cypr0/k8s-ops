@@ -259,6 +259,45 @@ data:
                 9. Antworte am Ende NUR mit maximal 3 kurzen Sätzen, was du erkannt,
                    eingetragen, getaggt/zugeordnet, ggf. umbenannt und ggf. terminiert
                    hast (oder dass nichts Relevantes gefunden wurde).
+            # Generic delegation lane for the hermes_agent Open WebUI Tool
+            # (kubernetes/apps/open-webui/open-webui/app/tools/hermes_agent.py).
+            # Unlike paperless-document-added this route carries no domain
+            # logic -- the whole point is that a chat user in Open WebUI can
+            # hand something over that needs THIS agent's capabilities (the
+            # read-only kubectl terminal, persistent memory, cron, the MCP
+            # servers) rather than Open WebUI's. `deliver: telegram` because
+            # the webhook platform is asynchronous: the POST returns a
+            # delivery_id immediately and the answer is pushed, never
+            # returned inline (gateway/platforms/webhook.py) -- the Tool's
+            # docstring tells the model to report it that way instead of
+            # waiting for a result that will never arrive over HTTP.
+            #
+            # No `toolsets` override here on purpose: this route gets the
+            # agent's default toolsets, which already exclude nothing it
+            # normally has. Adding `terminal` explicitly would be widening
+            # the blast radius of a lane whose input is, ultimately,
+            # whatever a chat user typed.
+            owui-task:
+              deliver: telegram
+              deliver_only: false
+              prompt: |
+                Diese Aufgabe kommt aus Open WebUI (ai.${SECRET_DOMAIN}), von
+                einem angemeldeten Nutzer, der dich bewusst eingeschaltet hat:
+
+                {task}
+
+                Zusatzkontext aus dem Chat (kann leer sein):
+                {context}
+
+                Hinweise:
+                - Du siehst den Open-WebUI-Chatverlauf NICHT. Alles, was du
+                  wissen musst, steht oben -- frag nicht nach, sondern sag klar,
+                  was fehlt, falls die Aufgabe ohne Rückfrage nicht lösbar ist.
+                - Antworte auf Deutsch und in höchstens 5 Sätzen. Deine Antwort
+                  geht per Telegram raus, nicht zurück in den Chat.
+                - Behaupte nichts, was du nicht in diesem Durchlauf tatsächlich
+                  per Tool-Aufruf geprüft oder ausgeführt hast.
+
     # Remote HTTP MCP servers giving this agent the SAME Paperless-ngx and
     # Nextcloud API coverage the paperless_full/nextcloud_full Open WebUI
     # Tools have -- see kubernetes/apps/hermes-agent/{paperless-mcp,
@@ -278,3 +317,9 @@ data:
         url: "http://nextcloud-mcp.hermes-agent.svc.cluster.local:8000/mcp"
       mailu:
         url: "http://mailu-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+      # immich (kubernetes/apps/hermes-agent/immich-mcp/) is the odd one
+      # out: read-mostly by design and its bridge refuses DELETE outright,
+      # so it is the one MCP server here that cannot destroy anything --
+      # see immich_photos.py's module docstring.
+      immich:
+        url: "http://immich-mcp.hermes-agent.svc.cluster.local:8000/mcp"

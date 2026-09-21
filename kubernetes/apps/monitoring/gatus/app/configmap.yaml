@@ -355,3 +355,12 @@ data:
           - "[CONNECTED] == true"
         alerts:
           - type: pushover
+
+      - name: Immich MCP
+        group: Hermes Agent
+        url: "tcp://immich-mcp.hermes-agent.svc.cluster.local:8000"
+        interval: 1m
+        conditions:
+          - "[CONNECTED] == true"
+        alerts:
+          - type: pushover

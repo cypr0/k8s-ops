@@ -120,6 +120,20 @@ spec:
               # Persist the HF / sentence-transformers embedding cache on the PVC.
               HF_HOME: /data/cache/huggingface
               SENTENCE_TRANSFORMERS_HOME: /data/cache/huggingface
+
+              # ── Tool configuration (non-secret halves) ────────────────
+              # mailu_full Tool: reached via the PUBLIC hostname, not the
+              # mailu-front.mail.svc.cluster.local Service name -- that
+              # name isn't in Mailu's TLS cert SANs, and CoreDNS resolves
+              # mail.${SECRET_DOMAIN} straight to mailu-front's ClusterIP
+              # for in-cluster clients anyway (same trick paperless-ngx's
+              # own IMAP integration uses). The credentials come from
+              # open-webui-mailu-secret below.
+              MAILU_HOST: mail.${SECRET_DOMAIN}
+              MAILU_IMAP_PORT: "993"
+              # immich_photos Tool. app-template names Services
+              # "<release>-<service-key>", hence immich-immich-server.
+              IMMICH_BASE_URL: http://immich-immich-server.immich.svc.cluster.local:2283
             envFrom:
               - secretRef:
                   name: open-webui-secret
@@ -131,6 +145,29 @@ spec:
               # ./tools/nextcloud_full.py) -- externalsecret-nextcloud-token.yaml.
               - secretRef:
                   name: open-webui-nextcloud-secret
+              # PHILIPP_/ANN_USERNAME+PASSWORD for the mailu_full Tool (see
+              # ./tools/mailu_full.py) -- externalsecret-mailu-credentials.yaml.
+              - secretRef:
+                  name: open-webui-mailu-secret
+              # HERMES_WEBHOOK_SECRET for the hermes_agent Tool (see
+              # ./tools/hermes_agent.py) -- externalsecret-hermes-token.yaml.
+              - secretRef:
+                  name: open-webui-hermes-secret
+              # IMMICH_API_KEY for the immich_photos Tool (see
+              # ./tools/immich_photos.py) -- externalsecret-immich-token.yaml.
+              #
+              # optional: true ON PURPOSE, and the only envFrom here that
+              # needs it: an Immich API key can't be provisioned, it has to
+              # be minted by hand in Immich's UI and pasted into the
+              # 1Password "immich" item (see that ExternalSecret's header).
+              # Without optional, a missing field would leave the Secret
+              # uncreated and this pod stuck in CreateContainerConfigError
+              # -- i.e. the whole chat UI down because one of six tools has
+              # no credential. With it, the pod starts and immich_photos
+              # reports "No Immich API key configured" when used.
+              - secretRef:
+                  name: open-webui-immich-secret
+                  optional: true
             probes:
               liveness:
                 enabled: true

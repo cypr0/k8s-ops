@@ -1,0 +1,144 @@
+---
+# Standalone MCP (Model Context Protocol) server giving hermes-agent the
+# SAME Immich photo-library access the immich_photos Open WebUI Tool has
+# (kubernetes/apps/open-webui/open-webui/app/tools/immich_photos.py, of
+# which this app's immich_photos.py is a byte-identical mirror) -- see that
+# file's module docstring for the scope/auth decisions, notably that it is
+# read-mostly and refuses DELETE outright.
+#
+# Same "generic base image + ConfigMap script + init-container pip install"
+# pattern as paperless-mcp/nextcloud-mcp/mailu-mcp -- greenfield app, no
+# CI/registry set up for it. No extra dependency beyond what the bridge
+# itself needs: unlike mailu-mcp there is no icalendar here, this tool is
+# plain httpx + pydantic.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: immich-mcp
+  labels:
+    app.kubernetes.io/name: immich-mcp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: immich-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: immich-mcp
+      annotations:
+        # No PVC here at all -- both volumes are plain emptyDirs (pip cache,
+        # scratch /tmp). Exclude from Velero's kopia fs-backup (default
+        # cluster-wide, --default-volumes-to-fs-backup): nothing worth
+        # keeping, just restore-test flakiness for zero DR value.
+        backup.velero.io/backup-volumes-excludes: pylibs,tmp
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: install-deps
+          image: python:3.14-slim
+          command:
+            - "sh"
+            - "-c"
+          args:
+            - |
+              set -eu
+              # Pinned <2: see nextcloud-mcp/paperless-mcp/mailu-mcp's
+              # identical comment -- the "mcp" SDK's 2.0.0 restructured its
+              # module layout and dropped mcp.server.fastmcp.FastMCP from
+              # where owui_tool_mcp_bridge.py imports it.
+              pip install --no-cache-dir --target=/pylibs "mcp>=1.6,<2" httpx pydantic
+          env:
+            - name: HOME
+              value: /tmp
+          volumeMounts:
+            - name: pylibs
+              mountPath: /pylibs
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+      containers:
+        - name: mcp-server
+          image: python:3.14-slim
+          command:
+            - "python3"
+            - "/app/owui_tool_mcp_bridge.py"
+          env:
+            - name: TOOL_MODULE_PATH
+              value: /app/immich_photos.py
+            - name: MCP_SERVER_NAME
+              value: immich
+            - name: MCP_PORT
+              value: "8000"
+            - name: PYTHONPATH
+              value: /pylibs
+            - name: HOME
+              value: /tmp
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # Plain in-cluster Service DNS, unlike mailu-mcp's MAILU_HOST:
+            # Immich's API is served over plain HTTP inside the cluster, so
+            # there is no TLS-SAN mismatch to work around here. The Service
+            # name is "immich-immich-server" because app-template names
+            # Services "<release>-<service-key>" and this release is
+            # "immich" with service key "immich-server".
+            - name: IMMICH_BASE_URL
+              value: "http://immich-immich-server.immich.svc.cluster.local:2283"
+          envFrom:
+            - secretRef:
+                name: immich-mcp-secret
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+          volumeMounts:
+            - name: pylibs
+              mountPath: /pylibs
+            - name: app-src
+              mountPath: /app
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: pylibs
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: app-src
+          configMap:
+            name: immich-mcp-src

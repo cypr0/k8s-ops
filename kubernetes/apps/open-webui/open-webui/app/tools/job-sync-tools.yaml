@@ -42,6 +42,58 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        # Third-party imports the mounted tools do at module scope, which
+        # this Job MUST satisfy: sync_tools.py calls Open WebUI's own
+        # load_tool_module_by_id(), which actually execs each tool module
+        # to compute its specs -- so an unimportable dependency is a hard
+        # Job failure, not a deferred one.
+        #
+        # Open WebUI would normally install these itself: load_tool_module_by_id
+        # shells out to `pip install` for whatever the tool's `requirements:`
+        # frontmatter lists (open_webui/utils/plugin.py,
+        # install_frontmatter_requirements, which RAISES on failure). That
+        # works in the app pod, which runs as root on a writable rootfs --
+        # it does not work here, where the container is uid 1000 with
+        # readOnlyRootFilesystem. httpx is already in the image so the
+        # existing tools never exercised that path; mailu_full.py's
+        # icalendar is the first requirement that is not, which is what
+        # made this init container necessary.
+        #
+        # So: install into an emptyDir, put it on PYTHONPATH, and turn Open
+        # WebUI's own frontmatter pip install OFF in the main container
+        # (ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS below). A new tool
+        # with a new dependency then fails with a plain ImportError naming
+        # the module, and the fix is one line here -- rather than a pip
+        # permission error that reads like an infrastructure problem.
+        - name: install-tool-deps
+          image: python:3.11-slim
+          command:
+            - "sh"
+            - "-c"
+          args:
+            - |
+              set -eu
+              # python:3.11-slim to match the Open WebUI image's own
+              # interpreter (confirmed: /usr/local/lib/python3.11 there) --
+              # a pure-Python wheel installed under a different minor
+              # version still imports, but pinning the pair removes the
+              # question entirely for any future non-pure dependency.
+              pip install --no-cache-dir --target=/pylibs icalendar
+          env:
+            - name: HOME
+              value: /tmp
+          volumeMounts:
+            - name: pylibs
+              mountPath: /pylibs
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
       containers:
         - name: sync
           # Must be the Open WebUI image: the sync script writes the tool
@@ -86,6 +138,13 @@ spec:
               value: "/tmp/data/static"
             - name: PYTHONUNBUFFERED
               value: "1"
+            # See the install-tool-deps init container above: dependencies
+            # come from /pylibs, not from a pip call this container cannot
+            # make. Without this flag Open WebUI tries to pip install every
+            # tool's `requirements:` frontmatter and raises on the first
+            # one that isn't already present.
+            - name: ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS
+              value: "False"
           # DATABASE_URL and WEBUI_SECRET_KEY both live in the single
           # open-webui-secret (unlike some other Open WebUI deployments
           # that split these across two secrets) -- see
@@ -103,7 +162,7 @@ spec:
             - |
               set -eu
               cd /app/backend
-              export PYTHONPATH=/app/backend
+              export PYTHONPATH=/app/backend:/pylibs
               echo "==> Syncing Open WebUI tools (direct DB)..."
               exec python /code/sync_tools.py
           volumeMounts:
@@ -115,7 +174,12 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: pylibs
+              mountPath: /pylibs
+              readOnly: true
       volumes:
+        - name: pylibs
+          emptyDir: {}
         - name: code
           configMap:
             name: openwebui-tool-sync-code

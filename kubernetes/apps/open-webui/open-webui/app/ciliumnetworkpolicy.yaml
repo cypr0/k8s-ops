@@ -89,6 +89,44 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Immich REST API, used by the immich_photos Tool (./tools/). The
+    # app-template Service is immich-immich-server:2283 and the container
+    # listens on 2283 too, so unlike the nextcloud/paperless rules above
+    # there is no Service->container port rewrite to account for here.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": immich
+            app.kubernetes.io/name: immich
+      toPorts:
+        - ports:
+            - port: "2283"
+              protocol: TCP
+    # Mailu, used by the mailu_full Tool (./tools/): 993 for read-only
+    # IMAP, 443 for CalDAV/CardDAV (Radicale, proxied by `front` at
+    # /webdav/). Reached via mail.${SECRET_DOMAIN}, which CoreDNS resolves
+    # in-cluster to mailu-front's ClusterIP -- the raw Service name isn't
+    # in Mailu's TLS cert SANs. Same rule mailu-mcp's own CNP already has.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+      toPorts:
+        - ports:
+            - port: "993"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP
+    # hermes-agent's webhook platform, used by the hermes_agent Tool
+    # (./tools/) to hand a task to that agent. Fire-and-forget: the answer
+    # comes back over Telegram, not over this connection.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8644"
+              protocol: TCP
     # Open Terminal multi-user shell sandbox (same namespace); the backend
     # proxies user terminal requests to it on :8000
     - toEndpoints:

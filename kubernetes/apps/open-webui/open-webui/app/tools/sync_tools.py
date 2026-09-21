@@ -29,10 +29,21 @@ Environment:
 app itself -- see job-sync-tools.yaml.)
 
 TOOL_ACCESS_GRANTS below declares, per tool id (== filename stem), who
-besides the owner can use it: `[("user", "*")]` makes it visible/usable by
-every signed-in Open WebUI user; `[("group", "<group.id>")]` restricts it
-to one Open WebUI group (verify the id via `SELECT id, name FROM
-"group"` against the live DB -- group *names* are not valid principal_ids).
+besides the owner can use it. Three principal forms are accepted:
+
+  ("user", "*")            every signed-in Open WebUI user
+  ("group", "<group.id>")  one group, by its literal DB id (a UUID)
+  ("group_name", "<name>") one group, resolved to its id at sync time
+
+`group_name` exists because group *ids* are UUIDs that only exist once
+the group does, and the groups here are created by Open WebUI itself on
+OIDC login (ENABLE_OAUTH_GROUP_MANAGEMENT/ENABLE_OAUTH_GROUP_CREATION in
+helmrelease.yaml, fed by Authentik's groups claim) -- so there is no id to
+hardcode in git ahead of time. A `group_name` that matches no group yet
+resolves to NOTHING and is logged as a warning: the grant set for that
+tool ends up empty, meaning owner-only. That is fail-CLOSED on purpose --
+a typo'd or not-yet-created group must never degrade into "everyone".
+
 An id with an empty list stays owner-only.
 """
 
@@ -57,20 +68,46 @@ log.propagate = False
 # id (== filename stem) -> list of (principal_type, principal_id) read grants.
 # The owner (TOOL_OWNER_EMAIL) always has implicit write access and needs
 # no entry here.
+# Authentik group whose members get the full-access tools. Deliberately a
+# NAME, not an id -- see the module docstring. This group does not exist
+# yet at the time of writing: create it in Authentik and add the adult
+# accounts to it, and Open WebUI mirrors it on their next login.
+#
+# Until then every tool below is owner-only, which is the correct
+# behaviour while kid accounts are being added: the previous
+# [("user", "*")] grants meant "every signed-in user", and that stops
+# being an acceptable default the moment this instance stops being
+# single-user. A child account must not be able to invoke a tool that
+# authenticates as the Nextcloud super-admin, reads either parent's
+# mailbox, or deletes Paperless documents.
+ADULTS_GROUP = "owui-family"
+
+# id (== filename stem) -> list of (principal_type, principal_id) read grants.
+# The owner (TOOL_OWNER_EMAIL) always has implicit write access and needs
+# no entry here.
 TOOL_ACCESS_GRANTS: dict[str, list[tuple[str, str]]] = {
-    # FULL read/write/DESTRUCTIVE Paperless-ngx access. This is currently a
-    # single-admin-user instance (mail@cisotop.de) -- visible to any
-    # signed-in user for now since there is no one else to restrict it
-    # from; narrow this to a specific group id if/when more users are
-    # added and not all of them should get Paperless write access.
-    "paperless_full": [("user", "*")],
+    # FULL read/write/DESTRUCTIVE Paperless-ngx access, with a token whose
+    # Paperless account is the real ceiling (see paperless_full.py).
+    "paperless_full": [("group_name", ADULTS_GROUP)],
     # FULL read/write/DESTRUCTIVE Nextcloud access, authenticated as the
     # REAL Nextcloud super-admin account (see nextcloud_full.py's module
-    # docstring) -- higher stakes than paperless_full's dedicated API
-    # token. Same single-admin-user reasoning applies for now; revisit
-    # this grant (and consider a less-privileged dedicated account
-    # instead) before adding more Open WebUI users.
-    "nextcloud_full": [("user", "*")],
+    # docstring) -- the highest-stakes credential of the five, with no
+    # revoke path that doesn't also affect the human admin login.
+    "nextcloud_full": [("group_name", ADULTS_GROUP)],
+    # Reads either parent's actual mailbox and writes their real calendar
+    # and contacts, using their own account passwords -- Mailu has no
+    # narrower credential (see mailu_full.py). Strictly adults.
+    "mailu_full": [("group_name", ADULTS_GROUP)],
+    # Read-mostly and refuses DELETE outright (see immich_photos.py), so
+    # this is the one tool whose blast radius would survive a wider grant.
+    # Still adults-only for now: the API key sees a whole personal photo
+    # library, which is not the same question as whether it can damage it.
+    "immich_photos": [("group_name", ADULTS_GROUP)],
+    # Hands a task to hermes-agent, which runs with a read-only Kubernetes
+    # terminal and its own full-access MCP servers -- so this tool is a
+    # gateway to everything above plus more, regardless of how small its
+    # own method surface looks.
+    "hermes_agent": [("group_name", ADULTS_GROUP)],
 }
 
 
@@ -194,10 +231,42 @@ def main() -> None:
         log.info("Synced %d tool(s) OK", synced)
 
 
+def _resolve_principals(db, tool_id: str) -> set[tuple[str, str]]:
+    """Turn TOOL_ACCESS_GRANTS' declared principals into the (type, id)
+    pairs the access_grant table stores, resolving ("group_name", <name>)
+    against the live `group` table.
+
+    An unresolvable group name yields NOTHING rather than raising: the sync
+    of the tool code itself must not be blocked on a group somebody hasn't
+    created yet. It is logged at WARNING so it shows up in the Job's logs,
+    and the consequence -- that tool becoming owner-only -- is the safe
+    direction to fail in.
+    """
+    from open_webui.models.groups import Group
+
+    resolved: set[tuple[str, str]] = set()
+    for principal_type, principal_id in TOOL_ACCESS_GRANTS.get(tool_id, []):
+        if principal_type != "group_name":
+            resolved.add((principal_type, principal_id))
+            continue
+        group = db.query(Group).filter(Group.name == principal_id).first()
+        if group is None:
+            log.warning(
+                "Tool '%s': group '%s' does not exist (yet) -- granting nobody "
+                "but the owner. Create it in Authentik and have a member sign "
+                "in to Open WebUI, then re-run this Job.",
+                tool_id,
+                principal_id,
+            )
+            continue
+        resolved.add(("group", group.id))
+    return resolved
+
+
 def _reconcile_access_grants(db, AccessGrant, tool_id: str, now: int) -> None:
     """Make the 'read' access grants for `tool_id` match TOOL_ACCESS_GRANTS
     exactly: insert missing, delete stale. Idempotent."""
-    desired = set(TOOL_ACCESS_GRANTS.get(tool_id, []))
+    desired = _resolve_principals(db, tool_id)
     existing_rows = (
         db.query(AccessGrant)
         .filter(
