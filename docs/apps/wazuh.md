@@ -141,6 +141,19 @@ days and pinned to zero replicas.
 
 ## Known quirks
 
+- **`/api/status` is only unauthenticated because this repo says so.** With
+  `opensearch_security.auth.type: "openid"`, the security plugin intercepts
+  every route unless it is listed in
+  `opensearch_security.auth.unauthenticated_routes` — and the default for that
+  setting in the plugin shipped with this dashboard version is
+  `["/api/reporting/stats"]`, **not** `["/api/status"]` as older OpenSearch
+  Dashboards releases used (verified in the running pod,
+  `plugins/securityDashboards/server/index.js`). Gatus's "Wazuh Dashboard"
+  check was therefore permanently red on a 401 against a dashboard that was
+  healthy and reachable; `configmap-dashboard.yaml` now whitelists that one
+  route explicitly. If the check goes red with a 401 again, look there first —
+  and note the dashboard's own readinessProbe is a bare `tcpSocket`, so it
+  will not catch this class of problem for you.
 - **`replica_count` comes from ISM, not an index template.** Composable index
   templates do not merge — the single highest-priority match wins outright, so a
   template carrying only `number_of_replicas` would shadow Wazuh's own templates

@@ -113,8 +113,13 @@ data:
         alerts:
           - type: pushover
 
-      # /api/status is in the security plugin's default unauthenticated_routes,
-      # so this works without dragging OIDC into a health check.
+      # /api/status only answers unauthenticated because
+      # kubernetes/apps/security/wazuh/app/configmap-dashboard.yaml explicitly
+      # lists it in opensearch_security.auth.unauthenticated_routes. It is NOT
+      # unauthenticated by default in this dashboard version -- that default is
+      # ["/api/reporting/stats"] -- which is why this check used to be
+      # permanently red (401) against a healthy, reachable dashboard. If it
+      # goes red again with a 401, check that setting first.
       - name: Wazuh Dashboard
         group: Security
         url: "http://dashboard.wazuh.svc.cluster.local:5601/api/status"

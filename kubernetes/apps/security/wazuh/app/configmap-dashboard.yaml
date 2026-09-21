@@ -25,6 +25,25 @@ data:
     opensearch_security.multitenancy.enabled: false
     opensearch_security.readonly_mode.roles: ["kibana_read_only"]
 
+    # Let Gatus health-check /api/status without dragging OIDC into a monitoring
+    # probe (kubernetes/apps/monitoring/gatus/app/configmap.yaml, "Wazuh
+    # Dashboard"). This is NOT redundant with a default: the security plugin
+    # shipped in this dashboard version defaults
+    # opensearch_security.auth.unauthenticated_routes to
+    # ["/api/reporting/stats"], NOT to ["/api/status"] as older OpenSearch
+    # Dashboards releases did (verified in the running pod,
+    # plugins/securityDashboards/server/index.js). With auth.type "openid" and
+    # that default, every single route including /api/status answered 401, so
+    # the Gatus check was permanently red against a dashboard that was in fact
+    # healthy and reachable.
+    #
+    # /api/status exposes version numbers and per-plugin status. That is
+    # acceptable here and nowhere near the same thing as exposing it publicly:
+    # the Service is ClusterIP-only, ingress is restricted by
+    # ./ciliumnetworkpolicy.yaml, and the public hostname goes through Envoy
+    # + Authentik. Keep this list to exactly this one route.
+    opensearch_security.auth.unauthenticated_routes: ["/api/status"]
+
     # Authentik OIDC. Doubled $ so Flux's postBuild leaves the placeholders for
     # the dashboard process to resolve from its environment -- the same
     # escaping the logging cluster needs
