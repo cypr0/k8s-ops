@@ -130,10 +130,14 @@ data:
                 Ein neues Dokument wurde in Paperless-ngx hinzugefügt (Dokument-ID {document_id}).
 
                 Die paperless-mcp-Tools sind nicht direkt sichtbar -- erst per tool_search
-                auffindbar (232 Tools insgesamt, viele mit überlappenden Namens-Präfixen,
-                z.B. "get_document" vs. "get_document_type"/"_metadata"/"_notes"/"_version"
-                -- bei mehrdeutigen Treffern IMMER den kürzesten, exakt passenden Namen ohne
-                Suffix wählen, notfalls tool_search mit höherem limit erneut aufrufen).
+                auffindbar. Seit paperless_full v2.0.0 sind es nur noch 21 statt 139
+                Tools (die frühere Namensverwirrung "get_document" vs.
+                "get_document_type"/"_metadata"/"_notes"/"_version" existiert nicht mehr:
+                get_document und get_document_metadata sind die einzigen verbliebenen
+                get_document*-Namen). Was es nicht mehr als eigenes Tool gibt, geht über
+                bulk_edit(document_ids, method, parameters) bzw. raw_request(method, path,
+                ...) -- vorher capabilities("bulk_edit") bzw. capabilities("endpoints")
+                aufrufen, das liefert die Methodennamen und Pfade.
                 WICHTIG beim Aufruf von tool_call: das Argument-Objekt MUSS unter dem
                 Schlüssel "arguments" übergeben werden, NICHT "parameters" -- sonst werden
                 die Werte stillschweigend verworfen und Pflichtfelder (z.B. document_id)
