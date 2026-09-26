@@ -44,7 +44,7 @@ spec:
           # version of Open WebUI expects. Keep this tag in sync with the
           # open-webui HelmRelease (../helmrelease.yaml) and with
           # ../tools/job-sync-tools.yaml.
-          image: ghcr.io/open-webui/open-webui:v0.11.3
+          image: ghcr.io/open-webui/open-webui:v0.11.4
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
