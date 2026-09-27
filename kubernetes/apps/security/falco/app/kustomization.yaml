@@ -5,7 +5,6 @@ kind: Kustomization
 resources:
   - ./namespace.yaml
   - ./helmrepository.yaml
-  - ./externalsecret.yaml
   - ./helmrelease-falco.yaml
   - ./helmrelease-sidekick.yaml
   - ./ciliumnetworkpolicy.yaml

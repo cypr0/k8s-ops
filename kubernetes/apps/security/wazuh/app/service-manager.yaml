@@ -35,3 +35,23 @@ spec:
     - name: api
       port: 55000
       targetPort: 55000
+---
+# Remote syslog for in-cluster senders -- Falcosidekick today. The LAN-facing
+# 514/UDP on service-agents.yaml would work too, but only via the LB VIP and
+# its externalTrafficPolicy: Local hop; this keeps pod-to-pod traffic direct.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wazuh-syslog
+  labels:
+    app: wazuh-manager
+spec:
+  type: ClusterIP
+  selector:
+    app: wazuh-manager
+    node-type: master
+  ports:
+    - name: syslog
+      port: 514
+      targetPort: 514
+      protocol: UDP

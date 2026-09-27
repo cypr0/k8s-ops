@@ -5,11 +5,11 @@
 > **Hostname**   none — no HTTPRoute; both components are internal-only, reached via ClusterIP/eBPF, not the ingress path
 
 ## What it does here
-Falco is the cluster's runtime intrusion-detection layer: a DaemonSet reading kernel syscalls via eBPF on every worker node, matched against a mix of upstream and homelab-specific rules (`kubernetes/apps/security/falco/app/helmrelease-falco.yaml:88-181`). Falcosidekick, deployed as a fully separate HelmRelease rather than the chart's built-in subchart (`falcosidekick.enabled: false` in `helmrelease-falco.yaml:52-53`, with the comment "deployed as separate HelmRelease"), fans each Falco event out to Loki and Pushover. This pairing is documented as one app because they're one Flux Kustomization and one operational unit — Falco without Falcosidekick just logs to stdout with nowhere to go.
+Falco is the cluster's runtime intrusion-detection layer: a DaemonSet reading kernel syscalls via eBPF on every worker node, matched against a mix of upstream and homelab-specific rules (`kubernetes/apps/security/falco/app/helmrelease-falco.yaml:88-181`). Falcosidekick, deployed as a fully separate HelmRelease rather than the chart's built-in subchart (`falcosidekick.enabled: false` in `helmrelease-falco.yaml:52-53`, with the comment "deployed as separate HelmRelease"), fans each Falco event out to Loki and to the Wazuh manager (remote syslog), which is where Falco alerts are correlated and paged from. This pairing is documented as one app because they're one Flux Kustomization and one operational unit — Falco without Falcosidekick just logs to stdout with nowhere to go.
 
 ## Architecture at a glance
 - **Depends on:** Flux Kustomization `kube-prometheus-stack` and `loki` (namespace `monitoring`) and `external-secrets-stores` (namespace `security`), all via `dependsOn` (`kubernetes/apps/security/falco/ks.yaml:12-18`) — `loki` specifically because Falcosidekick needs it up before it can ship logs (also noted from the other side in `docs/apps/loki.md:14`); `external-secrets-stores` because the `onepassword` ClusterSecretStore must exist before the two ExternalSecrets below can sync.
-- **Depended on by:** `loki` (log destination for warning+ events), Pushover (critical+ alerting), and `kube-prometheus-stack`'s Prometheus (scrapes both ServiceMonitors). At the Flux level, this Kustomization's own health gates nothing else, but `docs/apps/kube-prometheus-stack.md:12` and `:43` note that `falco` itself is one of six Kustomizations that stall if `kube-prometheus-stack` fails to converge. `docs/apps/metrics-server.md:12` also notes Falcosidekick's HPA (`helmrelease-sidekick.yaml:94-98`) depends on `metrics-server` for scaling decisions.
+- **Depended on by:** `loki` (log destination for warning+ events), Wazuh (warning+ events via syslog; Wazuh pages Critical+ through Pushover), and `kube-prometheus-stack`'s Prometheus (scrapes both ServiceMonitors). At the Flux level, this Kustomization's own health gates nothing else, but `docs/apps/kube-prometheus-stack.md:12` and `:43` note that `falco` itself is one of six Kustomizations that stall if `kube-prometheus-stack` fails to converge. `docs/apps/metrics-server.md:12` also notes Falcosidekick's HPA (`helmrelease-sidekick.yaml:94-98`) depends on `metrics-server` for scaling decisions.
 
 ## Repo layout
 | File | Purpose |
@@ -18,7 +18,6 @@ Falco is the cluster's runtime intrusion-detection layer: a DaemonSet reading ke
 | `kubernetes/apps/security/falco/app/helmrepository.yaml` | `falcosecurity` chart repo |
 | `kubernetes/apps/security/falco/app/helmrelease-falco.yaml` | Falco DaemonSet: driver, resources, custom rules |
 | `kubernetes/apps/security/falco/app/helmrelease-sidekick.yaml` | Falcosidekick Deployment: output routing, HPA |
-| `kubernetes/apps/security/falco/app/externalsecret.yaml` | Pushover credentials for Falcosidekick |
 | `kubernetes/apps/security/falco/app/ciliumnetworkpolicy.yaml` | Two CiliumNetworkPolicies — one per component |
 | `kubernetes/apps/security/falco/app/namespace.yaml` | `falco` namespace (prune disabled) |
 
@@ -32,7 +31,7 @@ The remaining ExternalSecret pulls from the `onepassword` ClusterSecretStore (`e
 ## Routing & access
 No HTTPRoute — nothing here is meant to be reached from outside the cluster. Two CiliumNetworkPolicies in `kubernetes/apps/security/falco/app/ciliumnetworkpolicy.yaml`:
 - **`falco`** (lines 2-37): egress-only — DNS to `kube-dns`, port 2801/TCP to `falcosidekick` (event forwarding), and port 443/TCP to `world` for the `falcoctl-artifact-install` init container, which fetches rule updates from `falcosecurity.github.io`.
-- **`falcosidekick`** (lines 39-108): ingress from `falco` (2801, event intake), from `prometheus` in `monitoring` (2802, metrics scrape), and from the `host` entity (2801, kubelet probes); egress to DNS, `loki` (3100), and `world` (443, for the Pushover webhook).
+- **`falcosidekick`** (lines 39-108): ingress from `falco` (2801, event intake), from `prometheus` in `monitoring` (2802, metrics scrape), and from the `host` entity (2801, kubelet probes); egress to DNS, `loki` (3100), and the Wazuh manager (514/UDP, remote syslog).
 
 No OIDC/SSO — neither component has a web UI exposed to end users in this deployment.
 
@@ -54,7 +53,7 @@ No PVCs. Falco is a DaemonSet reading the host's eBPF/syscall stream directly; F
 ## Common operations
 - Upgrade either chart: edit the relevant `version:` in `helmrelease-falco.yaml` or `helmrelease-sidekick.yaml`, commit, push, Flux reconciles within `interval: 1h` (or force with `flux reconcile helmrelease falco -n falco` / `flux reconcile helmrelease falcosidekick -n falco`).
 - Add/adjust a custom rule or exception: edit the `customRules.homelab-rules.yaml` block in `helmrelease-falco.yaml`, commit, push — Flux applies the ConfigMap and the chart restarts the DaemonSet to pick it up.
-- Rotate a secret: update the `pushover` 1Password item, then `kubectl annotate externalsecret falcosidekick-pushover -n falco force-sync=$(date +%s)`, or wait for the refresh interval.
+- Paging goes through Wazuh (rules 100300+, `docs/apps/wazuh.md`), which reads its Pushover credentials from the same 1Password item `pushover`.
 - Pause reconciliation: `flux suspend kustomization falco -n security` / `flux suspend helmrelease falco -n falco` / `flux suspend helmrelease falcosidekick -n falco`.
 
 ## TODOs / unknowns
@@ -63,3 +62,14 @@ No PVCs. Falco is a DaemonSet reading the host's eBPF/syscall stream directly; F
 
 ---
 _Cite every non-obvious claim with a repo-root-relative file path (e.g. `kubernetes/apps/security/authentik/app/helmrelease.yaml`), not a bare filename — this doc lives under `docs/apps/`, so relative paths must resolve from there._
+
+## Paging history (2026-09-27)
+
+Until 2026-09-27 `helmrelease-sidekick.yaml` carried a `pushover:` block with
+`PUSHOVER_*` env vars, but **Falcosidekick has no Pushover output** — it is
+neither in the chart's values nor in its output list. The pod logged
+`Enabled Outputs: [Loki]` from the start, so no Falco alert ever paged anyone.
+Measured at the same time: ~5,100 CRITICAL events a day, almost all from two
+benign sources (Mailu postfix re-creating its binaries at start, and the
+proxmox-ansible job `apk add`ing its tooling), now excluded narrowly in
+`homelab-rules.yaml`. Falco alerts now go to Wazuh, which pages Critical+.

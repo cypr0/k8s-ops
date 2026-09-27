@@ -43,6 +43,15 @@ spec:
         - ports:
             - port: "55000"
               protocol: TCP
+    # Falco runtime alerts from Falcosidekick (remote syslog).
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": falco
+            app.kubernetes.io/name: falcosidekick
+      toPorts:
+        - ports:
+            - port: "514"
+              protocol: UDP
     # Gatus health check on the agent listener.
     - fromEndpoints:
         - matchLabels:

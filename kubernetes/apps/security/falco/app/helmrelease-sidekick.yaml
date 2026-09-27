@@ -39,20 +39,20 @@ spec:
         tenant: ""
         extralabels: "source=falco"
 
-      pushover:
-        minimumpriority: critical
-
-      extraEnv:
-        - name: PUSHOVER_APITOKEN
-          valueFrom:
-            secretKeyRef:
-              name: falcosidekick-pushover
-              key: PUSHOVER_APITOKEN
-        - name: PUSHOVER_USERKEY
-          valueFrom:
-            secretKeyRef:
-              name: falcosidekick-pushover
-              key: PUSHOVER_USERKEY
+      # Everything warning+ goes to Wazuh, which is the single place that
+      # pages (Pushover at Wazuh level 12+ = Falco Critical and above) and
+      # can correlate with host events and the IOC lists. A `pushover:` block
+      # with PUSHOVER_* env vars sat here until 2026-09-27 but never did
+      # anything: Falcosidekick has no Pushover output at all (not in the
+      # chart, not in its output list), so the pod logged "Enabled Outputs:
+      # [Loki]" the whole time and Falco never paged anyone.
+      # If Wazuh is down, Gatus pages about that instead.
+      syslog:
+        host: "wazuh-syslog.wazuh.svc.cluster.local"
+        port: "514"
+        protocol: "udp"
+        format: "json"
+        minimumpriority: warning
 
     resources:
       requests:
