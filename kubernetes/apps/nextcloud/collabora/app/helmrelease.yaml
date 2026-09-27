@@ -82,7 +82,7 @@ spec:
           languagetool:
             image:
               repository: collabora/languagetool
-              tag: "6.6"
+              tag: "6.8"
             resources:
               requests:
                 cpu: 100m
