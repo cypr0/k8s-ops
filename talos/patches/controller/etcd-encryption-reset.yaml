@@ -1,0 +1,12 @@
+# Part 1/2 of the etcd encryption key-name fix — see etcd-encryption.sops.yaml
+# for the full rationale. talhelper doesn't allow two documents of the same
+# kind in one patch file, so this delete-selector (which wipes the
+# auto-generated document's wrong "key1" `config.resources` list) has to
+# live in its own file, applied immediately before etcd-encryption.sops.yaml
+# in talconfig.yaml's patches list.
+---
+apiVersion: v1alpha1
+kind: KubeEtcdEncryptionConfig
+config:
+  resources:
+    $$patch: delete

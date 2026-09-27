@@ -1,9 +1,6 @@
+---
 machine:
   network:
-    disableSearchDomain: true
-    nameservers:
-      - 1.1.1.1
-      - 1.0.0.1
     # CIS Talos 5.4.1: encrypt all inter-node traffic (WireGuard mesh).
     # DISABLED 2026-07-04: broke Cilium L2 announcement. The new `kubespan`
     # interface confused Cilium's auto device-detection for L2-announced
@@ -13,3 +10,15 @@ machine:
     # after pinning Cilium's `devices` to ens18 explicitly.
     kubespan:
       enabled: false
+---
+# Talos v1.14 auto-generates a default ResolverConfig document for every
+# node, which conflicts with the legacy `.machine.network.nameservers`/
+# `disableSearchDomain` fields (talhelper genconfig: "... is already set in
+# v1alpha1 config"). Moved to the dedicated multi-doc config kind instead.
+apiVersion: v1alpha1
+kind: ResolverConfig
+nameservers:
+  - address: 1.1.1.1
+  - address: 1.0.0.1
+searchDomains:
+  disableDefault: true

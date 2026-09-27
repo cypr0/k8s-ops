@@ -211,32 +211,6 @@ nodes:
           - gateway: "192.168.10.1"
             network: 0.0.0.0/0
         mtu: 1500
-  - hostname: "k8s-wrk-4"
-    ipAddress: "192.168.10.24"
-    patches:
-      - |-
-        machine:
-          logging:
-            destinations:
-              - endpoint: tcp://192.168.10.110:5170
-                format: json_lines
-                extraTags:
-                  node: k8s-wrk-4
-    installDisk: "/dev/sda"
-    machineSpec:
-      secureboot: false
-    talosImageURL: factory.talos.dev/installer/88d1f7a5c4f1d3aba7df787c448c1d3d008ed29cfb34af53fa0df4336a56040b
-    controlPlane: false
-    networkInterfaces:
-      - deviceSelector:
-          hardwareAddr: "bc:24:11:02:33:eb"
-        dhcp: false
-        addresses:
-          - "192.168.10.24/24"
-        routes:
-          - gateway: "192.168.10.1"
-            network: 0.0.0.0/0
-        mtu: 1500
 
 # Global patches
 patches:
@@ -252,4 +226,6 @@ patches:
 controlPlane:
   patches:
     - "@./patches/controller/cluster.yaml"
+    - "@./patches/controller/etcd-encryption-reset.yaml"
+    - "@./patches/controller/etcd-encryption.sops.yaml"
 

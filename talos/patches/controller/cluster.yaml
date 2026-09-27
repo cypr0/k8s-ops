@@ -1,4 +1,12 @@
 ---
+# Talos v1.14 auto-generates the new Kubernetes multi-document config kinds
+# (KubeAPIServerConfig, KubeAdmissionControlConfig, KubeControllerManagerConfig,
+# KubeSchedulerConfig, KubeProxyConfig, ...) for every control-plane node, which
+# conflict with the equivalent legacy `.cluster.*` v1alpha1 fields (talhelper
+# genconfig fails with "... is already set in v1alpha1 config"). Only
+# `allowSchedulingOnControlPlanes`, `coreDNS`, and `etcd` have no dedicated
+# multi-doc replacement (yet) and stay in the legacy format below; everything
+# else moved to its own document further down in this file.
 cluster:
   # Was true — control-plane nodes (8Gi allocatable each) were running
   # arbitrary app workloads alongside kube-apiserver/etcd/scheduler with no
@@ -16,65 +24,6 @@ cluster:
   # this taint at boot, so it takes a rolling reboot of the 3 control-plane
   # nodes to actually take effect on already-running nodes.
   allowSchedulingOnControlPlanes: false
-  apiServer:
-    admissionControl:
-      # PodSecurity: enforce stays "privileged" (no blocking) — Kyverno owns
-      # actual pod-security enforcement. audit/warn run at "restricted" for
-      # free, non-blocking visibility (audit log + kubectl warnings) until
-      # Kyverno policies are proven out. See kubernetes/apps/security/kyverno.
-      - name: PodSecurity
-        configuration:
-          apiVersion: pod-security.admission.config.k8s.io/v1alpha1
-          kind: PodSecurityConfiguration
-          defaults:
-            enforce: privileged
-            enforce-version: latest
-            audit: restricted
-            audit-version: latest
-            warn: restricted
-            warn-version: latest
-          exemptions:
-            usernames: []
-            runtimeClasses: []
-            # kube-system is added by Talos automatically — listing it here
-            # too causes a duplicate entry in the rendered config.
-            namespaces:
-              - falco
-              - monitoring
-              - logging
-    extraArgs:
-      # https://kubernetes.io/docs/tasks/extend-kubernetes/configure-aggregation-layer/
-      enable-aggregator-routing: true
-      # CIS 3.1.1: OIDC via Authentik, additive to the existing client-cert
-      # admin auth (Talos' generated admin kubeconfig keeps working as a
-      # break-glass fallback — this does not replace or disable it).
-      # See kubernetes/apps/security/authentik/app/blueprints/08-kubernetes-oidc.yaml
-      oidc-issuer-url: https://id.cisotop.de/application/o/kubernetes/
-      oidc-client-id: kubernetes
-      oidc-username-claim: preferred_username
-      oidc-username-prefix: "oidc:"
-      oidc-groups-claim: groups
-      oidc-groups-prefix: "oidc:"
-    # Requests only, no limits — same reasoning as the cilium-agent resources
-    # block (kubernetes/apps/kube-system/cilium/app/helmrelease.yaml): these
-    # static pods ran completely unaccounted for in kubelet's own bookkeeping
-    # (confirmed live 2026-08-15: kube-apiserver alone uses 2-4Gi RSS per CP
-    # node with zero request), which was a real contributor to the CP
-    # memory-overcommit/OOM-kill incident this session investigated (see
-    # project memory). A limit here risks throttling/OOM-killing the apiserver
-    # itself under a load spike — exactly the failure mode being fixed —
-    # so this only gives the scheduler/kubelet accurate accounting.
-    resources:
-      requests:
-        cpu: 250m
-        memory: 2Gi
-  controllerManager:
-    extraArgs:
-      bind-address: 0.0.0.0
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
   coreDNS:
     disabled: true
   etcd:
@@ -82,12 +31,96 @@ cluster:
       listen-metrics-urls: http://0.0.0.0:2381
     advertisedSubnets:
       - 192.168.10.0/24
-  proxy:
-    disabled: true
-  scheduler:
-    extraArgs:
-      bind-address: 0.0.0.0
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
+---
+apiVersion: v1alpha1
+kind: KubeAdmissionControlConfig
+name: PodSecurity
+# PodSecurity: enforce stays "privileged" (no blocking) — Kyverno owns
+# actual pod-security enforcement. audit/warn run at "restricted" for
+# free, non-blocking visibility (audit log + kubectl warnings) until
+# Kyverno policies are proven out. See kubernetes/apps/security/kyverno.
+configuration:
+  apiVersion: pod-security.admission.config.k8s.io/v1alpha1
+  kind: PodSecurityConfiguration
+  defaults:
+    enforce: privileged
+    enforce-version: latest
+    audit: restricted
+    audit-version: latest
+    warn: restricted
+    warn-version: latest
+  exemptions:
+    usernames: []
+    runtimeClasses: []
+    # kube-system is added by Talos automatically — listing it here
+    # too causes a duplicate entry in the rendered config.
+    namespaces:
+      - falco
+      - monitoring
+      - logging
+---
+apiVersion: v1alpha1
+kind: KubeAPIServerConfig
+extraArgs:
+  # https://kubernetes.io/docs/tasks/extend-kubernetes/configure-aggregation-layer/
+  enable-aggregator-routing: true
+# Requests only, no limits — same reasoning as the cilium-agent resources
+# block (kubernetes/apps/kube-system/cilium/app/helmrelease.yaml): these
+# static pods ran completely unaccounted for in kubelet's own bookkeeping
+# (confirmed live 2026-08-15: kube-apiserver alone uses 2-4Gi RSS per CP
+# node with zero request), which was a real contributor to the CP
+# memory-overcommit/OOM-kill incident this session investigated (see
+# project memory). A limit here risks throttling/OOM-killing the apiserver
+# itself under a load spike — exactly the failure mode being fixed —
+# so this only gives the scheduler/kubelet accurate accounting.
+resources:
+  requests:
+    cpu: 250m
+    memory: 2Gi
+---
+# Talos 1.14 rejects `oidc-*` kube-apiserver extraArgs outright ("use
+# KubeAuthenticationConfig") — the old --oidc-* flags are now expressed as a
+# literal Kubernetes AuthenticationConfiguration document instead.
+# CIS 3.1.1: OIDC via Authentik, additive to the existing client-cert
+# admin auth (Talos' generated admin kubeconfig keeps working as a
+# break-glass fallback — this does not replace or disable it).
+# See kubernetes/apps/security/authentik/app/blueprints/08-kubernetes-oidc.yaml
+apiVersion: v1alpha1
+kind: KubeAuthenticationConfig
+configuration:
+  apiVersion: apiserver.config.k8s.io/v1
+  kind: AuthenticationConfiguration
+  jwt:
+    - issuer:
+        url: https://id.cisotop.de/application/o/kubernetes/
+        audiences:
+          - kubernetes
+      claimMappings:
+        username:
+          claim: preferred_username
+          prefix: "oidc:"
+        groups:
+          claim: groups
+          prefix: "oidc:"
+---
+apiVersion: v1alpha1
+kind: KubeControllerManagerConfig
+extraArgs:
+  bind-address: 0.0.0.0
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+---
+apiVersion: v1alpha1
+kind: KubeProxyConfig
+enabled: false
+---
+apiVersion: v1alpha1
+kind: KubeSchedulerConfig
+extraArgs:
+  bind-address: 0.0.0.0
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
