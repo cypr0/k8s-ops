@@ -164,6 +164,12 @@ This repo wires up the list part properly:
 - **Why not `malicious-ioc/*`:** those are the image's ~200-entry samples and
   are listed in `PERMANENT_DATA_EXCP` (`/permanent_data.env`), i.e. reset from
   the image on every start. Anything written there is lost.
+- **The Wazuh API reports most failures as HTTP 200.** A missing list, a
+  rejected upload and a failed reload all come back 200 with `"error": 1` (or
+  `total_failed_items > 0`) in the JSON body, and `GET …?raw=true` returns that
+  JSON instead of list text. The first run after the initial deploy merged such
+  an error body into the lists and every upload was silently rejected; the
+  script now checks the body of every call.
 - **A missing list only warns.** analysisd logs `(7616) List … could not be
   loaded. Rule … will be ignored` and starts normally, so a fresh PVC is fine —
   the rules come alive with the Job's first reload.
