@@ -106,8 +106,8 @@ See "What DID work" above — suspend HelmRelease, `kubectl patch` to strip the 
 - [x] GitOps preventive change committed (`aff638d`)
 - [x] HelmRelease resumed and confirmed converging cleanly (`.v36`, `UpgradeSucceeded`)
 - [x] Postmortem written (this file)
-- [ ] Re-enable `geoip.enabled: true` once MaxMind's daily quota resets — confirm no crash-loop before considering this closed
-- [ ] Consider whether the chart supports a readiness-probe override or `restartPolicy: Always` sidecar semantics for `geoip` so a future quota exhaustion degrades gracefully (missing geo-enrichment) instead of taking the whole pod down
+- [x] Re-enable `geoip.enabled: true` once MaxMind's daily quota resets — confirm no crash-loop before considering this closed. **Done 2026-09-27** (commit `26ded8d`): re-enabled after 6 weeks disabled, verified live — `authentik-server`/`authentik-worker` pods all show `geoip(ready=true, restarts=0)`, `authentik-server` Service endpoints populated. No crash-loop.
+- [ ] Consider whether the chart supports a readiness-probe override or `restartPolicy: Always` sidecar semantics for `geoip` so a future quota exhaustion degrades gracefully (missing geo-enrichment) instead of taking the whole pod down. Checked chart 2026.8.3 (still current as of 2026-09-27): no `readinessProbe` override or sidecar-restart-policy exists for `geoip` in `templates/server`/`worker` deployment.yaml — this residual risk remains open.
 
 ---
 _For related context: `docs/apps/authentik.md`._
