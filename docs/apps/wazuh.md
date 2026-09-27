@@ -60,6 +60,7 @@ shared search backend is proposed again.
 | `kubernetes/apps/security/wazuh/app/configmap-indexer.yaml` | `opensearch.yml` — TLS paths, DN matching, discovery |
 | `kubernetes/apps/security/wazuh/app/configmap-manager.yaml` | `ossec.conf` — remoted, authd, indexer connection, list registrations; its FIM/rootcheck blocks affect the manager container only |
 | `kubernetes/apps/security/wazuh/app/configmap-manager-ruleset.yaml` | `agent.conf` (centralised agent config, per OS) and `local_rules.xml` (threat-intel + noise rules) |
+| `kubernetes/apps/security/wazuh/app/configmap-manager-integrations.yaml` | `custom-pushover` integration (wrapper + Python) |
 | `kubernetes/apps/security/wazuh/app/cronjob-ioc-feeds.yaml` | Daily IOC feed refresh into the `ioc-*` CDB lists via the Wazuh API |
 | `kubernetes/apps/security/wazuh/app/configmap-dashboard.yaml` | `opensearch_dashboards.yml` — OIDC, plain-HTTP backend |
 | `kubernetes/apps/security/wazuh/app/externalsecret*.yaml` | Credentials, security plugin config, OIDC client, VirusTotal key |
@@ -81,6 +82,7 @@ All from the single 1Password item **`wazuh`**, via `ClusterSecretStore/onepassw
 | `indexer-cred` | `WAZUH_INDEXER_PASSWORD` | manager + dashboard env, and the setup Job |
 | `dashboard-cred` | `WAZUH_DASHBOARD_PASSWORD` | dashboard env (`kibanaserver` account) |
 | `wazuh-securityconfig` | `WAZUH_INDEXER_HASH`, `WAZUH_DASHBOARD_HASH` | indexer, as `internal_users.yml` / `config.yml` / `roles_mapping.yml` |
+| `wazuh-pushover` | `ALERTMANAGER_PUSHOVER_API_TOKEN`, `PUSHOVER_USER_KEY` (item `pushover`) | manager init container `render-config`, substituted into `ossec.conf` |
 | `wazuh-virustotal` | `VIRUSTOTAL_API_KEY` | manager init container `render-config`, substituted into `ossec.conf` |
 | `wazuh-dashboard-oidc` | `WAZUH_OIDC_CLIENT_ID`, `WAZUH_OIDC_CLIENT_SECRET`, `WAZUH_COOKIE_SECRET` | dashboard, via `envFrom` |
 | `authentik-wazuh-oidc` (security ns) | `WAZUH_OIDC_CLIENT_ID`, `WAZUH_OIDC_CLIENT_SECRET` | Authentik, so blueprint `!Env` lookups resolve |
@@ -229,6 +231,33 @@ Hash lookups via Wazuh's bundled integration (`<integration>` in
   through `GET /manager/configuration` — unavoidable with this integration.
 - **Rule order:** 100100 (feed hash) is also a child of 100160, otherwise a
   known-malware file in Downloads would stop at the level-5 rule.
+
+### Notifications
+
+`custom-pushover` (`configmap-manager-integrations.yaml`) sends every alert at
+**level 10 and above** to Pushover, reusing the Alertmanager/Falcosidekick app
+(1Password item `pushover`, ExternalSecret `wazuh-pushover`). Level 12+ goes out
+at high priority, which bypasses quiet hours. Title is `Wazuh L<level> | <agent>`,
+body the rule description plus whichever of srcip/dstip/DNS/file/VirusTotal
+fields the alert carries.
+
+- Same wrapper + `.py` shape as the image's own integrations. integratord runs
+  as `wazuh` and the entrypoint copies files in as root:root, hence mode 0755.
+- The embedded Python has no system CA bundle; the script uses `requests`,
+  which brings certifi. A bare `urllib` call would fail TLS.
+- No rate limiting: level 10+ was a handful of alerts a week before this. If a
+  noisy rule ever crosses 10, fix the rule, not the notifier.
+
+### Command auditing on Proxmox
+
+proxmox-ansible installs auditd with `/etc/audit/rules.d/60-wazuh.rules`, and
+`agent.conf` (os="Linux") reads `/var/log/audit/audit.log`:
+
+- `execve` with `auid!=unset` → key `audit-wazuh-c` → rule **80792 "Audit:
+  Command"**. `auid` is unset for daemons, which keeps pvestatd & co. out; SSH,
+  console and Ansible sessions are all in.
+- Watches on SSH keys/config, sudoers, passwd/shadow/group → `audit-wazuh-w` →
+  rule **80780 "Write access"**.
 
 ### Agent configuration is central
 
@@ -408,8 +437,11 @@ kubectl exec -n wazuh wazuh-manager-master-0 -- \
 - **OPNsense filterlog not yet confirmed.** Unbound and audit lines arrive
   since 2026-09-27; no filterlog line was seen in the first sample, so rules
   100110/100111 (firewall pass/block to C2) are unverified against live data.
-- **Nobody is notified.** `email_notification` is off and no integration is
-  configured, so even a level-14 alert only sits in the dashboard.
+- **Ansible's nightly run shows up in the audit log.** auditd captures every
+  execve from a login session, and the playbook runs as `ansible` over SSH, so
+  each night adds a burst of level-3 "Audit: Command" alerts. Deliberately not
+  filtered (a stolen Ansible key should stay visible); revisit if the volume
+  turns out to hurt.
 - **Proxmox SSH faces the internet:** ~5,000 invalid-user attempts a week
   from ~550 IPs, most of the alert volume. Key-only auth makes it harmless, but
   restricting port 22 at the provider firewall would remove the noise at source.

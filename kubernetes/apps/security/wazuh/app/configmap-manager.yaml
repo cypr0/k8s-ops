@@ -248,6 +248,18 @@ data:
         <alert_format>json</alert_format>
       </integration>
 
+      <!-- Push notification for everything at level 10 and above. Last week
+           that was a handful of alerts, so no rate limiting yet. Token and
+           user key are substituted by render-config, like the VirusTotal
+           key; the script is in configmap-manager-integrations.yaml. -->
+      <integration>
+        <name>custom-pushover</name>
+        <hook_url>https://api.pushover.net/1/messages.json</hook_url>
+        <api_key>__PUSHOVER_TOKEN__:__PUSHOVER_USER__</api_key>
+        <level>10</level>
+        <alert_format>json</alert_format>
+      </integration>
+
       <rule_test>
         <enabled>yes</enabled>
         <threads>1</threads>

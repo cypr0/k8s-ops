@@ -27,7 +27,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       initContainers:
         # ossec.conf's <integration><api_key> takes a literal value only, so
-        # the VirusTotal key is substituted into a copy of the ConfigMap here
+        # the VirusTotal and Pushover credentials are substituted into a copy of the ConfigMap here
         # and the manager reads that copy from an emptyDir. Keeps the key out
         # of Git and out of the ConfigMap. Same image as the manager purely to
         # avoid another pull; it only needs sh and sed.
@@ -43,9 +43,19 @@ spec:
               # wrong key only shows up later as rule 87102 "Check credentials".
               printf '%s' "$$VIRUSTOTAL_API_KEY" | grep -Eqx '[0-9a-f]{64}' \
                 || { echo "VIRUSTOTAL_API_KEY is not a 64-char hex key" >&2; exit 1; }
-              sed "s/__VIRUSTOTAL_API_KEY__/$$VIRUSTOTAL_API_KEY/" \
+              printf '%s' "$$PUSHOVER_TOKEN" | grep -Eqx '[A-Za-z0-9]{30}' \
+                || { echo "PUSHOVER_TOKEN is not a 30-char Pushover token" >&2; exit 1; }
+              printf '%s' "$$PUSHOVER_USER" | grep -Eqx '[A-Za-z0-9]{30}' \
+                || { echo "PUSHOVER_USER is not a 30-char Pushover user key" >&2; exit 1; }
+              sed -e "s/__VIRUSTOTAL_API_KEY__/$$VIRUSTOTAL_API_KEY/" \
+                  -e "s/__PUSHOVER_TOKEN__/$$PUSHOVER_TOKEN/" \
+                  -e "s/__PUSHOVER_USER__/$$PUSHOVER_USER/" \
                 /template/ossec.conf > /rendered/ossec.conf
-              grep -q "$$VIRUSTOTAL_API_KEY" /rendered/ossec.conf
+              # Not `! grep`: set -e ignores negated commands, so that would
+              # never abort.
+              if grep -q "__[A-Z_]*__" /rendered/ossec.conf; then
+                echo "unrendered placeholder left in ossec.conf" >&2; exit 1
+              fi
               echo "ossec.conf rendered"
           env:
             - name: VIRUSTOTAL_API_KEY
@@ -53,6 +63,16 @@ spec:
                 secretKeyRef:
                   name: wazuh-virustotal
                   key: api-key
+            - name: PUSHOVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-pushover
+                  key: token
+            - name: PUSHOVER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-pushover
+                  key: user
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -147,7 +167,7 @@ spec:
             limits:
               memory: 1536Mi
           volumeMounts:
-            # Rendered by the render-config init container (VirusTotal key).
+            # Rendered by the render-config init container (integration keys).
             - name: rendered-config
               mountPath: /wazuh-config-mount/etc/ossec.conf
               subPath: ossec.conf
@@ -166,6 +186,14 @@ spec:
             - name: ruleset
               mountPath: /wazuh-config-mount/etc/decoders/local_decoder.xml
               subPath: local_decoder.xml
+              readOnly: true
+            - name: integrations
+              mountPath: /wazuh-config-mount/integrations/custom-pushover
+              subPath: custom-pushover
+              readOnly: true
+            - name: integrations
+              mountPath: /wazuh-config-mount/integrations/custom-pushover.py
+              subPath: custom-pushover.py
               readOnly: true
             - name: ruleset
               mountPath: /wazuh-config-mount/etc/shared/default/agent.conf
@@ -211,6 +239,10 @@ spec:
         - name: config
           configMap:
             name: wazuh-manager-conf
+        - name: integrations
+          configMap:
+            name: wazuh-manager-integrations
+            defaultMode: 0755
         - name: rendered-config
           emptyDir:
             medium: Memory
