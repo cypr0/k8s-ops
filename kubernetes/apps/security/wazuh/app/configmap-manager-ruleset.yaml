@@ -167,7 +167,7 @@ data:
     <group name="local,noise,">
       <!-- OPNsense app-detection signatures (Suricata "OPN_*" rulesets). They
            block by policy rather than detect a threat; ~520 alerts a week.
-           The block itself still happens in OPNsense -- this only keeps them
+           The block itself still happens in OPNsense; this only keeps them
            out of the alert index. -->
       <rule id="100900" level="0">
         <if_sid>86601</if_sid>
