@@ -120,7 +120,11 @@ spec:
             Host             loki.monitoring.svc.cluster.local
             Port             3100
             Labels           job=talos
-            Label_Keys       $hostname
+            # Talos names the field `node` (machine.logging extraTags.node in
+            # talconfig.yaml), not `hostname`. $hostname matched nothing, so
+            # until 2026-09-27 every Talos stream had no per-node label.
+            # Kernel (kmsg) lines carry no node tag at all and stay unlabelled.
+            Label_Keys       $node
             Line_Format      json
             Retry_Limit      5
 
