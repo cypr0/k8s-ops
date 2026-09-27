@@ -34,6 +34,68 @@ spec:
     tolerations:
       - operator: Exists
 
+    # Used by the kube-audit Lua filter as the syslog hostname, so Wazuh can
+    # tell which control-plane apiserver handled a request.
+    env:
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+
+    # ── Kubernetes API audit → Wazuh ─────────────────────────────────────
+    # Talos writes the apiserver audit log at Metadata level for EVERY request
+    # (~100 MB per 15 min per control-plane node). This keeps only what is
+    # security-relevant; measured on a 1h sample (2026-09-27): 1 event out of
+    # ~11,300 -- human activity and incidents are what shows up.
+    luaScripts:
+      kube_audit.lua: |
+        -- Kept (everything else is dropped):
+        --   * pods/exec, pods/attach, pods/portforward, nodes/proxy
+        --   * any write, and any secret access, by a non-"system:" user (humans)
+        --   * writes to security-relevant resources by anyone (RBAC, secrets,
+        --     webhooks, CRDs, policies, namespaces), minus status/token noise
+        --   * 401/403 responses
+        --   * anonymous requests other than the kubelet's own health probes
+        local WATCH = {
+          secrets = true, serviceaccounts = true, namespaces = true,
+          clusterroles = true, clusterrolebindings = true, roles = true, rolebindings = true,
+          mutatingwebhookconfigurations = true, validatingwebhookconfigurations = true,
+          customresourcedefinitions = true, certificatesigningrequests = true,
+          networkpolicies = true, ciliumnetworkpolicies = true,
+          ciliumclusterwidenetworkpolicies = true, clusterpolicies = true, policies = true,
+        }
+        local WRITES = { create = true, update = true, patch = true, delete = true, deletecollection = true }
+        local SESSION = { exec = true, attach = true, portforward = true }
+        local QUIET_SUB = { status = true, token = true, approval = true }
+        local PROBES = { ["/readyz"] = true, ["/livez"] = true, ["/healthz"] = true }
+        local NODE = os.getenv("NODE_NAME") or "unknown"
+
+        function keep_security_relevant(tag, ts, r)
+          if r["stage"] ~= "ResponseComplete" or r["log"] == nil then
+            return -1, 0, 0
+          end
+          local o = r["objectRef"] or {}
+          local user = (r["user"] or {})["username"] or ""
+          local code = (r["responseStatus"] or {})["code"] or 0
+          local verb, res, sub = r["verb"] or "", o["resource"] or "", o["subresource"] or ""
+          local human = user ~= "" and string.sub(user, 1, 7) ~= "system:"
+          local path = string.match(r["requestURI"] or "", "^[^?]*") or ""
+
+          local keep = (res == "pods" and SESSION[sub])
+            or (res == "nodes" and sub == "proxy")
+            or (human and (WRITES[verb] or res == "secrets"))
+            or (WRITES[verb] and WATCH[res] and not QUIET_SUB[sub])
+            or code == 401 or code == 403
+            or (user == "system:anonymous" and not PROBES[path])
+          if not keep then
+            return -1, 0, 0
+          end
+          -- Only what the syslog output needs: the untouched JSON line, plus
+          -- header fields. Keeps the record small and the JSON exactly as the
+          -- apiserver wrote it.
+          return 1, ts, { log = r["log"], appname = "kube-audit", node = NODE }
+        end
+
     resources:
       requests:
         cpu: 20m
@@ -94,6 +156,24 @@ spec:
             Format        json
             Tag           talos.log
 
+        # ── Kubernetes API audit log (control-plane nodes only) ──────────
+        # The file only exists on control-plane nodes; on workers this input
+        # just finds nothing. Talos rotates by rename every ~100 MB, which
+        # tail follows (Rotate_Wait). The DB keeps the offset across pod
+        # restarts so nothing is re-sent or skipped.
+        [INPUT]
+            Name              tail
+            Path              /var/log/audit/kube/kube-apiserver.log
+            Tag               kube.audit
+            DB                /var/log/flb-kube-audit.db
+            Read_from_Head    false
+            Refresh_Interval  5
+            Rotate_Wait       30
+            Buffer_Chunk_Size 128k
+            Buffer_Max_Size   1M
+            Skip_Long_Lines   On
+            Mem_Buf_Limit     16MB
+
       filters: |
         # Add job label for Loki (Talos kernel/service logs)
         [FILTER]
@@ -112,6 +192,22 @@ spec:
             Reserve_Data  On
             Preserve_Key  On
 
+        # kube.audit: parse the JSON for the Lua filter, but keep the raw
+        # line (Preserve_Key) -- that raw line is what goes to Wazuh.
+        [FILTER]
+            Name          parser
+            Match         kube.audit
+            Key_Name      log
+            Parser        json
+            Reserve_Data  On
+            Preserve_Key  On
+
+        [FILTER]
+            Name          lua
+            Match         kube.audit
+            script        /fluent-bit/scripts/kube_audit.lua
+            call          keep_security_relevant
+
       outputs: |
         # ── Loki (Talos kernel/service logs) ─────────────────────────────
         [OUTPUT]
@@ -127,6 +223,23 @@ spec:
             Label_Keys       $node
             Line_Format      json
             Retry_Limit      5
+
+        # ── Wazuh (Kubernetes API audit, security-relevant events only) ──
+        # BSD/RFC3164 framing on purpose: Wazuh's pre-decoder recognises that
+        # header and sets program_name "kube-audit", which its local decoder
+        # keys on. Syslog_MaxSize raised from the 1 KiB default, which would
+        # cut audit events in half.
+        [OUTPUT]
+            Name                syslog
+            Match               kube.audit
+            Host                wazuh-syslog.wazuh.svc.cluster.local
+            Port                514
+            Mode                udp
+            Syslog_Format       rfc3164
+            Syslog_MaxSize      65000
+            Syslog_Hostname_Key node
+            Syslog_Appname_Key  appname
+            Syslog_Message_Key  log
 
     # Expose the Talos log port on pods. The chart also adds this entry to the
     # Service, which requires a valid `port` (1-65535); without it the Service

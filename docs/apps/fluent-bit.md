@@ -63,3 +63,12 @@ That retired four custom parsers, eight filters, six of seven outputs, the OpenS
 
 ---
 _Cite every non-obvious claim with a repo-root-relative file path (e.g. `kubernetes/apps/security/authentik/app/helmrelease.yaml`), not a bare filename — this doc lives under `docs/apps/`, so relative paths must resolve from there._
+
+## Kubernetes API audit → Wazuh (since 2026-09-27)
+
+A second pipeline tails `/var/log/audit/kube/kube-apiserver.log` (control-plane
+nodes only; the file does not exist on workers), filters it with
+`kube_audit.lua` down to security-relevant events and sends those to the Wazuh
+manager as BSD syslog (`wazuh-syslog.wazuh.svc`, 514/UDP). Nothing from this
+pipeline goes to Loki. Offsets are kept in `/var/log/flb-kube-audit.db` on the
+host. Rules and levels: `docs/apps/wazuh.md`, "Kubernetes API audit".

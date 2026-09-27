@@ -1,5 +1,5 @@
 ---
-# Fluent Bit: Talos node logs in, Loki out. Nothing else.
+# Fluent Bit: Talos node logs in, Loki out; filtered API audit log to Wazuh.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -41,7 +41,7 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
-    # Loki -- the only sink left.
+    # Loki (Talos node logs).
     - toEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
@@ -50,3 +50,13 @@ spec:
         - ports:
             - port: "3100"
               protocol: TCP
+    # Wazuh manager remote syslog: filtered Kubernetes API audit events
+    # (kube_audit.lua in helmrelease.yaml).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-manager
+      toPorts:
+        - ports:
+            - port: "514"
+              protocol: UDP

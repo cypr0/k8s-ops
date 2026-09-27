@@ -325,6 +325,38 @@ the falcosidekick pods.
 - **Suppress noise in Falco** (`homelab-rules.yaml`), not in Wazuh, so Loki
   and Wazuh agree.
 
+### Kubernetes API audit
+
+Talos writes the kube-apiserver audit log at Metadata level for every request
+to `/var/log/audit/kube/kube-apiserver.log` on each control-plane node — about
+100 MB per 15 minutes per node. Fluent Bit (already a DaemonSet on all nodes,
+with `/var/log` mounted) tails it and **`kube_audit.lua` drops all but the
+security-relevant events** before sending them to `wazuh-syslog` (BSD syslog,
+program `kube-audit`). On a 1-hour sample that left 1 event of ~11,300.
+
+Kept by the Lua filter: pods exec/attach/portforward, nodes/proxy; any write
+or secret access by a non-`system:` user; writes to RBAC, secrets,
+serviceaccounts, webhooks, CRDs, network/Kyverno policies and namespaces by
+anyone (minus status/token subresources); 401/403; anonymous requests other
+than the kubelet's `/readyz`/`/livez` probes.
+
+| Rule | Event | Level |
+| --- | --- | --- |
+| 100401 | anything else the filter kept (mostly Flux/controllers) | 3 |
+| 100402 / 100403 | pods exec/attach/portforward, nodes/proxy | 8 |
+| 100404 | a human reads/lists/changes a Secret | 6 |
+| 100405 | a human writes anything | 5 |
+| **100406** | RBAC or admission-webhook change **not by Flux** | **10** (pages) |
+| 100407 / 100408 / 100409 | 403 / 401 / anonymous | 5 / 7 / 7 |
+| **100410** | same user denied 10× in 2 min | **10** |
+
+- The Talos admin kubeconfig authenticates as `admin`, so every `kubectl`
+  action of yours shows up as 100402/100404/100405 — that is the point.
+- Syslog_MaxSize is raised to 65000: the Fluent Bit default of 1 KiB would
+  truncate every audit event.
+- If an event you care about is missing, the filter in Fluent Bit is where
+  it was dropped; the raw log on the node has everything.
+
 ### Agent configuration is central
 
 `agent.conf` in `configmap-manager-ruleset.yaml` is pushed to every agent
