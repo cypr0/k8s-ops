@@ -1,0 +1,33 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/monitoring.coreos.com/prometheusrule_v1.json
+# Custom alert, additional to the chart's own defaultRules (helmrelease.yaml).
+#
+# Context: docs/incidents/2026-09-20-cilium-cnp-scrape-target-drop.md. The
+# chart's built-in `TargetDown` rule (group `general.rules`) already fires on
+# >10% of a job's targets being down for 10m -- but that incident's targets
+# were down 100% of the time, forever, since the job was first added. A target
+# that has *never once* succeeded produces a `up` time series stuck at 0
+# rather than "missing," so TargetDown *should* have caught it and did not
+# fire historically (root cause of that gap not fully re-derived here -- this
+# rule is deliberately independent and simpler, as a second line of defense,
+# not a replacement).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: scrape-target-sustained-down
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: kube-prometheus-stack
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: scrape-target-sustained-down
+      rules:
+        - alert: ScrapeTargetSustainedDown
+          annotations:
+            description: '{{ $labels.job }}/{{ $labels.instance }} in namespace {{ $labels.namespace }} has reported up == 0 continuously for at least 24h. This catches targets that are down from the moment they''re first scraped (e.g. a missing CiliumNetworkPolicy port), which the percentage-based TargetDown alert can miss if the target never had a healthy baseline. See docs/incidents/2026-09-20-cilium-cnp-scrape-target-drop.md.'
+            summary: A scrape target has been down for a sustained period (24h+).
+          expr: max_over_time(up[24h]) == 0
+          for: 0m
+          labels:
+            severity: warning
