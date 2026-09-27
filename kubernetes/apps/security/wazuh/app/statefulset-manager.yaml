@@ -118,6 +118,10 @@ spec:
               subPath: local_rules.xml
               readOnly: true
             - name: ruleset
+              mountPath: /wazuh-config-mount/etc/decoders/local_decoder.xml
+              subPath: local_decoder.xml
+              readOnly: true
+            - name: ruleset
               mountPath: /wazuh-config-mount/etc/shared/default/agent.conf
               subPath: agent.conf
               readOnly: true

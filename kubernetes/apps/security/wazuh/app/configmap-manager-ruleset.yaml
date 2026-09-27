@@ -75,6 +75,37 @@ data:
     </agent_config>
 
   # ---------------------------------------------------------------------------
+  # Local decoders. Children of image decoders, so they only run where the
+  # parent matched and none of the image's own children did.
+  # ---------------------------------------------------------------------------
+  local_decoder.xml: |-
+    <!-- Unbound query log, every record type:
+           info: 10.10.0.2 example.com. HTTPS IN
+         The image's unbound-a decoder only extracts srcip/url for A and AAAA,
+         and because it has no prematch it is always the child chosen, so a
+         differently-named sibling here would never run. Reusing the name
+         makes analysisd evaluate this regex as part of the same decoder.
+         Separate field names so nothing collides with srcip/url on A/AAAA
+         lines; the literal "." strips the trailing dot, matching the list. -->
+    <decoder name="unbound-a">
+      <parent>unbound</parent>
+      <regex> info: (\S+) (\S+). (\S+) IN$</regex>
+      <order>dns_client,dns_query,dns_type</order>
+    </decoder>
+
+    <!-- OPNsense logs authentication as program "audit", which the image
+         claims for Solaris BSM (0290-solaris_decoders.xml). Hence a child of
+         that decoder rather than a parent of our own:
+           user root authenticated successfully for sshd [using ...]
+           user root could not authenticate for sshd. [using ...] -->
+    <decoder name="opnsense-audit">
+      <parent>solaris_bsm</parent>
+      <prematch>^user \S+ authenticated successfully for |^user \S+ could not authenticate for </prematch>
+      <regex>^user (\S+) \.+ for (\w+)</regex>
+      <order>dstuser,service</order>
+    </decoder>
+
+  # ---------------------------------------------------------------------------
   # Local rules, range 100000-100999. List files are filled by the
   # wazuh-ioc-feeds CronJob (cronjob-ioc-feeds.yaml); until its first run they
   # do not exist, which analysisd reports as a warning and otherwise ignores.
@@ -161,6 +192,46 @@ data:
           <id>T1078</id>
         </mitre>
         <group>authentication_success,</group>
+      </rule>
+    </group>
+
+    <group name="local,opnsense,">
+      <!-- Any record type (HTTPS/type 65 above all, which Apple clients send
+           alongside every lookup), via the dns_* fields from the local
+           unbound-a decoder. The image leaves these at the bare 500002
+           grouping rule. Overlaps 100120 for A/AAAA, which is harmless. -->
+      <rule id="100121" level="12">
+        <if_sid>500002</if_sid>
+        <list field="dns_query" lookup="match_key">etc/lists/ioc-domains</list>
+        <description>DNS: $(dns_client) resolved known malicious domain $(dns_query) ($(dns_type), abuse.ch)</description>
+        <mitre>
+          <id>T1071.004</id>
+        </mitre>
+        <group>malware,c2,</group>
+      </rule>
+
+      <!-- OPNsense's own authentication log (SSH, web GUI, VPN). Decoded by
+           opnsense-audit in local_decoder.xml; without it these lines fall
+           into the Solaris BSM decoder and are dropped at level 0. -->
+      <rule id="100150" level="3">
+        <if_sid>6100</if_sid>
+        <match>authenticated successfully for</match>
+        <description>OPNsense: user $(dstuser) authenticated for $(service)</description>
+        <group>authentication_success,</group>
+      </rule>
+      <rule id="100151" level="5">
+        <if_sid>6100</if_sid>
+        <match>could not authenticate for</match>
+        <description>OPNsense: authentication failed for user $(dstuser) on $(service)</description>
+        <group>authentication_failed,</group>
+      </rule>
+      <rule id="100152" level="10" frequency="6" timeframe="120">
+        <if_matched_sid>100151</if_matched_sid>
+        <description>OPNsense: repeated authentication failures (possible brute force)</description>
+        <mitre>
+          <id>T1110</id>
+        </mitre>
+        <group>authentication_failures,</group>
       </rule>
     </group>
 
