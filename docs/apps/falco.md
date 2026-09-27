@@ -79,6 +79,12 @@ either**: `http_output` was not set (a "Forward to Falcosidekick via HTTP"
 comment sat above the falcoctl block with nothing under it). The chart only
 configures it for its bundled subchart, and this repo runs Falcosidekick as a
 separate HelmRelease. So until then Falco events existed only in the Falco
-pods' stdout, and the Loki/`source=falco` path was empty as well. Quick check
-that the chain is alive: Falcosidekick logs `Loki - POST OK` / Syslog lines
-per event, and Wazuh shows rules 1003xx.
+pods' stdout, and the Loki path was empty as well (it also needed a Loki
+CiliumNetworkPolicy entry for falcosidekick, added the same day). Quick check
+that the chain is alive: Falcosidekick logs `Loki - POST OK (204)` per event,
+and Wazuh shows rules 1003xx.
+
+**Querying Falco events in Loki:** use `{source="syscall"}`, not
+`{source="falco"}`. Falcosidekick sets Falco's own `source` field as a label,
+which overrides `extralabels: "source=falco"`. Useful labels: `rule`,
+`priority`, `k8s_ns_name`, `k8s_pod_name`.

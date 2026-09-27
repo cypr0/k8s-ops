@@ -37,6 +37,10 @@ spec:
         hostport: "http://loki.monitoring.svc.cluster.local:3100"
         minimumpriority: warning
         tenant: ""
+        # Overridden in practice: Falcosidekick also labels each stream with
+        # Falco's own `source` field ("syscall"), which wins. Query Loki with
+        # {source="syscall"}. Kept only so a future non-syscall source still
+        # carries a hint.
         extralabels: "source=falco"
 
       # Everything warning+ goes to Wazuh, which is the single place that
