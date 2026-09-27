@@ -105,8 +105,8 @@ None yet — this incident's remediation was entirely live/manual. See Action it
 ## Action items
 - [x] Live remediation applied — single healthy Postfix pod on chart 2.8.0, HelmRelease `Ready: True`
 - [x] Postmortem written (this file)
-- [ ] **Decide whether to commit `strategy: Recreate` permanently** for `mailu-postfix` in `kubernetes/apps/mail/mailu/app/helmrelease.yaml` (via the chart's `deployment.strategy` value override, if supported, or a Kustomize patch) so this can never recur on a future chart bump — as of this postmortem the fix is live-only and will NOT survive the next Helm reconcile if the chart's own template reasserts `RollingUpdate`. **This is the most important open item** — without it, the exact same deadlock can and will recur on any future Postfix image bump.
-- [ ] Add a "Known quirks" entry to `docs/apps/mailu.md` documenting the shared-RWX-PVC-plus-RollingUpdate hazard, once the permanent-fix approach is decided
+- [x] **Committed `postfix.updateStrategy: {type: Recreate}` permanently** in `kubernetes/apps/mail/mailu/app/helmrelease.yaml` (commit `f87a044`) — the chart natively supports this via `.Values.postfix.updateStrategy` (`templates/postfix/deployment.yaml`), confirmed by pulling the chart source directly. This survives future Helm reconciles/chart bumps; the live-only `kubectl patch` from remediation is now superseded by GitOps state.
+- [ ] Add a "Known quirks" entry to `docs/apps/mailu.md` documenting the shared-RWX-PVC-plus-RollingUpdate hazard and the `updateStrategy: Recreate` fix
 - [ ] Consider whether `mailu-storage` needs to remain `ReadWriteMany` at all for Postfix specifically, or whether Postfix's queue could be split onto its own `ReadWriteOnce` volume — not investigated in this pass; may not be feasible if other Mailu components share the same PVC for unrelated reasons (not verified)
 
 ---
