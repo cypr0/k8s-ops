@@ -73,3 +73,12 @@ Measured at the same time: ~5,100 CRITICAL events a day, almost all from two
 benign sources (Mailu postfix re-creating its binaries at start, and the
 proxmox-ansible job `apk add`ing its tooling), now excluded narrowly in
 `homelab-rules.yaml`. Falco alerts now go to Wazuh, which pages Critical+.
+
+The same day it turned out Falco had **never sent anything to Falcosidekick
+either**: `http_output` was not set (a "Forward to Falcosidekick via HTTP"
+comment sat above the falcoctl block with nothing under it). The chart only
+configures it for its bundled subchart, and this repo runs Falcosidekick as a
+separate HelmRelease. So until then Falco events existed only in the Falco
+pods' stdout, and the Loki/`source=falco` path was empty as well. Quick check
+that the chain is alive: Falcosidekick logs `Loki - POST OK` / Syslog lines
+per event, and Wazuh shows rules 1003xx.
