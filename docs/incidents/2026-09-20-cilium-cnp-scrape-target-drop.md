@@ -71,8 +71,8 @@ None needed — `CiliumNetworkPolicy` changes take effect immediately on apply v
 ## Action items
 - [x] GitOps preventive change committed (`350f0e8`, `ef91190`)
 - [x] Postmortem written (this file)
-- [ ] Add a sustained-`up==0` alert rule so a future silent scrape-target drop is caught by monitoring itself rather than incidental discovery during unrelated work
-- [ ] Investigate and fix (or remove) the flagged-but-unresolved port `8001` "envoy proxy stats" entry in the Prometheus CNP — comment states it looks wrong (Envoy's real stats port is `19001`), not corrected in this pass
+- [x] Add a sustained-`up==0` alert rule so a future silent scrape-target drop is caught by monitoring itself rather than incidental discovery during unrelated work. **Done 2026-09-27**: added `PrometheusRule` `scrape-target-sustained-down` (`kubernetes/apps/monitoring/kube-prometheus-stack/app/prometheusrule.yaml`) firing `ScrapeTargetSustainedDown` on `max_over_time(up[24h]) == 0` — a deliberately independent second line of defense alongside the chart's existing percentage-based `TargetDown` rule (confirmed live: already present since 2026-06-01, `general.rules` group, currently `state=inactive, health=ok`).
+- [x] Investigate and fix (or remove) the flagged-but-unresolved port `8001` "envoy proxy stats" entry in the Prometheus CNP. **Done 2026-09-27**: confirmed via repo-wide grep that no component actually serves on `8001` — removed the entry from `kubernetes/apps/monitoring/kube-prometheus-stack/app/ciliumnetworkpolicy.yaml`; `19001` (the correct Envoy stats port) remains.
 - [ ] Audit whether any *other* CiliumNetworkPolicy with an explicit port allow-list (rather than an entity-only rule) has drifted out of sync with its component's actual ports the same way — this pass only checked Prometheus's own scrape targets, not every CNP in the repo
 
 ---

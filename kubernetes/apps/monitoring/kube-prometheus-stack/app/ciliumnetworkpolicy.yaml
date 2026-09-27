@@ -101,8 +101,6 @@ spec:
               protocol: TCP
             - port: "7979" # cloudflare-dns (external-dns)
               protocol: TCP
-            - port: "8001" # unused; kept pending verification, see 19001 below
-              protocol: TCP
             - port: "9153" # coredns
               protocol: TCP
             - port: "9402" # cert-manager, cainjector, webhook
@@ -111,7 +109,7 @@ spec:
               protocol: TCP
             - port: "9965" # hubble
               protocol: TCP
-            - port: "19001" # envoy proxy admin/stats (NOT 8001)
+            - port: "19001" # envoy proxy admin/stats
               protocol: TCP
             - port: "8080" # kube-state-metrics, gatus, flux controllers, various
               protocol: TCP
