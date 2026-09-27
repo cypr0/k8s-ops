@@ -1,0 +1,71 @@
+---
+# Custom integrations for wazuh-integratord. Mounted under
+# /wazuh-config-mount/integrations/, which the entrypoint copies over
+# /var/ossec/integrations on start.
+#
+# integratord executes integrations/<name> directly; the image's own ones are a
+# shell wrapper plus <name>.py, and this follows the same shape. Mode 0755
+# because the copy lands as root:root and integratord runs as the wazuh user.
+# No secrets in here: token and user key arrive as the api_key argument.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-manager-integrations
+data:
+  custom-pushover: |
+    #!/bin/sh
+    exec /var/ossec/framework/python/bin/python3 /var/ossec/integrations/custom-pushover.py "$@"
+  custom-pushover.py: |-
+    #!/var/ossec/framework/python/bin/python3
+    """Send a Wazuh alert to Pushover.
+
+    Called by wazuh-integratord as: custom-pushover <alert_file> <api_key> <hook_url>
+    api_key is "<app token>:<user key>", rendered from 1Password.
+    """
+    import json
+    import sys
+
+    # The embedded Python has no system CA bundle; requests brings certifi.
+    import requests
+
+    DASHBOARD = "https://wazuh.${SECRET_DOMAIN}"
+    FIELDS = ("srcip", "dstip", "dns_client", "dns_query", "url", "dstuser", "service")
+
+    def main():
+        alert_file, api_key, hook_url = sys.argv[1:4]
+        token, _, user = api_key.partition(":")
+        with open(alert_file) as fh:
+            alert = json.load(fh)
+
+        rule = alert.get("rule", {})
+        level = int(rule.get("level", 0))
+        agent = alert.get("agent", {}).get("name", "?")
+        data = alert.get("data", {})
+
+        lines = [rule.get("description", "(no description)")]
+        for key in FIELDS:
+            if data.get(key):
+                lines.append(f"{key}: {data[key]}")
+        path = alert.get("syscheck", {}).get("path")
+        if path:
+            lines.append(f"file: {path}")
+        vt = data.get("virustotal", {})
+        if vt.get("positives"):
+            lines.append(f"VirusTotal: {vt['positives']}/{vt.get('total')} engines")
+        lines.append(f"rule {rule.get('id')} | {alert.get('timestamp', '')}")
+
+        resp = requests.post(hook_url, timeout=10, data={
+            "token": token,
+            "user": user,
+            "title": f"Wazuh L{level} | {agent}",
+            "message": "\n".join(lines)[:1000],
+            # 1 = high: bypasses quiet hours. Reserved for 12+ (C2 contact,
+            # malware hashes, VirusTotal detections, logins from attacker IPs).
+            "priority": 1 if level >= 12 else 0,
+            "url": DASHBOARD,
+            "url_title": "Wazuh dashboard",
+        })
+        resp.raise_for_status()
+
+    if __name__ == "__main__":
+        main()

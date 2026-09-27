@@ -12,6 +12,7 @@ resources:
   - ./configmap-manager.yaml
   - ./configmap-dashboard.yaml
   - ./configmap-manager-ruleset.yaml
+  - ./configmap-manager-integrations.yaml
   - ./statefulset-indexer.yaml
   - ./statefulset-manager.yaml
   - ./deployment-dashboard.yaml
