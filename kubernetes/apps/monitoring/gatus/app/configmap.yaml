@@ -58,6 +58,27 @@ data:
         alerts:
           - type: pushover
 
+      # Queries a PUBLIC resolver directly (1.1.1.1), deliberately bypassing
+      # this cluster's own CoreDNS/k8s-gateway -- every other check above
+      # resolves in-cluster and would have stayed green through the entire
+      # 2026-09-20 incident where external-dns silently stopped publishing
+      # public records for 7 hostnames (see
+      # docs/incidents/2026-09-20-external-dns-annotation-prefix-rename-breaks-public-dns.md).
+      # id.${SECRET_DOMAIN} (Authentik) was one of the affected hostnames and
+      # is already the first endpoint in this file, so it doubles as a good
+      # canary for "is external-dns actually publishing records right now."
+      - name: Public DNS (external-dns canary)
+        group: Infrastructure
+        url: "1.1.1.1"
+        interval: 5m
+        dns:
+          query-name: "id.${SECRET_DOMAIN}"
+          query-type: "A"
+        conditions:
+          - "[DNS_RCODE] == NOERROR"
+        alerts:
+          - type: pushover
+
       # ── Internal cluster services ──────────────────────────────────────
       - name: Prometheus
         group: Monitoring

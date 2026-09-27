@@ -72,8 +72,8 @@ None needed beyond the GitOps commits below — `external-dns` re-created the mi
 ## Action items
 - [x] GitOps preventive change committed (`0b4fbbd`, `c552cf3`)
 - [x] Postmortem written (this file)
-- [ ] Add a Gatus check that resolves externally-routed hostnames against a public DNS resolver from outside the cluster's own view, so a repeat of this exact failure mode (correct in-cluster resolution, broken public resolution) would actually alert
-- [ ] Audit every other `providerSpecific` annotation in the repo for the same old-prefix-only pattern — only Mailu and the main Envoy Gateway were checked/fixed in this pass; other DNSEndpoint/Gateway/HTTPRoute resources with `external-dns.alpha.kubernetes.io/...` annotations were not exhaustively re-audited
+- [x] Add a Gatus check that resolves externally-routed hostnames against a public DNS resolver from outside the cluster's own view. **Done 2026-09-27**: added a `dns`-type Gatus endpoint ("Public DNS (external-dns canary)") that queries `1.1.1.1` directly for `id.${SECRET_DOMAIN}` and asserts `[DNS_RCODE] == NOERROR` — `kubernetes/apps/monitoring/gatus/app/configmap.yaml`, egress allowed via `kubernetes/apps/monitoring/gatus/app/ciliumnetworkpolicy.yaml`.
+- [x] Audit every other `providerSpecific` annotation in the repo for the same old-prefix-only pattern. **Done 2026-09-27**: grepped the full repo for `external-dns.alpha.kubernetes.io`/`external-dns.kubernetes.io` — only `kubernetes/apps/mail/mailu/app/dnsendpoint.yaml` and `kubernetes/apps/network/envoy-gateway/app/envoy.yaml` carry `providerSpecific` overrides, and both already declare both prefixes (this incident's own fix). Every `HTTPRoute` in the repo has no `external-dns` annotations of its own (they inherit publication from the two Gateways already fixed); `kubernetes/apps/network/cloudflare-tunnel/app/dnsendpoint.yaml` uses a plain CNAME target with no `providerSpecific` keys and is unaffected. No further drift found.
 - [ ] Pin down the exact `external-dns` version-bump commit/date that introduced the regression, to bound how long the outage actually lasted (currently unknown — could be days to weeks)
 
 ---
