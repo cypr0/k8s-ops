@@ -52,6 +52,13 @@ data:
       <rootcheck>
         <check_ports>no</check_ports>
       </rootcheck>
+
+      <!-- Outcome of the quarantine active response (rules 100170-100172).
+           Not collected by the macOS agent by default. -->
+      <localfile>
+        <log_format>syslog</log_format>
+        <location>/Library/Ossec/logs/active-responses.log</location>
+      </localfile>
     </agent_config>
 
     <agent_config os="Linux">
@@ -101,6 +108,15 @@ data:
       <order>dns_client,dns_query,dns_type</order>
     </decoder>
 
+    <!-- Quarantine active response on macOS (../agents/macos/quarantine):
+           2026/09/27 19:44:02 wazuh-quarantine: quarantined '<file>' '<dest>' rule 100165
+         The third field is the destination on success, the reason otherwise. -->
+    <decoder name="wazuh-quarantine">
+      <prematch>wazuh-quarantine: </prematch>
+      <regex>wazuh-quarantine: (\w+) '(\.*)' '(\.*)' rule (\S+)$</regex>
+      <order>quarantine.action,quarantine.file,quarantine.detail,quarantine.rule</order>
+    </decoder>
+
     <!-- OPNsense logs authentication as program "audit", which the image
          claims for Solaris BSM (0290-solaris_decoders.xml). Hence a child of
          that decoder rather than a parent of our own:
@@ -142,6 +158,52 @@ data:
           <id>T1204.002</id>
         </mitre>
         <group>malware,</group>
+      </rule>
+
+      <!-- Active response triggers (quarantine on the MacBook). Separate
+           children so the response is scoped to macOS paths, whatever the
+           parent matched. Same path set as 100160 and as the script's own
+           allow-list. -->
+      <rule id="100101" level="14">
+        <if_sid>100100</if_sid>
+        <field name="file" type="pcre2">^/Users/[^/]+/Downloads/|^/Applications/|/Library/Launch(Agents|Daemons)/</field>
+        <description>FIM: known malware hash in $(file) -- quarantining</description>
+        <mitre>
+          <id>T1204.002</id>
+        </mitre>
+        <group>malware,active_response,</group>
+      </rule>
+
+      <!-- 87105 fires from a single engine; that is too trigger-happy for an
+           automatic move (adware/PUA flags on legitimate tools). 5+ engines
+           is a clear verdict. -->
+      <rule id="100165" level="12">
+        <if_sid>87105</if_sid>
+        <field name="virustotal.positives" type="pcre2">^([5-9]|[1-9][0-9]+)$</field>
+        <description>VirusTotal: $(virustotal.positives)/$(virustotal.total) engines flag $(virustotal.source.file) -- quarantining</description>
+        <mitre>
+          <id>T1204.002</id>
+        </mitre>
+        <group>malware,virustotal,active_response,</group>
+      </rule>
+
+      <rule id="100170" level="12">
+        <decoded_as>wazuh-quarantine</decoded_as>
+        <field name="quarantine.action">^quarantined$</field>
+        <description>Active response: moved $(quarantine.file) into quarantine ($(quarantine.detail))</description>
+        <group>active_response,malware,</group>
+      </rule>
+      <rule id="100171" level="12">
+        <decoded_as>wazuh-quarantine</decoded_as>
+        <field name="quarantine.action">^failed$</field>
+        <description>Active response: quarantine of $(quarantine.file) FAILED: $(quarantine.detail)</description>
+        <group>active_response,malware,</group>
+      </rule>
+      <rule id="100172" level="5">
+        <decoded_as>wazuh-quarantine</decoded_as>
+        <field name="quarantine.action">^skipped$</field>
+        <description>Active response: quarantine skipped for $(quarantine.file): $(quarantine.detail)</description>
+        <group>active_response,</group>
       </rule>
 
       <!-- OPNsense filterlog (decoder "pf", parent rule 87700). Level above

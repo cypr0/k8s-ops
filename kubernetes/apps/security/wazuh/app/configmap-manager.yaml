@@ -213,6 +213,25 @@ data:
         <timeout_allowed>yes</timeout_allowed>
       </command>
 
+      <!-- Active response: quarantine on the MacBook. The script is NOT
+           shipped by this repo's Flux; it lives in ../agents/macos/quarantine
+           and is installed on the Mac by hand. Stateless (no timeout): the
+           file is moved, and restoring it is a deliberate manual step.
+           location "local" = the agent that raised the alert; rules
+           100101/100165 only ever match macOS paths. -->
+      <command>
+        <name>quarantine</name>
+        <executable>quarantine</executable>
+        <timeout_allowed>no</timeout_allowed>
+      </command>
+
+      <active-response>
+        <disabled>no</disabled>
+        <command>quarantine</command>
+        <location>local</location>
+        <rules_id>100101,100165</rules_id>
+      </active-response>
+
       <ruleset>
         <decoder_dir>ruleset/decoders</decoder_dir>
         <rule_dir>ruleset/rules</rule_dir>
