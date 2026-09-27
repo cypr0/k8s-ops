@@ -1,0 +1,177 @@
+---
+# Git-managed parts of the manager's ruleset and the centralised agent config.
+#
+# Each key is mounted into /wazuh-config-mount/etc/..., which the image's
+# /etc/cont-init.d/0-wazuh-init copies over /var/ossec on every start. That
+# makes Git authoritative: edits to these files through the dashboard's rule
+# editor are overwritten on the next restart. Reloader restarts the manager
+# when this ConfigMap changes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-manager-ruleset
+data:
+  # ---------------------------------------------------------------------------
+  # Pushed to every agent in the "default" group (all of them). The <agent_config>
+  # blocks are filtered by OS on the agent side and ADD to each host's local
+  # ossec.conf -- they do not replace it.
+  #
+  # Important when reading configmap-manager.yaml: the syscheck/rootcheck blocks
+  # in the manager's ossec.conf only apply to the manager container itself.
+  # Everything the agents do beyond their packaged defaults comes from here.
+  # ---------------------------------------------------------------------------
+  agent.conf: |
+    <agent_config os="Darwin">
+      <syscheck>
+        <!-- 4h instead of the packaged 12h: this adds user-writable paths,
+             which is where anything malicious on a Mac actually lands. -->
+        <frequency>14400</frequency>
+
+        <!-- /etc is a symlink to /private/etc and FIM does not follow
+             symlinks, so the packaged /etc entry has been scanning nothing
+             (0 files in the FIM database as of 2026-09-27). No report_changes:
+             that would ship the contents of /private/etc/ssh host keys. -->
+        <directories check_all="yes">/private/etc</directories>
+
+        <!-- Persistence locations. Plists carry no secrets, so diffs are on. -->
+        <directories check_all="yes" report_changes="yes">/Library/LaunchAgents,/Library/LaunchDaemons,/Users/*/Library/LaunchAgents</directories>
+
+        <!-- Arrival paths. New files here are hashed and checked against
+             etc/lists/ioc-sha256 by rule 100100. recursion_level 3 on
+             /Applications reaches Foo.app/Contents/MacOS/<binary> without
+             walking every framework inside each bundle. -->
+        <directories check_all="yes">/Users/*/Downloads</directories>
+        <directories check_all="yes" recursion_level="3">/Applications</directories>
+
+        <ignore type="sregex">\.DS_Store$|\.crdownload$|\.part$|\.download$|\.download/</ignore>
+      </syscheck>
+
+      <!-- The hidden-port check compares netstat against bind() probes, which
+           disagree constantly on macOS: ~300 false "Port ... hidden" alerts a
+           week, no true positives. -->
+      <rootcheck>
+        <check_ports>no</check_ports>
+      </rootcheck>
+    </agent_config>
+
+    <agent_config os="Linux">
+      <syscheck>
+        <!-- Real time for the places an intruder edits to keep access. These
+             paths are also under the packaged 12-hourly /etc scan; the more
+             specific entry wins. No report_changes: /etc/ssh and ~/.ssh hold
+             private keys, whose contents would end up in the indexer. -->
+        <directories check_all="yes" realtime="yes">/etc/ssh,/etc/sudoers.d,/etc/cron.d,/etc/systemd/system,/etc/pam.d</directories>
+        <directories check_all="yes" realtime="yes">/root/.ssh,/var/spool/cron/crontabs</directories>
+        <directories check_all="yes">/usr/local/bin,/usr/local/sbin</directories>
+      </syscheck>
+    </agent_config>
+
+    <agent_config os="FreeBSD">
+      <!-- The EFI system partition is FAT, whose files rootcheck reports as
+           "hidden" on every scan. -->
+      <rootcheck>
+        <ignore>/boot/efi</ignore>
+      </rootcheck>
+    </agent_config>
+
+  # ---------------------------------------------------------------------------
+  # Local rules, range 100000-100999. List files are filled by the
+  # wazuh-ioc-feeds CronJob (cronjob-ioc-feeds.yaml); until its first run they
+  # do not exist, which analysisd reports as a warning and otherwise ignores.
+  # ---------------------------------------------------------------------------
+  local_rules.xml: |-
+    <group name="local,threat_intel,">
+
+      <!-- FIM: a file whose SHA256 is on a malware feed. Same parents as the
+           image's sample rule 99901 (554 = added, 550 = modified). -->
+      <rule id="100100" level="14">
+        <if_sid>554, 550</if_sid>
+        <list field="sha256" lookup="match_key">etc/lists/ioc-sha256</list>
+        <description>FIM: file matches a known malware hash (abuse.ch): $(file)</description>
+        <mitre>
+          <id>T1204.002</id>
+        </mitre>
+        <group>malware,</group>
+      </rule>
+
+      <!-- OPNsense filterlog (decoder "pf", parent rule 87700). Level above
+           87701's 5 so this is evaluated before the generic drop rule. -->
+      <rule id="100110" level="12">
+        <if_sid>87700</if_sid>
+        <action>pass</action>
+        <list field="dstip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
+        <description>OPNsense: connection from $(srcip) to known C2 server $(dstip) was ALLOWED</description>
+        <mitre>
+          <id>T1071</id>
+        </mitre>
+        <group>malware,c2,</group>
+      </rule>
+      <rule id="100111" level="7">
+        <if_sid>87700</if_sid>
+        <action>block</action>
+        <list field="dstip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
+        <description>OPNsense: connection from $(srcip) to known C2 server $(dstip) was blocked</description>
+        <group>malware,c2,</group>
+      </rule>
+
+      <!-- Suricata alert that involves a C2 address, in either direction. -->
+      <rule id="100112" level="12">
+        <if_sid>86601</if_sid>
+        <list field="dest_ip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
+        <description>Suricata: $(alert.signature) -- destination $(dest_ip) is a known C2 server</description>
+        <group>malware,c2,</group>
+      </rule>
+      <rule id="100113" level="12">
+        <if_sid>86601</if_sid>
+        <list field="src_ip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
+        <description>Suricata: $(alert.signature) -- source $(src_ip) is a known C2 server</description>
+        <group>malware,c2,</group>
+      </rule>
+
+      <!-- Unbound query log. 500101/500102 are the image's A/AAAA rules; the
+           list stores each domain with and without the trailing dot because
+           the decoder is inconsistent between the two. -->
+      <rule id="100120" level="12">
+        <if_sid>500101, 500102</if_sid>
+        <list field="url" lookup="match_key">etc/lists/ioc-domains</list>
+        <description>DNS: $(srcip) resolved known malicious domain $(url) (abuse.ch)</description>
+        <mitre>
+          <id>T1071.004</id>
+        </mitre>
+        <group>malware,c2,</group>
+      </rule>
+
+      <!-- Successful SSH login from an address on a public attacker or C2
+           list. Failed logins from the same lists are deliberately NOT raised:
+           that is most of the ~5000 brute-force attempts Proxmox sees a week. -->
+      <rule id="100130" level="12">
+        <if_sid>5715</if_sid>
+        <list field="srcip" lookup="address_match_key">etc/lists/ioc-scanner-ip</list>
+        <description>sshd: successful login from $(srcip), listed as an active attacker</description>
+        <mitre>
+          <id>T1078</id>
+        </mitre>
+        <group>authentication_success,</group>
+      </rule>
+      <rule id="100131" level="14">
+        <if_sid>5715</if_sid>
+        <list field="srcip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
+        <description>sshd: successful login from $(srcip), listed as a C2 server</description>
+        <mitre>
+          <id>T1078</id>
+        </mitre>
+        <group>authentication_success,</group>
+      </rule>
+    </group>
+
+    <group name="local,noise,">
+      <!-- OPNsense app-detection signatures (Suricata "OPN_*" rulesets). They
+           block by policy rather than detect a threat; ~520 alerts a week.
+           The block itself still happens in OPNsense -- this only keeps them
+           out of the alert index. -->
+      <rule id="100900" level="0">
+        <if_sid>86601</if_sid>
+        <field name="alert.signature">^OPN_</field>
+        <description>Suricata: OPNsense app-detection match (suppressed)</description>
+      </rule>
+    </group>

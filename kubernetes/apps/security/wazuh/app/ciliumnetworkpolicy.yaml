@@ -30,11 +30,15 @@ spec:
             # since "world" here covers the whole LAN.
             - port: "514"
               protocol: UDP
-    # Wazuh API, consumed only by the dashboard.
+    # Wazuh API: the dashboard, and the daily IOC feed upload
+    # (cronjob-ioc-feeds.yaml).
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": wazuh
             app: wazuh-dashboard
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-ioc-feeds
       toPorts:
         - ports:
             - port: "55000"
@@ -275,4 +279,43 @@ spec:
       toPorts:
         - ports:
             - port: "9200"
+              protocol: TCP
+---
+# Daily IOC feed refresh (cronjob-ioc-feeds.yaml): downloads from abuse.ch and
+# friends, uploads to the Wazuh API. Its pods also carry a job-name label, so
+# wazuh-setup-jobs above selects them too; policies are additive, so that only
+# adds indexer access, which this Job never uses.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: wazuh-ioc-feeds
+  namespace: wazuh
+spec:
+  endpointSelector:
+    matchLabels:
+      app: wazuh-ioc-feeds
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-manager
+      toPorts:
+        - ports:
+            - port: "55000"
+              protocol: TCP
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
               protocol: TCP
