@@ -43,11 +43,15 @@ spec:
         - ports:
             - port: "55000"
               protocol: TCP
-    # Falco runtime alerts from Falcosidekick (remote syslog).
+    # Falco runtime alerts from Falcosidekick, and the filtered Kubernetes
+    # API audit log from Fluent Bit (remote syslog).
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": falco
             app.kubernetes.io/name: falcosidekick
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: fluent-bit
       toPorts:
         - ports:
             - port: "514"

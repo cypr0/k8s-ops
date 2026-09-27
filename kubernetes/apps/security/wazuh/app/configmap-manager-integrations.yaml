@@ -60,6 +60,14 @@ data:
             for key in ("container.image.repository", "proc.cmdline", "fd.name"):
                 if falco.get(key):
                     lines.append(f"{key.split('.')[-1]}: {falco[key]}")
+        # Kubernetes API audit (via Fluent Bit syslog): name the control-plane
+        # node that logged it and who did what from where.
+        if data.get("kind") == "Event" and str(data.get("apiVersion", "")).startswith("audit.k8s.io"):
+            agent = f"k8s@{alert.get('predecoder', {}).get('hostname', '?')}"
+            ref = data.get("objectRef", {})
+            lines.append(f"user: {data.get('user', {}).get('username', '?')}")
+            lines.append(f"{data.get('verb', '?')} {ref.get('resource', '?')} {ref.get('namespace', '')}/{ref.get('name', '')}")
+            lines.append(f"from: {', '.join(data.get('sourceIPs', []))} ({str(data.get('userAgent', ''))[:60]})")
         vt = data.get("virustotal", {})
         if vt.get("positives"):
             lines.append(f"VirusTotal: {vt['positives']}/{vt.get('total')} engines")

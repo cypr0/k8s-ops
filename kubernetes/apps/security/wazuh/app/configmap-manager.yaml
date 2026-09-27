@@ -47,7 +47,8 @@ data:
       </remote>
 
       <!-- Remote syslog, for senders that cannot run an agent: Falcosidekick
-           (Falco runtime alerts, rules 100300+), and future appliances.
+           (Falco runtime alerts, rules 100300+), Fluent Bit (Kubernetes API
+           audit, rules 100400+), and future appliances.
            OPNsense was the original user but moved to the os-wazuh-agent
            plugin (agent secsrv). Senders appear by source IP, not as agents --
            that is expected for this connection type.

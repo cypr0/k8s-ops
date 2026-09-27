@@ -126,6 +126,15 @@ data:
       <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
     </decoder>
 
+    <!-- Kubernetes API audit events from Fluent Bit (kube_audit.lua in
+         kubernetes/apps/monitoring/fluent-bit/app/helmrelease.yaml), BSD
+         syslog framed: "<14>Sep 27 20:32:06 k8s-cp-0 kube-audit: {json}".
+         The header is recognised, so program_name alone selects this. -->
+    <decoder name="kube-audit">
+      <program_name>^kube-audit$</program_name>
+      <plugin_decoder>JSON_Decoder</plugin_decoder>
+    </decoder>
+
     <!-- Quarantine active response on macOS (../agents/macos/quarantine):
            2026/09/27 19:44:02 wazuh-quarantine: quarantined '<file>' '<dest>' rule 100165
          The third field is the destination on success, the reason otherwise. -->
@@ -387,6 +396,95 @@ data:
         <list field="output_fields.fd.rip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
         <description>Falco + threat intel: $(output_fields.k8s.ns.name)/$(output_fields.k8s.pod.name) talked to known C2 $(output_fields.fd.rip) ($(rule))</description>
         <group>malware,c2,</group>
+      </rule>
+    </group>
+
+    <!-- Kubernetes API audit (Talos kube-apiserver, filtered in Fluent Bit
+         to security-relevant events only). Human = any username that does
+         not start with "system:" (the Talos admin kubeconfig is "admin"). -->
+    <group name="local,kubernetes,k8s_audit,">
+      <rule id="100400" level="0">
+        <decoded_as>kube-audit</decoded_as>
+        <field name="kind">^Event$</field>
+        <field name="apiVersion">^audit.k8s.io/</field>
+        <description>Kubernetes audit events grouped.</description>
+      </rule>
+
+      <!-- Baseline for anything the filter passed that no rule below names:
+           controller writes to RBAC, secrets, webhooks, CRDs, policies. -->
+      <rule id="100401" level="3">
+        <if_sid>100400</if_sid>
+        <description>K8s: $(user.username) $(verb) $(objectRef.resource) $(objectRef.namespace)/$(objectRef.name)</description>
+      </rule>
+
+      <rule id="100402" level="8">
+        <if_sid>100401</if_sid>
+        <field name="objectRef.resource">^pods$</field>
+        <field name="objectRef.subresource">^exec$|^attach$|^portforward$</field>
+        <description>K8s: $(user.username) opened $(objectRef.subresource) into $(objectRef.namespace)/$(objectRef.name)</description>
+        <mitre>
+          <id>T1609</id>
+        </mitre>
+      </rule>
+      <rule id="100403" level="8">
+        <if_sid>100401</if_sid>
+        <field name="objectRef.resource">^nodes$</field>
+        <field name="objectRef.subresource">^proxy$</field>
+        <description>K8s: $(user.username) used nodes/proxy on $(objectRef.name)</description>
+      </rule>
+
+      <rule id="100404" level="6">
+        <if_sid>100401</if_sid>
+        <field name="user.username" negate="yes">^system:</field>
+        <field name="objectRef.resource">^secrets$</field>
+        <description>K8s: $(user.username) $(verb) secret $(objectRef.namespace)/$(objectRef.name)</description>
+        <mitre>
+          <id>T1552.007</id>
+        </mitre>
+      </rule>
+      <rule id="100405" level="5">
+        <if_sid>100401</if_sid>
+        <field name="user.username" negate="yes">^system:</field>
+        <field name="verb">^create$|^update$|^patch$|^delete$|^deletecollection$</field>
+        <description>K8s: $(user.username) $(verb) $(objectRef.resource) $(objectRef.namespace)/$(objectRef.name)</description>
+      </rule>
+
+      <!-- RBAC and admission changes by anything other than Flux. Flux
+           applies all of them from Git, so a change from elsewhere is either
+           a human with kubectl or something that should not be doing it. -->
+      <rule id="100406" level="10">
+        <if_sid>100401</if_sid>
+        <field name="objectRef.resource">^clusterroles$|^clusterrolebindings$|^roles$|^rolebindings$|^mutatingwebhookconfigurations$|^validatingwebhookconfigurations$</field>
+        <field name="verb">^create$|^update$|^patch$|^delete$</field>
+        <field name="user.username" negate="yes">^system:serviceaccount:flux-system:</field>
+        <description>K8s: $(objectRef.resource) $(objectRef.name) changed ($(verb)) by $(user.username), not by Flux</description>
+        <mitre>
+          <id>T1098</id>
+        </mitre>
+      </rule>
+
+      <rule id="100407" level="5">
+        <if_sid>100401</if_sid>
+        <field name="responseStatus.code">^403$</field>
+        <description>K8s: forbidden: $(user.username) $(verb) $(objectRef.resource) $(objectRef.namespace)/$(objectRef.name)</description>
+      </rule>
+      <rule id="100408" level="7">
+        <if_sid>100401</if_sid>
+        <field name="responseStatus.code">^401$</field>
+        <description>K8s: unauthenticated request to $(requestURI) from $(sourceIPs)</description>
+      </rule>
+      <rule id="100409" level="7">
+        <if_sid>100401</if_sid>
+        <field name="user.username">^system:anonymous$</field>
+        <description>K8s: anonymous request $(verb) $(requestURI) from $(sourceIPs) ($(responseStatus.code))</description>
+      </rule>
+      <rule id="100410" level="10" frequency="10" timeframe="120">
+        <if_matched_sid>100407</if_matched_sid>
+        <same_field>user.username</same_field>
+        <description>K8s: $(user.username) was denied 10+ times in 2 minutes (probing permissions?)</description>
+        <mitre>
+          <id>T1069</id>
+        </mitre>
       </rule>
     </group>
 
