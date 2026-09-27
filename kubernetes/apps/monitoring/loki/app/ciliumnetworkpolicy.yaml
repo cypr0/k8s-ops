@@ -28,6 +28,17 @@ spec:
         - ports:
             - port: "3100"
               protocol: TCP
+    # Falcosidekick push (Falco events, source=falco). Missing until
+    # 2026-09-27 and never noticed, because Falco itself had never sent
+    # anything to Falcosidekick before then (see docs/apps/falco.md).
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": falco
+            app.kubernetes.io/name: falcosidekick
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
     # Fluent Bit log push (Talos node logs)
     - fromEndpoints:
         - matchLabels:
