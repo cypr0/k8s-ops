@@ -163,7 +163,11 @@ data:
         # Must not exceed the manager's version -- an agent newer than its
         # manager is unsupported. Bump together with the image tags in
         # kubernetes/apps/security/wazuh/app/.
-        wazuh_agent_version: "4.14.7-1"
+        # The manager also pushes WPK upgrades to agents, so the installed
+        # version can move ahead of this pin; with a stale pin the apt task
+        # below tries a downgrade and fails the whole play (2026-09-27: agent
+        # was already 4.14.8-1 while this still said 4.14.7-1).
+        wazuh_agent_version: "4.14.8-1"
         wazuh_authd_pass: "{{ lookup('env', 'WAZUH_AUTHD_PASS') }}"
         # Wazuh names an agent after the host's SHORT hostname, so this machine
         # would appear as bare "proxmox" next to the firewall's
@@ -766,6 +770,51 @@ data:
             enabled: yes
             state: started
 
+        # ── auditd ──────────────────────────────────────────────────────────
+        # Command-level visibility for the Wazuh agent: who ran what as whom.
+        # The agent reads /var/log/audit/audit.log through the central
+        # agent.conf (kubernetes/apps/security/wazuh/app/configmap-manager-ruleset.yaml),
+        # and the manager's audit-keys list maps the -k keys below onto Wazuh's
+        # audit rules (80700+): audit-wazuh-c = command, -w = write.
+        - name: Install auditd
+          ansible.builtin.apt:
+            name: auditd
+            state: present
+
+        - name: Deploy the Wazuh audit rules
+          ansible.builtin.copy:
+            dest: /etc/audit/rules.d/60-wazuh.rules
+            owner: root
+            group: root
+            mode: "0640"
+            content: |
+              ## Managed by k8s-ops (proxmox-ansible). Loaded by augenrules.
+              ##
+              ## Commands from login sessions only. auid is "unset" for daemons,
+              ## which keeps pvestatd, pvedaemon & co. out -- they exec root
+              ## helpers (zfs, lvs, qm) thousands of times an hour. SSH, console
+              ## and the nightly Ansible run (auid=ansible) are all captured.
+              -a always,exit -F arch=b64 -S execve -F auid!=unset -k audit-wazuh-c
+              -a always,exit -F arch=b32 -S execve -F auid!=unset -k audit-wazuh-c
+
+              ## Writes to credentials and access control.
+              -w /root/.ssh/ -p wa -k audit-wazuh-w
+              -w /home/ansible/.ssh/ -p wa -k audit-wazuh-w
+              -w /etc/ssh/sshd_config -p wa -k audit-wazuh-w
+              -w /etc/ssh/sshd_config.d/ -p wa -k audit-wazuh-w
+              -w /etc/sudoers -p wa -k audit-wazuh-w
+              -w /etc/sudoers.d/ -p wa -k audit-wazuh-w
+              -w /etc/passwd -p wa -k audit-wazuh-w
+              -w /etc/shadow -p wa -k audit-wazuh-w
+              -w /etc/group -p wa -k audit-wazuh-w
+          notify: Load audit rules
+
+        - name: Enable and start auditd
+          ansible.builtin.service:
+            name: auditd
+            enabled: yes
+            state: started
+
       handlers:
         - name: Restart wazuh-agent
           ansible.builtin.service:
@@ -792,6 +841,11 @@ data:
           ansible.builtin.service:
             name: rsyslog
             state: restarted
+
+        # augenrules merges rules.d/ into audit.rules and loads it; restarting
+        # auditd through systemd is refused (RefuseManualStop=yes).
+        - name: Load audit rules
+          ansible.builtin.command: augenrules --load
 
         - name: Restart vsftpd
           ansible.builtin.service:

@@ -64,6 +64,14 @@ data:
         <directories check_all="yes" realtime="yes">/root/.ssh,/var/spool/cron/crontabs</directories>
         <directories check_all="yes">/usr/local/bin,/usr/local/sbin</directories>
       </syscheck>
+
+      <!-- Written by auditd, installed on Proxmox by proxmox-ansible with
+           login-session execve and credential-file watch rules. A host
+           without auditd only gets a "file not found" warning. -->
+      <localfile>
+        <log_format>audit</log_format>
+        <location>/var/log/audit/audit.log</location>
+      </localfile>
     </agent_config>
 
     <agent_config os="FreeBSD">
