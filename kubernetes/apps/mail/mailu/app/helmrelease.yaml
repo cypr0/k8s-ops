@@ -201,6 +201,24 @@ spec:
           memory: 512Mi
 
     postfix:
+      # MUST be Recreate, not the chart's default RollingUpdate. postfix is a
+      # single-replica Deployment, but mailu-storage (its PVC) is
+      # ReadWriteMany -- a RollingUpdate briefly runs old+new pods together,
+      # and Postfix takes an exclusive lock on that shared queue directory:
+      # the second process to start always fails outright with "the Postfix
+      # mail system is already running" and crash-loops forever, permanently
+      # blocking the rollout (and, just as badly, blocking Helm's own
+      # automatic rollback if the upgrade fails for an unrelated reason --
+      # the rollback hits the identical shared-lock race in the opposite
+      # direction). Confirmed live 2026-09-27: a routine chart bump deadlocked
+      # for ~3.5h with Flux endlessly retrying upgrade<->rollback, each
+      # attempt spawning a second Postfix pod that immediately crash-looped
+      # against the first. See
+      # docs/incidents/2026-09-27-mailu-postfix-rollingupdate-rwx-pvc-deadlock.md.
+      # Recreate kills the old pod before starting the new one -- brief mail
+      # downtime during any Postfix image bump, but no deadlock risk.
+      updateStrategy:
+        type: Recreate
       resources:
         requests:
           cpu: 25m
