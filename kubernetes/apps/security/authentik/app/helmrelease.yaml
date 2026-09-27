@@ -158,18 +158,23 @@ spec:
         enabled: true
         minAvailable: 1
     geoip:
-      # Temporarily disabled 2026-08-16: the sidecar's geoipupdate container
-      # crash-loops on "429 LIMIT_EXCEEDED: Daily GeoIP database download
-      # limit reached" -- almost certainly triggered by this session's own
-      # repeated authentik-server/worker restarts (each restart = a fresh
-      # download attempt against MaxMind's account-wide daily quota). Because
-      # the chart runs geoip as a regular sidecar (no readinessProbe override),
-      # a crash-looping geoip container blocks the WHOLE pod's Ready
-      # condition, which took authentik-server's Service to 0 endpoints --
-      # a full cluster-wide SSO outage, not just missing geo-enrichment.
-      # Re-enable once MaxMind's daily quota resets (resets at UTC midnight
-      # for the free tier) and confirm no crash-loop before trusting it again.
-      enabled: false
+      # Was temporarily disabled 2026-08-16 after the sidecar's geoipupdate
+      # container crash-looped on "429 LIMIT_EXCEEDED: Daily GeoIP database
+      # download limit reached" -- almost certainly triggered by that
+      # session's own repeated authentik-server/worker restarts (each
+      # restart = a fresh download attempt against MaxMind's account-wide
+      # daily quota). Because the chart runs geoip as a regular sidecar (no
+      # readinessProbe override -- confirmed still true as of chart
+      # 2026.8.3, templates/server & worker deployment.yaml), a crash-
+      # looping geoip container blocks the WHOLE pod's Ready condition,
+      # which took authentik-server's Service to 0 endpoints -- a full
+      # cluster-wide SSO outage, not just missing geo-enrichment. See
+      # docs/incidents/2026-08-16-authentik-geoip-sidecar-sso-outage.md.
+      # Re-enabled 2026-09-27 -- MaxMind's daily quota has long since reset
+      # (resets at UTC midnight, free tier) and no further authentik-server/
+      # worker restart storms have occurred since. If this crash-loops again,
+      # disable and re-check the same incident doc before assuming it's new.
+      enabled: true
       editionIds: "GeoLite2-City GeoLite2-ASN"
       updateInterval: 48
       existingSecret:
