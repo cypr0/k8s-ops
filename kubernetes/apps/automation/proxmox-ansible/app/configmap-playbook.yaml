@@ -667,9 +667,10 @@ data:
         # ── Wazuh Agent ─────────────────────────────────────────────────────
         # Reports this host to the in-cluster Wazuh manager (see
         # kubernetes/apps/security/wazuh/): file integrity monitoring,
-        # rootcheck, software inventory and vulnerability detection. The
-        # firewall reaches the same manager over syslog instead, because
-        # OPNsense cannot run an agent.
+        # rootcheck, software inventory and vulnerability detection. Only the
+        # install and enrollment live here; what the agent monitors beyond its
+        # packaged defaults is pushed centrally from the manager's agent.conf
+        # (kubernetes/apps/security/wazuh/app/configmap-manager-ruleset.yaml).
         #
         # Network path: Proxmox reaches the K8s LAN (192.168.10.0/24, and with it
         # the Wazuh VIP .111 and the NFS server) directly via vmbr1, which already

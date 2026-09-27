@@ -46,11 +46,11 @@ data:
         <queue_size>131072</queue_size>
       </remote>
 
-      <!-- Remote syslog, for devices that cannot run an agent: OPNsense and its
-           Suricata IDS. Wazuh ships decoders and rules for both, so these arrive
-           as classified alerts rather than the raw text they were in OpenSearch.
-           Senders appear by source IP, not as agents -- that is expected for
-           this connection type.
+      <!-- Remote syslog, for devices that cannot run an agent. OPNsense was the
+           original user but has since moved to the os-wazuh-agent plugin
+           (agent secsrv), so nothing is expected to send here right now; kept
+           for future appliances. Senders appear by source IP, not as agents --
+           that is expected for this connection type.
            allowed-ips is the guard here: the LoadBalancer VIP is reachable from
            the whole LAN, so without it any host could inject events. -->
       <remote>
@@ -223,6 +223,13 @@ data:
         <list>etc/lists/malicious-ioc/malicious-ip</list>
         <list>etc/lists/malicious-ioc/malicious-domains</list>
         <list>etc/lists/malicious-ioc/malware-hashes</list>
+        <!-- Real feeds, refreshed daily by cronjob-ioc-feeds.yaml and used by
+             the rules in configmap-manager-ruleset.yaml. The malicious-ioc/*
+             lists above are the image's samples, reset on every start. -->
+        <list>etc/lists/ioc-c2-ip</list>
+        <list>etc/lists/ioc-scanner-ip</list>
+        <list>etc/lists/ioc-domains</list>
+        <list>etc/lists/ioc-sha256</list>
 
         <decoder_dir>etc/decoders</decoder_dir>
         <rule_dir>etc/rules</rule_dir>

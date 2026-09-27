@@ -1,0 +1,263 @@
+---
+# Daily threat-intel refresh for the manager's CDB lists.
+#
+# The image ships etc/lists/malicious-ioc/*, but those are ~200-entry samples
+# that the entrypoint overwrites on every start (they are in
+# PERMANENT_DATA_EXCP in the image's /permanent_data.env). The feeds therefore
+# live in their own files, ioc-*, which nothing else touches, and are pushed in
+# through the Wazuh API rather than written onto the manager's PVC: the API
+# already validates the CDB format, and analysisd can be reloaded in place
+# instead of restarting the whole manager.
+#
+# Rolling window instead of snapshot: the abuse.ch "recent" exports only cover
+# the last 48 hours, so each run merges into what is already uploaded and drops
+# entries not seen for TTL days. A failed source therefore never empties a
+# list -- the previous entries simply age out as usual.
+#
+# All sources are free and need no account. Rules using the lists are in
+# configmap-manager-ruleset.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wazuh-ioc-feeds
+data:
+  update.py: |
+    #!/usr/bin/env python3
+    """Merge public IOC feeds into Wazuh CDB lists and reload analysisd."""
+    import base64
+    import csv
+    import datetime
+    import io
+    import ipaddress
+    import json
+    import os
+    import re
+    import ssl
+    import sys
+    import urllib.error
+    import urllib.request
+
+    API = os.environ.get("WAZUH_API", "https://wazuh:55000")
+    USER = os.environ["API_USERNAME"]
+    PASSWORD = os.environ["API_PASSWORD"]
+    TODAY = datetime.date.today()
+
+    # The API presents the manager's self-signed certificate, issued for a
+    # name that is not the Service's. Cluster-internal and behind a
+    # CiliumNetworkPolicy, so verification is skipped for this hop only --
+    # the feed downloads below use the default, verifying context.
+    API_CTX = ssl.create_default_context()
+    API_CTX.check_hostname = False
+    API_CTX.verify_mode = ssl.CERT_NONE
+
+    UA = {"User-Agent": "k8s-ops-wazuh-ioc-feeds/1.0"}
+    DOMAIN_RE = re.compile(r"^(?=.{4,253}$)([a-z0-9_-]{1,63}\.)+[a-z]{2,63}$")
+    SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+    def fetch(url):
+        req = urllib.request.Request(url, headers=UA)
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return resp.read().decode("utf-8", "replace")
+
+    def lines(text):
+        for line in text.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                yield line
+
+    def threatfox(text):
+        # CSV rows with a quoted, space-padded third column: the IOC value.
+        for row in csv.reader(io.StringIO("\n".join(lines(text))),
+                              skipinitialspace=True):
+            if len(row) > 2:
+                yield row[2]
+
+    def public_ipv4(value):
+        # IPv4 only: a CDB key containing ':' would have to be quoted, and
+        # none of the rules match on IPv6 today. Private and reserved ranges
+        # are dropped so a sloppy feed entry can never flag LAN traffic.
+        value = value.split(":")[0].strip()
+        try:
+            ip = ipaddress.IPv4Address(value)
+        except ValueError:
+            return None
+        return str(ip) if ip.is_global else None
+
+    def domain(value):
+        value = value.strip().lower().rstrip(".")
+        return value if DOMAIN_RE.match(value) else None
+
+    def sha256(value):
+        value = value.strip().lower()
+        return value if SHA256_RE.match(value) else None
+
+    # name -> (ttl_days, normaliser, [(label, url, parser), ...])
+    LISTS = {
+        # Command-and-control servers. Matched against DESTINATION addresses
+        # (firewall, Suricata) and successful logins.
+        "ioc-c2-ip": (30, public_ipv4, [
+            ("feodo", "https://feodotracker.abuse.ch/downloads/ipblocklist.txt", lines),
+            ("threatfox", "https://threatfox.abuse.ch/export/csv/ip-port/recent/", threatfox),
+        ]),
+        # Hosts currently scanning / brute-forcing the internet. Far too common
+        # to alert on as a source by itself -- the rules only use it to raise
+        # a SUCCESSFUL login from such an address. Short TTL: these lists are
+        # full snapshots and addresses churn quickly.
+        "ioc-scanner-ip": (7, public_ipv4, [
+            ("blocklist.de", "https://lists.blocklist.de/lists/all.txt", lines),
+            ("cins", "https://cinsscore.com/list/ci-badguys.txt", lines),
+            ("et-compromised", "https://rules.emergingthreats.net/blockrules/compromised-ips.txt", lines),
+        ]),
+        "ioc-domains": (30, domain, [
+            ("threatfox", "https://threatfox.abuse.ch/export/csv/domains/recent/", threatfox),
+            ("urlhaus", "https://urlhaus.abuse.ch/downloads/hostfile/",
+             lambda t: (l.split()[-1] for l in lines(t))),
+        ]),
+        "ioc-sha256": (30, sha256, [
+            ("threatfox", "https://threatfox.abuse.ch/export/csv/sha256/recent/", threatfox),
+            ("malwarebazaar", "https://bazaar.abuse.ch/export/txt/sha256/recent/", lines),
+        ]),
+    }
+
+    def api(method, path, body=None, token=None, ctype="application/json"):
+        headers = {"Content-Type": ctype}
+        if token:
+            headers["Authorization"] = "Bearer " + token
+        else:
+            cred = base64.b64encode(f"{USER}:{PASSWORD}".encode()).decode()
+            headers["Authorization"] = "Basic " + cred
+        req = urllib.request.Request(API + path, data=body, method=method,
+                                     headers=headers)
+        with urllib.request.urlopen(req, timeout=60, context=API_CTX) as resp:
+            return resp.read().decode()
+
+    def existing(name, token):
+        """Current list as {key: last_seen_date}. Empty if not uploaded yet."""
+        try:
+            raw = api("GET", f"/lists/files/{name}?raw=true", token=token)
+        except urllib.error.HTTPError as err:
+            if err.code in (400, 404):
+                return {}
+            raise
+        out = {}
+        for line in raw.splitlines():
+            key, _, seen = line.partition(":")
+            try:
+                out[key] = datetime.datetime.strptime(seen, "%Y%m%d").date()
+            except ValueError:
+                out[key] = TODAY
+        return out
+
+    def main():
+        token = api("POST", "/security/user/authenticate?raw=true")
+        failed = False
+
+        for name, (ttl, norm, sources) in LISTS.items():
+            entries = existing(name, token)
+            before = len(entries)
+            fresh = set()
+            for label, url, parser in sources:
+                try:
+                    got = {v for v in map(norm, parser(fetch(url))) if v}
+                except Exception as err:  # noqa: BLE001 -- keep going per source
+                    print(f"{name}: {label} FAILED: {err}", file=sys.stderr)
+                    failed = True
+                    continue
+                print(f"{name}: {label} {len(got)} entries")
+                fresh |= got
+
+            if name == "ioc-domains":
+                # Unbound's decoder keeps the trailing dot on AAAA queries but
+                # not on A queries (ruleset/decoders/0345-unbound_decoders.xml),
+                # and a CDB lookup is an exact match -- so store both spellings.
+                fresh |= {d + "." for d in fresh}
+
+            for key in fresh:
+                entries[key] = TODAY
+            cutoff = TODAY - datetime.timedelta(days=ttl)
+            entries = {k: d for k, d in entries.items() if d >= cutoff}
+
+            if not entries:
+                print(f"{name}: nothing to upload, leaving it untouched")
+                continue
+            body = "".join(f"{k}:{d:%Y%m%d}\n" for k, d in sorted(entries.items()))
+            api("PUT", f"/lists/files/{name}?overwrite=true", body.encode(),
+                token=token, ctype="application/octet-stream")
+            print(f"{name}: uploaded {len(entries)} entries "
+                  f"(was {before}, {len(fresh)} seen today, ttl {ttl}d)")
+
+        # Recompiles the CDB files and picks up rule changes without dropping
+        # agent connections, unlike PUT /manager/restart.
+        print(json.loads(api("PUT", "/manager/analysisd/reload", token=token))["message"])
+        sys.exit(1 if failed else 0)
+
+    main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wazuh-ioc-feeds
+spec:
+  # Daily. abuse.ch refreshes its exports every few minutes but asks for fair
+  # use, and the 48h "recent" window leaves plenty of slack for a missed run.
+  schedule: "23 5 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            # Selected by the wazuh-ioc-feeds CiliumNetworkPolicy.
+            app: wazuh-ioc-feeds
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: update
+              # Stdlib only, so a stock python image with nothing installed.
+              # renovate: datasource=docker depName=python
+              image: python:3.13-alpine
+              command:
+                - "python3"
+                - "/scripts/update.py"
+              env:
+                - name: API_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: wazuh-api-cred
+                      key: username
+                - name: API_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: wazuh-api-cred
+                      key: password
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - "ALL"
+          volumes:
+            - name: scripts
+              configMap:
+                name: wazuh-ioc-feeds
+                defaultMode: 0555

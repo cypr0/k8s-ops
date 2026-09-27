@@ -58,12 +58,14 @@ shared search backend is proposed again.
 | `kubernetes/apps/security/wazuh/ks.yaml` | Two Flux Kustomizations: `wazuh` (app) and `wazuh-config` (post-install setup, `force: true`) |
 | `kubernetes/apps/security/wazuh/app/certificate.yaml` | Self-signed CA + node/admin/filebeat/dashboard leaf certs |
 | `kubernetes/apps/security/wazuh/app/configmap-indexer.yaml` | `opensearch.yml` — TLS paths, DN matching, discovery |
-| `kubernetes/apps/security/wazuh/app/configmap-manager.yaml` | `ossec.conf` — remoted, authd, indexer connection, FIM |
+| `kubernetes/apps/security/wazuh/app/configmap-manager.yaml` | `ossec.conf` — remoted, authd, indexer connection, list registrations; its FIM/rootcheck blocks affect the manager container only |
+| `kubernetes/apps/security/wazuh/app/configmap-manager-ruleset.yaml` | `agent.conf` (centralised agent config, per OS) and `local_rules.xml` (threat-intel + noise rules) |
+| `kubernetes/apps/security/wazuh/app/cronjob-ioc-feeds.yaml` | Daily IOC feed refresh into the `ioc-*` CDB lists via the Wazuh API |
 | `kubernetes/apps/security/wazuh/app/configmap-dashboard.yaml` | `opensearch_dashboards.yml` — OIDC, plain-HTTP backend |
 | `kubernetes/apps/security/wazuh/app/externalsecret*.yaml` | Credentials, security plugin config, OIDC client |
 | `kubernetes/apps/security/wazuh/app/service-agents.yaml` | The LoadBalancer agents connect to |
 | `kubernetes/apps/security/wazuh/app/httproute.yaml` | Dashboard on `envoy-internal` |
-| `kubernetes/apps/security/wazuh/app/ciliumnetworkpolicy.yaml` | Four policies (manager, indexer, dashboard, setup jobs) |
+| `kubernetes/apps/security/wazuh/app/ciliumnetworkpolicy.yaml` | Five policies (manager, indexer, dashboard, setup jobs, IOC feeds) |
 | `kubernetes/apps/security/wazuh/config/job-setup.yaml` | Pushes security config, creates the retention policy |
 | `kubernetes/apps/security/authentik/app/blueprints/09-wazuh-oidc.yaml` | Authentik provider, application, groups |
 
@@ -138,6 +140,67 @@ means re-enrolling every agent.
 Retention is an ISM policy (`wazuh-retention`, created by the setup Job):
 `wazuh-alerts-*`, `wazuh-archives-*` and `wazuh-states-*` are deleted after 90
 days and pinned to zero replicas.
+
+## Threat intel and detection
+
+Wazuh has no antivirus engine. What it calls malware detection is the sum of
+rootcheck (ancient signature files plus anomaly checks), FIM hashes matched
+against CDB lists, and whatever other tools log (Suricata, firewall, DNS).
+This repo wires up the list part properly:
+
+| List (`etc/lists/…`) | Sources (all free, no account) | TTL | Matched by |
+| --- | --- | --- | --- |
+| `ioc-c2-ip` | abuse.ch Feodo Tracker, ThreatFox ip:port | 30 d | firewall pass/block to C2 (100110/100111), Suricata src/dst (100112/100113), SSH login from C2 (100131) |
+| `ioc-scanner-ip` | blocklist.de, CINS Army, ET compromised | 7 d | *successful* SSH login from an attacker IP (100130) — failed ones are not raised |
+| `ioc-domains` | ThreatFox domains, URLhaus hostfile | 30 d | Unbound A/AAAA queries (100120) |
+| `ioc-sha256` | ThreatFox SHA256, MalwareBazaar recent | 30 d | FIM added/modified file (100100) |
+
+- **Refresh:** `cronjob-ioc-feeds.yaml`, daily 05:23. Merges into the uploaded
+  list (rolling window, since the abuse.ch "recent" exports only span 48 h),
+  uploads through `PUT /lists/files/{name}`, then `PUT /manager/analysisd/reload`
+  — no manager restart. A failing source makes the Job fail but never empties
+  a list. Run it by hand with
+  `kubectl create job -n wazuh --from=cronjob/wazuh-ioc-feeds ioc-manual`.
+- **Why not `malicious-ioc/*`:** those are the image's ~200-entry samples and
+  are listed in `PERMANENT_DATA_EXCP` (`/permanent_data.env`), i.e. reset from
+  the image on every start. Anything written there is lost.
+- **A missing list only warns.** analysisd logs `(7616) List … could not be
+  loaded. Rule … will be ignored` and starts normally, so a fresh PVC is fine —
+  the rules come alive with the Job's first reload.
+- **Domain keys are stored twice** (with and without trailing dot): the image's
+  Unbound decoder keeps the dot on AAAA queries but strips it on A queries, and
+  CDB lookups are exact.
+- **CIDR feeds (Spamhaus DROP, FireHOL) are deliberately absent.** CDB lookups
+  do not do arbitrary prefix matching; those belong in OPNsense aliases.
+
+The firewall and DNS rules only fire if OPNsense actually ships filterlog and
+Unbound query logs through its agent. As of 2026-09-27 it ships only
+Suricata's `eve.json` — see TODOs.
+
+### Agent configuration is central
+
+`agent.conf` in `configmap-manager-ruleset.yaml` is pushed to every agent
+(all are in the `default` group) with per-OS `<agent_config os="…">` blocks,
+and *adds* to each host's local `ossec.conf`. Highlights:
+
+- **macOS:** `/etc` is a symlink to `/private/etc` and FIM does not follow
+  symlinks, so the packaged `/etc` entry monitored nothing — `/private/etc` is
+  now listed explicitly. Plus LaunchAgents/LaunchDaemons (persistence),
+  `~/Downloads` and `/Applications` (arrival paths), every 4 h. Rootcheck's
+  port check is off: ~300 false "port hidden" alerts a week.
+- **Linux (Proxmox):** real-time FIM on `/etc/ssh`, `/etc/sudoers.d`,
+  `/etc/cron.d`, `/etc/systemd/system`, `/etc/pam.d`, `/root/.ssh`, crontabs.
+- **FreeBSD (OPNsense):** rootcheck ignores the FAT EFI partition.
+
+`report_changes` (diffs) is only on for LaunchAgent plists. Anywhere with
+private keys (`/etc/ssh`, `~/.ssh`, `/private/etc`) it stays off, since a diff
+would copy key material into the indexer.
+
+Things considered and left out: remote `full_command` localfiles (e.g.
+`pkg audit` on OPNsense) need `logcollector.remote_commands=1` on the agent,
+which lets whoever controls the manager run commands as root on the firewall.
+XProtect's unified log is ~50k lines a day of routine scan chatter with no
+stable detection message to key a rule on.
 
 ## Known quirks
 
@@ -289,3 +352,13 @@ kubectl exec -n wazuh wazuh-manager-master-0 -- \
 - Wazuh 5.0 is still in beta as of 2026-09. The upgrade path from 4.14 will need
   its own review — 5.x agents enroll over a single HTTPS channel on port 1517,
   which changes `service-agents.yaml`.
+- **OPNsense sends only Suricata.** The agent's `opnsense_syslog.log` source
+  produced zero events in the week to 2026-09-27, so filterlog, Unbound
+  queries, GUI logins and VPN events never arrive and rules 100110/100111/100120
+  cannot fire. Fix is in the OPNsense GUI (os-wazuh-agent log selection,
+  Unbound "Log queries", logging on the LAN allow rule), not in this repo.
+- **Nobody is notified.** `email_notification` is off and no integration is
+  configured, so even a level-14 alert only sits in the dashboard.
+- **Proxmox SSH faces the internet:** ~5,000 invalid-user attempts a week
+  from ~550 IPs, most of the alert volume. Key-only auth makes it harmless, but
+  restricting port 22 at the provider firewall would remove the noise at source.

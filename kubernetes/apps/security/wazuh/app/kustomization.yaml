@@ -11,9 +11,11 @@ resources:
   - ./configmap-indexer.yaml
   - ./configmap-manager.yaml
   - ./configmap-dashboard.yaml
+  - ./configmap-manager-ruleset.yaml
   - ./statefulset-indexer.yaml
   - ./statefulset-manager.yaml
   - ./deployment-dashboard.yaml
+  - ./cronjob-ioc-feeds.yaml
   - ./service-indexer.yaml
   - ./service-manager.yaml
   - ./service-agents.yaml

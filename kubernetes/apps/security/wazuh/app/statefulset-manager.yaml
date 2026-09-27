@@ -110,6 +110,17 @@ spec:
               mountPath: /wazuh-config-mount/etc/authd.pass
               subPath: authd.pass
               readOnly: true
+            # subPath (a real file) rather than a directory mount: the
+            # entrypoint copies with plain `cp -r`, which would carry over a
+            # ConfigMap directory's ..data symlinks instead of the files.
+            - name: ruleset
+              mountPath: /wazuh-config-mount/etc/rules/local_rules.xml
+              subPath: local_rules.xml
+              readOnly: true
+            - name: ruleset
+              mountPath: /wazuh-config-mount/etc/shared/default/agent.conf
+              subPath: agent.conf
+              readOnly: true
             - name: filebeat-certs
               mountPath: /etc/ssl/filebeat
               readOnly: true
@@ -150,6 +161,9 @@ spec:
         - name: config
           configMap:
             name: wazuh-manager-conf
+        - name: ruleset
+          configMap:
+            name: wazuh-manager-ruleset
         - name: authd-pass
           secret:
             secretName: wazuh-authd-pass
