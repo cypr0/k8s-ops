@@ -101,7 +101,7 @@ spec:
               # see kubernetes/apps/paperless/paperless-exporter/ for why that
               # matters with this image family.
               # renovate: datasource=docker depName=python
-              image: python:3.13-alpine
+              image: python:3.14-alpine
               command:
                 - "python3"
                 - "/scripts/prune.py"
