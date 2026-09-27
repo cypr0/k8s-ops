@@ -1,11 +1,13 @@
 ---
-# Custom integrations for wazuh-integratord. Mounted under
-# /wazuh-config-mount/integrations/, which the entrypoint copies over
-# /var/ossec/integrations on start.
+# Custom integrations for wazuh-integratord. NOT mounted directly: the
+# render-config init container copies them into an emptyDir with mode 0755
+# and the manager mounts those copies onto /var/ossec/integrations/.
+# integratord refuses group-writable scripts, and fsGroup makes projected
+# ConfigMap files group-writable regardless of defaultMode -- the first
+# deploy failed exactly like that (2026-09-27).
 #
 # integratord executes integrations/<name> directly; the image's own ones are a
-# shell wrapper plus <name>.py, and this follows the same shape. Mode 0755
-# because the copy lands as root:root and integratord runs as the wazuh user.
+# shell wrapper plus <name>.py, and this follows the same shape.
 # No secrets in here: token and user key arrive as the api_key argument.
 apiVersion: v1
 kind: ConfigMap
