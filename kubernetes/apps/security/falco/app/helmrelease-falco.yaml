@@ -61,8 +61,17 @@ spec:
       outputs:
         rate: 1
         max_burst: 1000
+      # Forward every event to Falcosidekick, which fans out to Loki and
+      # Wazuh. The chart only wires this up itself when its bundled
+      # falcosidekick subchart is enabled; with the separate HelmRelease it
+      # has to be set here. It never was until 2026-09-27: a "Forward to
+      # Falcosidekick via HTTP" comment sat above the falcoctl block with no
+      # http_output under it, so Falco events only ever reached the pod log
+      # -- not Loki, not Pushover, not Wazuh.
+      http_output:
+        enabled: true
+        url: "http://falcosidekick.falco.svc.cluster.local:2801/"
 
-    # Forward to Falcosidekick via HTTP
     falcoctl:
       artifact:
         install:
