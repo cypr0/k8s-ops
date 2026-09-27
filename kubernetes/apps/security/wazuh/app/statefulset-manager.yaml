@@ -25,6 +25,51 @@ spec:
         fsGroup: 101
         # Without this, every restart chowns the whole /var/ossec tree.
         fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        # ossec.conf's <integration><api_key> takes a literal value only, so
+        # the VirusTotal key is substituted into a copy of the ConfigMap here
+        # and the manager reads that copy from an emptyDir. Keeps the key out
+        # of Git and out of the ConfigMap. Same image as the manager purely to
+        # avoid another pull; it only needs sh and sed.
+        - name: render-config
+          image: wazuh/wazuh-manager:4.14.8
+          command:
+            - "/bin/sh"
+            - "-c"
+          args:
+            - |
+              set -eu
+              # Fail loudly rather than start with a broken integration: a
+              # wrong key only shows up later as rule 87102 "Check credentials".
+              printf '%s' "$$VIRUSTOTAL_API_KEY" | grep -Eqx '[0-9a-f]{64}' \
+                || { echo "VIRUSTOTAL_API_KEY is not a 64-char hex key" >&2; exit 1; }
+              sed "s/__VIRUSTOTAL_API_KEY__/$$VIRUSTOTAL_API_KEY/" \
+                /template/ossec.conf > /rendered/ossec.conf
+              grep -q "$$VIRUSTOTAL_API_KEY" /rendered/ossec.conf
+              echo "ossec.conf rendered"
+          env:
+            - name: VIRUSTOTAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wazuh-virustotal
+                  key: api-key
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - "ALL"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /template
+              readOnly: true
+            - name: rendered-config
+              mountPath: /rendered
       containers:
         - name: wazuh-manager
           image: wazuh/wazuh-manager:4.14.8
@@ -102,7 +147,8 @@ spec:
             limits:
               memory: 1536Mi
           volumeMounts:
-            - name: config
+            # Rendered by the render-config init container (VirusTotal key).
+            - name: rendered-config
               mountPath: /wazuh-config-mount/etc/ossec.conf
               subPath: ossec.conf
               readOnly: true
@@ -165,6 +211,10 @@ spec:
         - name: config
           configMap:
             name: wazuh-manager-conf
+        - name: rendered-config
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
         - name: ruleset
           configMap:
             name: wazuh-manager-ruleset
