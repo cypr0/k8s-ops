@@ -65,6 +65,7 @@ shared search backend is proposed again.
 | `kubernetes/apps/security/wazuh/app/configmap-dashboard.yaml` | `opensearch_dashboards.yml` — OIDC, plain-HTTP backend |
 | `kubernetes/apps/security/wazuh/app/externalsecret*.yaml` | Credentials, security plugin config, OIDC client, VirusTotal key |
 | `kubernetes/apps/security/wazuh/app/service-agents.yaml` | The LoadBalancer agents connect to |
+| `kubernetes/apps/security/wazuh/app/service-manager.yaml` | Headless `wazuh-cluster`, API `wazuh`, and `wazuh-syslog` (in-cluster remote syslog for Falcosidekick) |
 | `kubernetes/apps/security/wazuh/app/httproute.yaml` | Dashboard on `envoy-internal` |
 | `kubernetes/apps/security/wazuh/app/ciliumnetworkpolicy.yaml` | Five policies (manager, indexer, dashboard, setup jobs, IOC feeds) |
 | `kubernetes/apps/security/wazuh/config/job-setup.yaml` | Pushes security config, creates the retention policy |
@@ -295,6 +296,34 @@ A file that is confirmed malicious is **moved**, never deleted, into
   alert's *source* IP, which for outbound C2 traffic is the LAN host itself,
   i.e. an unintended isolation. Known C2 IPs are blocked at OPNsense through
   a URL-table alias fed by the same Feodo/ThreatFox lists instead.
+
+### Falco (Kubernetes runtime alerts)
+
+Falcosidekick sends warning+ events as JSON over remote syslog to the
+`wazuh-syslog` ClusterIP Service (514/UDP). `<allowed-ips>` includes the pod
+CIDR 10.42.0.0/16; the wazuh-manager CiliumNetworkPolicy narrows 514/UDP to
+the falcosidekick pods.
+
+| Rule | Falco priority | Level |
+| --- | --- | --- |
+| 100301 | Critical / Alert / Emergency | 12 (Pushover, high) |
+| 100302 | Error | 10 (Pushover) |
+| 100303 | Warning | 6 |
+| 100304 | Notice and below | 3 |
+| 100310/100311 | any, with `fd.sip`/`fd.rip` on `ioc-c2-ip` | 13 |
+
+- **Decoding needed two local decoders.** The image's `json` decoder only
+  fires when the line starts with `{`, so JSON behind a syslog header is not
+  decoded at all. And Go's `log/syslog` stamps RFC3339 with `Z` for UTC,
+  which Wazuh's pre-decoder does not recognise as a header. `falcosidekick`
+  handles a recognised header (program_name `Falco`), `falcosidekick-raw`
+  skips an unrecognised one by `prematch` and decodes `after_prematch`.
+- **Rule 100300 has no `decoded_as`**, so plain-JSON, either decoder, same
+  rule tree; `source`/`rule`/`priority` pin it to Falco.
+- Alerts carry agent `wazuh-manager-master-0`; the node is `data.hostname`,
+  the pod `data.output_fields.k8s.*`. Pushover titles read `falco@<node>`.
+- **Suppress noise in Falco** (`homelab-rules.yaml`), not in Wazuh, so Loki
+  and Wazuh agree.
 
 ### Agent configuration is central
 

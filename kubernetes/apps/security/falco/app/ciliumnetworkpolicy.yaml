@@ -48,7 +48,7 @@ spec:
             - port: "443"
               protocol: TCP
 ---
-# Falcosidekick: routes Falco alerts to Loki and external webhooks
+# Falcosidekick: routes Falco alerts to Loki and to the Wazuh manager
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -105,10 +105,14 @@ spec:
         - ports:
             - port: "3100"
               protocol: TCP
-    # External webhooks: Pushover, Slack, etc.
-    - toEntities:
-        - world
+    # Wazuh manager remote syslog (alerts are decoded into rules 100300+).
+    # Replaces the world:443 rule that only existed for a Pushover output
+    # Falcosidekick does not actually have.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-manager
       toPorts:
         - ports:
-            - port: "443"
-              protocol: TCP
+            - port: "514"
+              protocol: UDP

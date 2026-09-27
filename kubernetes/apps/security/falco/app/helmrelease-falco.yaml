@@ -110,6 +110,42 @@ spec:
               comps: [=, contains]
               values:
                 - [python3, "wal-archive"]
+            # Mailu's postfix image re-creates its binaries at container start
+            # (exe_flags=EXE_WRITABLE|EXE_UPPER_LAYER), so every `master -t`
+            # probe and every postfix daemon it spawns tripped this rule:
+            # ~3,300 CRITICAL a day (2026-09-27). Scoped to that image AND to
+            # postfix's own program paths -- anything else dropped into the
+            # container still alerts.
+            - name: mailu_postfix_daemons
+              fields: [container.image.repository, proc.exepath]
+              comps: [=, pmatch]
+              values:
+                - [ghcr.io/mailu/postfix, [/usr/libexec/postfix]]
+            - name: mailu_postfix_tools
+              fields: [container.image.repository, proc.exepath]
+              comps: [=, in]
+              values:
+                - [ghcr.io/mailu/postfix, [/usr/sbin/postconf, /usr/sbin/postfix, /usr/sbin/postlog, /usr/sbin/postsuper, /usr/sbin/postmap, /usr/sbin/postqueue, /usr/sbin/postdrop, /usr/sbin/sendmail]]
+            # proxmox-ansible runs on stock alpine and `apk add`s ansible,
+            # openssh and python at job start, so everything it executes is
+            # "new". ~1,600 CRITICAL per run.
+            - name: proxmox_ansible_job
+              fields: [k8s.ns.name, k8s.pod.name]
+              comps: [=, startswith]
+              values:
+                - [automation, proxmox-ansible]
+          override:
+            exceptions: append
+
+        # The Wazuh manager reads /etc/shadow for its own rootcheck/SCA scans
+        # of the container it runs in (~17 a day).
+        - rule: Read sensitive file untrusted
+          exceptions:
+            - name: wazuh_manager_self_checks
+              fields: [k8s.ns.name, container.image.repository]
+              comps: [=, =]
+              values:
+                - [wazuh, docker.io/wazuh/wazuh-manager]
           override:
             exceptions: append
 
@@ -148,6 +184,7 @@ spec:
             and k8s.ns.name in (security)
             and proc.name in (bash, sh, zsh, dash, ash)
             and not k8s.pod.name startswith "authentik-worker"
+            and not proc.cmdline startswith "bash /lifecycle/ak"
           output: >
             Shell spawned in security namespace
             (user=%user.name pod=%k8s.pod.name ns=%k8s.ns.name
@@ -156,13 +193,21 @@ spec:
           tags: [security, intrusion, shell]
 
         # Alert: unexpected write to /etc in any container
+        # Exclusions, all measured 2026-09-27 (~800 WARNING a day before):
+        # Mailu renders its whole config from templates at every start, the
+        # config-reloaders write their rendered config under /etc, the Wazuh
+        # manager's entrypoint writes /etc/filebeat, and proxmox-ansible
+        # `apk add`s into a stock alpine. Paperless's /etc/passwd writes are
+        # left visible on purpose.
         - rule: Write to /etc in Container
           desc: Unexpected write to /etc inside a container
           condition: >
             open_write
             and container
             and fd.name startswith /etc
-            and not k8s.ns.name in (kube-system, falco, trivy-system)
+            and not k8s.ns.name in (kube-system, falco, trivy-system, wazuh)
+            and not container.image.repository in (ghcr.io/mailu/postfix, ghcr.io/mailu/rspamd, ghcr.io/mailu/nginx, ghcr.io/mailu/dovecot, ghcr.io/mailu/webmail, quay.io/prometheus-operator/prometheus-config-reloader)
+            and not (k8s.ns.name = automation and k8s.pod.name startswith proxmox-ansible)
           output: >
             Write to /etc in container
             (user=%user.name file=%fd.name pod=%k8s.pod.name

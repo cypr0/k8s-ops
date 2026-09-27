@@ -108,6 +108,24 @@ data:
       <order>dns_client,dns_query,dns_type</order>
     </decoder>
 
+    <!-- Falco alerts from Falcosidekick's syslog output: a syslog header,
+         then the Falco JSON. The image's json decoder only fires when the
+         line itself starts with "{", so JSON behind a header needs its own
+         decoder. Two, because Go's log/syslog stamps RFC3339 with a "Z" for
+         UTC, which Wazuh's pre-decoder does not recognise as a header:
+           - header recognised (program_name "Falco"): decode the message
+           - header not recognised: skip "<ts> <host> Falco[pid]: " by hand
+         Tested with both timestamp forms and BSD syslog (2026-09-27). -->
+    <decoder name="falcosidekick">
+      <program_name>^Falco$</program_name>
+      <plugin_decoder>JSON_Decoder</plugin_decoder>
+    </decoder>
+
+    <decoder name="falcosidekick-raw">
+      <prematch>^\S+ \S+ Falco[\d+]: </prematch>
+      <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+    </decoder>
+
     <!-- Quarantine active response on macOS (../agents/macos/quarantine):
            2026/09/27 19:44:02 wazuh-quarantine: quarantined '<file>' '<dest>' rule 100165
          The third field is the destination on success, the reason otherwise. -->
@@ -313,6 +331,62 @@ data:
           <id>T1110</id>
         </mitre>
         <group>authentication_failures,</group>
+      </rule>
+    </group>
+
+    <!-- Falco runtime alerts, sent by Falcosidekick as JSON over remote
+         syslog (wazuh-syslog Service). Falco priority maps onto Wazuh level;
+         Critical+ reaches Pushover (custom-pushover, level 10+). Falco's own
+         noise tuning lives in kubernetes/apps/security/falco/app/
+         helmrelease-falco.yaml; suppress there, not here, so Loki and
+         Wazuh stay consistent. Alerts show agent wazuh-manager-master-0;
+         the node is in data.hostname, the pod in output_fields. -->
+    <group name="local,falco,">
+      <!-- No decoded_as: the event may come through either Falcosidekick
+           decoder above, or plain json. The three fields pin it to Falco. -->
+      <rule id="100300" level="0">
+        <field name="source">^syscall$|^k8saudit$|^k8s_audit$</field>
+        <field name="rule">\.+</field>
+        <field name="priority">\.+</field>
+        <description>Falco events grouped.</description>
+      </rule>
+
+      <rule id="100301" level="12">
+        <if_sid>100300</if_sid>
+        <field name="priority">^Critical$|^Alert$|^Emergency$</field>
+        <description>Falco $(priority): $(rule) in $(output_fields.k8s.ns.name)/$(output_fields.k8s.pod.name)</description>
+        <group>falco_critical,</group>
+      </rule>
+      <rule id="100302" level="10">
+        <if_sid>100300</if_sid>
+        <field name="priority">^Error$</field>
+        <description>Falco $(priority): $(rule) in $(output_fields.k8s.ns.name)/$(output_fields.k8s.pod.name)</description>
+      </rule>
+      <rule id="100303" level="6">
+        <if_sid>100300</if_sid>
+        <field name="priority">^Warning$</field>
+        <description>Falco $(priority): $(rule) in $(output_fields.k8s.ns.name)/$(output_fields.k8s.pod.name)</description>
+      </rule>
+      <rule id="100304" level="3">
+        <if_sid>100300</if_sid>
+        <field name="priority">^Notice$|^Informational$|^Debug$</field>
+        <description>Falco $(priority): $(rule) in $(output_fields.k8s.ns.name)/$(output_fields.k8s.pod.name)</description>
+      </rule>
+
+      <!-- Correlation with the IOC lists: a Falco event whose remote or
+           server address is a known C2. Only network rules carry these
+           fields, so this is quiet until one of those fires. -->
+      <rule id="100310" level="13">
+        <if_sid>100301, 100302, 100303, 100304</if_sid>
+        <list field="output_fields.fd.sip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
+        <description>Falco + threat intel: $(output_fields.k8s.ns.name)/$(output_fields.k8s.pod.name) talked to known C2 $(output_fields.fd.sip) ($(rule))</description>
+        <group>malware,c2,</group>
+      </rule>
+      <rule id="100311" level="13">
+        <if_sid>100301, 100302, 100303, 100304</if_sid>
+        <list field="output_fields.fd.rip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
+        <description>Falco + threat intel: $(output_fields.k8s.ns.name)/$(output_fields.k8s.pod.name) talked to known C2 $(output_fields.fd.rip) ($(rule))</description>
+        <group>malware,c2,</group>
       </rule>
     </group>
 

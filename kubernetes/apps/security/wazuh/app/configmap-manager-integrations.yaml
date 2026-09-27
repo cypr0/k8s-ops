@@ -51,6 +51,15 @@ data:
         path = alert.get("syscheck", {}).get("path")
         if path:
             lines.append(f"file: {path}")
+        # Falco (via Falcosidekick syslog): the "agent" is the manager, so
+        # name the node instead and show where in the cluster it happened.
+        falco = data.get("output_fields")
+        if falco:
+            agent = f"falco@{data.get('hostname', '?')}"
+            lines.append(f"pod: {falco.get('k8s.ns.name', '?')}/{falco.get('k8s.pod.name', '?')}")
+            for key in ("container.image.repository", "proc.cmdline", "fd.name"):
+                if falco.get(key):
+                    lines.append(f"{key.split('.')[-1]}: {falco[key]}")
         vt = data.get("virustotal", {})
         if vt.get("positives"):
             lines.append(f"VirusTotal: {vt['positives']}/{vt.get('total')} engines")
