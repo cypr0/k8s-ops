@@ -235,6 +235,19 @@ data:
         <rule_dir>etc/rules</rule_dir>
       </ruleset>
 
+      <!-- Hash lookups for files that rule 100160 (configmap-manager-ruleset.yaml)
+           flags in macOS arrival/persistence paths, plus confirmed feed hits.
+           Only the MD5 is sent, via GET vtapi/v2/file/report; files are never
+           uploaded. The placeholder is replaced by the render-config init
+           container in statefulset-manager.yaml -- do not put the key here.
+           Results come back as rules 87100-87106 (87105 = detections, 12). -->
+      <integration>
+        <name>virustotal</name>
+        <api_key>__VIRUSTOTAL_API_KEY__</api_key>
+        <rule_id>100100,100160</rule_id>
+        <alert_format>json</alert_format>
+      </integration>
+
       <rule_test>
         <enabled>yes</enabled>
         <threads>1</threads>

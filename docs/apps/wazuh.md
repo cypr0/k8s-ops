@@ -62,7 +62,7 @@ shared search backend is proposed again.
 | `kubernetes/apps/security/wazuh/app/configmap-manager-ruleset.yaml` | `agent.conf` (centralised agent config, per OS) and `local_rules.xml` (threat-intel + noise rules) |
 | `kubernetes/apps/security/wazuh/app/cronjob-ioc-feeds.yaml` | Daily IOC feed refresh into the `ioc-*` CDB lists via the Wazuh API |
 | `kubernetes/apps/security/wazuh/app/configmap-dashboard.yaml` | `opensearch_dashboards.yml` — OIDC, plain-HTTP backend |
-| `kubernetes/apps/security/wazuh/app/externalsecret*.yaml` | Credentials, security plugin config, OIDC client |
+| `kubernetes/apps/security/wazuh/app/externalsecret*.yaml` | Credentials, security plugin config, OIDC client, VirusTotal key |
 | `kubernetes/apps/security/wazuh/app/service-agents.yaml` | The LoadBalancer agents connect to |
 | `kubernetes/apps/security/wazuh/app/httproute.yaml` | Dashboard on `envoy-internal` |
 | `kubernetes/apps/security/wazuh/app/ciliumnetworkpolicy.yaml` | Five policies (manager, indexer, dashboard, setup jobs, IOC feeds) |
@@ -81,6 +81,7 @@ All from the single 1Password item **`wazuh`**, via `ClusterSecretStore/onepassw
 | `indexer-cred` | `WAZUH_INDEXER_PASSWORD` | manager + dashboard env, and the setup Job |
 | `dashboard-cred` | `WAZUH_DASHBOARD_PASSWORD` | dashboard env (`kibanaserver` account) |
 | `wazuh-securityconfig` | `WAZUH_INDEXER_HASH`, `WAZUH_DASHBOARD_HASH` | indexer, as `internal_users.yml` / `config.yml` / `roles_mapping.yml` |
+| `wazuh-virustotal` | `VIRUSTOTAL_API_KEY` | manager init container `render-config`, substituted into `ossec.conf` |
 | `wazuh-dashboard-oidc` | `WAZUH_OIDC_CLIENT_ID`, `WAZUH_OIDC_CLIENT_SECRET`, `WAZUH_COOKIE_SECRET` | dashboard, via `envFrom` |
 | `authentik-wazuh-oidc` (security ns) | `WAZUH_OIDC_CLIENT_ID`, `WAZUH_OIDC_CLIENT_SECRET` | Authentik, so blueprint `!Env` lookups resolve |
 
@@ -201,6 +202,33 @@ Rules can be tried without touching the running ruleset: a `PUT /logtest`
 session loads rules and decoders from disk at session start, so temporary
 copies with renamed IDs in `etc/rules/` / `etc/decoders/` can be tested and
 removed again before any reload.
+
+### VirusTotal
+
+Hash lookups via Wazuh's bundled integration (`<integration>` in
+`configmap-manager.yaml`), free public API key from 1Password `wazuh` field
+`VIRUSTOTAL_API_KEY` (ExternalSecret `wazuh-virustotal`).
+
+- **Nothing is uploaded.** `integrations/virustotal.py` sends only the file's
+  MD5 as `GET vtapi/v2/file/report`. VirusTotal learns that this key asked for
+  that hash, not the file's content, name or path. The real leak risk is
+  uploading files through the VT web UI, where paying customers can download
+  them — don't.
+- **Scope:** only rule 100160 (macOS `~/Downloads`, `/Applications/*.app/Contents/MacOS/`,
+  LaunchAgents/LaunchDaemons) and feed hits (100100) are sent. Free tier is
+  4 lookups/min, 500/day; an app update can briefly exceed that, which shows
+  up as 87101 "rate limit reached" and those files are simply not looked up.
+- **Results:** 87103 (unknown to VT), 87104 (clean), **87105 (level 12,
+  N engines detected this file)**, 87102 means a bad key.
+- **The key is not in Git or the ConfigMap.** `<api_key>` takes a literal
+  only, so `ossec.conf` carries the placeholder `__VIRUSTOTAL_API_KEY__` and
+  the `render-config` init container substitutes it into an in-memory
+  emptyDir the manager mounts instead of the ConfigMap. It refuses to start
+  the pod unless the key is 64 hex characters. After rendering, the key does
+  sit in `/var/ossec/etc/ossec.conf` on the PVC and is visible to Wazuh admins
+  through `GET /manager/configuration` — unavoidable with this integration.
+- **Rule order:** 100100 (feed hash) is also a child of 100160, otherwise a
+  known-malware file in Downloads would stop at the level-5 rule.
 
 ### Agent configuration is central
 
