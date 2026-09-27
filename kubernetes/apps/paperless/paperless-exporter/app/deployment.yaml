@@ -32,7 +32,7 @@ spec:
           # container runs as nobody with a read-only root filesystem, which the
           # earlier "alpine + apk add" version could not do (apk needs root).
           # renovate: datasource=docker depName=python
-          image: python:3.13-alpine
+          image: python:3.14-alpine
           command:
             - "python3"
             - "/scripts/exporter.py"
