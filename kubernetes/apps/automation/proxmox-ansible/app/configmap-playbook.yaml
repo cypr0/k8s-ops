@@ -809,6 +809,18 @@ data:
               -w /etc/group -p wa -k audit-wazuh-w
           notify: Load audit rules
 
+        # Debian 13's auditd 4.x defaults to ENRICHED, which appends
+        # \x1d-separated resolved names (OUID="root" ...) to each record.
+        # Wazuh documents RAW for its audit log_format; a logtest of an
+        # ENRICHED PATH record lost the file name (live decoding coped in
+        # the 2026-09-27 test, but that is not something to rely on).
+        - name: Write audit records in RAW format
+          ansible.builtin.lineinfile:
+            path: /etc/audit/auditd.conf
+            regexp: '^log_format\s*='
+            line: "log_format = RAW"
+          notify: Reload auditd config
+
         - name: Enable and start auditd
           ansible.builtin.service:
             name: auditd
@@ -846,6 +858,10 @@ data:
         # auditd through systemd is refused (RefuseManualStop=yes).
         - name: Load audit rules
           ansible.builtin.command: augenrules --load
+
+        # SIGHUP: auditd re-reads auditd.conf in place (restart is refused).
+        - name: Reload auditd config
+          ansible.builtin.command: auditctl --signal reload
 
         - name: Restart vsftpd
           ansible.builtin.service:
