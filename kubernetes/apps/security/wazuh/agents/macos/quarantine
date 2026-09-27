@@ -1,0 +1,61 @@
+#!/bin/sh
+# Wazuh active response for macOS: move a file flagged as malware into a
+# root-only quarantine directory. Nothing is deleted.
+#
+# NOT deployed by Flux -- the Mac is not managed from this repo. Install by
+# hand (see docs/apps/wazuh.md, "Active response"):
+#   sudo install -m 0750 -o root -g wazuh quarantine \
+#     /Library/Ossec/active-response/bin/quarantine
+#
+# Triggered by the manager for rules 100101 (feed hash in a macOS path) and
+# 100165 (VirusTotal >= 5 engines). wazuh-execd passes one JSON line on stdin.
+# Stateless (no timeout), so the check_keys handshake is not used.
+#
+# JSON is read with plutil: always present on macOS, unlike python3.
+# Every outcome is logged in a fixed format that local_decoder.xml parses:
+#   <date> <time> wazuh-quarantine: <action> '<file>' '<detail>' rule <id>
+set -u
+
+LOG=/Library/Ossec/logs/active-responses.log
+QDIR=/Library/Ossec/quarantine
+
+log() {
+    printf "%s wazuh-quarantine: %s '%s' '%s' rule %s\n" \
+        "$(date '+%Y/%m/%d %H:%M:%S')" "$1" "$2" "$3" "${RULE:-unknown}" >> "$LOG"
+}
+
+get() {
+    printf '%s' "$MSG" | /usr/bin/plutil -extract "$1" raw -o - - 2>/dev/null
+}
+
+IFS= read -r MSG || exit 0
+[ "$(get command)" = "add" ] || exit 0
+RULE=$(get parameters.alert.rule.id) || RULE=unknown
+
+# 100101 is a FIM alert (syscheck.path); 100165 comes from the VirusTotal
+# integration and carries the path under data.virustotal.source.file.
+FILE=$(get parameters.alert.syscheck.path) \
+    || FILE=$(get parameters.alert.data.virustotal.source.file) \
+    || { log failed "" "no file path in alert"; exit 0; }
+
+# Same scope as rule 100160. Anything else is left alone even if a feed says
+# otherwise -- a false positive on a system binary must not break the Mac.
+case "$FILE" in
+    /Users/*/Downloads/* | /Applications/* | /Library/LaunchAgents/* | \
+    /Library/LaunchDaemons/* | /Users/*/Library/LaunchAgents/*) ;;
+    *) log skipped "$FILE" "outside quarantine scope"; exit 0 ;;
+esac
+if [ ! -f "$FILE" ] || [ -L "$FILE" ]; then
+    log skipped "$FILE" "not a regular file (already gone?)"
+    exit 0
+fi
+
+mkdir -p "$QDIR" && chmod 0700 "$QDIR"
+DEST="$QDIR/$(date +%Y%m%dT%H%M%S)-$(basename "$FILE")"
+if mv "$FILE" "$DEST"; then
+    chmod 0000 "$DEST"
+    log quarantined "$FILE" "$DEST"
+else
+    log failed "$FILE" "mv to quarantine failed"
+fi
+exit 0

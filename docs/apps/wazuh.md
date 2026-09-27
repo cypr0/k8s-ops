@@ -259,6 +259,43 @@ proxmox-ansible installs auditd with `/etc/audit/rules.d/60-wazuh.rules`, and
 - Watches on SSH keys/config, sudoers, passwd/shadow/group → `audit-wazuh-w` →
   rule **80780 "Write access"**.
 
+### Active response: quarantine on the MacBook
+
+A file that is confirmed malicious is **moved**, never deleted, into
+`/Library/Ossec/quarantine/` (root-only 0700, file mode 0000).
+
+| Trigger | Meaning |
+| --- | --- |
+| 100165 | child of 87105 with **≥ 5** VirusTotal engines (single-engine hits stay a plain 87105: adware/PUA flags on legitimate tools) |
+| 100101 | child of 100100 (feed SHA256 hit) in a macOS path |
+
+- **The script is not deployed by Flux.** It lives in
+  `kubernetes/apps/security/wazuh/agents/macos/quarantine` and has to be
+  installed on the Mac by hand, and again after every change to it:
+  ```sh
+  sudo install -m 0750 -o root -g wazuh kubernetes/apps/security/wazuh/agents/macos/quarantine \
+    /Library/Ossec/active-response/bin/quarantine
+  ```
+  Without it, execd logs that the script is missing and nothing is moved;
+  the detection alerts and Pushover still work.
+- **Scope is enforced twice:** by the trigger rules' path regex and by the
+  script's own allow-list (Downloads, `/Applications`, LaunchAgents,
+  LaunchDaemons). A feed false positive on a system binary is logged as
+  `skipped`, never moved.
+- **JSON parsing uses `plutil -extract … raw`**, which is always on macOS;
+  python3 is not.
+- **Outcome comes back as an alert** via `active-responses.log` (collected
+  through `agent.conf`): 100170 quarantined (12), 100171 failed (12), 100172
+  skipped (5). Both 12s go out on Pushover.
+- **Restore** is deliberate and manual:
+  `sudo mv /Library/Ossec/quarantine/<stamp>-<name> <original path>` and
+  `sudo chmod 0644` (or 0755 for a binary). A moved LaunchAgent plist stays
+  loaded until logout/reboot; `launchctl bootout` it if needed.
+- **Why no automatic C2 block:** the bundled firewall scripts block the
+  alert's *source* IP, which for outbound C2 traffic is the LAN host itself,
+  i.e. an unintended isolation. Known C2 IPs are blocked at OPNsense through
+  a URL-table alias fed by the same Feodo/ThreatFox lists instead.
+
 ### Agent configuration is central
 
 `agent.conf` in `configmap-manager-ruleset.yaml` is pushed to every agent
