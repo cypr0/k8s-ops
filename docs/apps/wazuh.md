@@ -152,7 +152,7 @@ This repo wires up the list part properly:
 | --- | --- | --- | --- |
 | `ioc-c2-ip` | abuse.ch Feodo Tracker, ThreatFox ip:port | 30 d | firewall pass/block to C2 (100110/100111), Suricata src/dst (100112/100113), SSH login from C2 (100131) |
 | `ioc-scanner-ip` | blocklist.de, CINS Army, ET compromised | 7 d | *successful* SSH login from an attacker IP (100130) — failed ones are not raised |
-| `ioc-domains` | ThreatFox domains, URLhaus hostfile | 30 d | Unbound A/AAAA queries (100120) |
+| `ioc-domains` | ThreatFox domains, URLhaus hostfile | 30 d | Unbound queries: A/AAAA (100120), any type incl. HTTPS (100121) |
 | `ioc-sha256` | ThreatFox SHA256, MalwareBazaar recent | 30 d | FIM added/modified file (100100) |
 
 - **Refresh:** `cronjob-ioc-feeds.yaml`, daily 05:23. Merges into the uploaded
@@ -164,6 +164,12 @@ This repo wires up the list part properly:
 - **Why not `malicious-ioc/*`:** those are the image's ~200-entry samples and
   are listed in `PERMANENT_DATA_EXCP` (`/permanent_data.env`), i.e. reset from
   the image on every start. Anything written there is lost.
+- **The Wazuh API reports most failures as HTTP 200.** A missing list, a
+  rejected upload and a failed reload all come back 200 with `"error": 1` (or
+  `total_failed_items > 0`) in the JSON body, and `GET …?raw=true` returns that
+  JSON instead of list text. The first run after the initial deploy merged such
+  an error body into the lists and every upload was silently rejected; the
+  script now checks the body of every call.
 - **A missing list only warns.** analysisd logs `(7616) List … could not be
   loaded. Rule … will be ignored` and starts normally, so a fresh PVC is fine —
   the rules come alive with the Job's first reload.
@@ -173,9 +179,28 @@ This repo wires up the list part properly:
 - **CIDR feeds (Spamhaus DROP, FireHOL) are deliberately absent.** CDB lookups
   do not do arbitrary prefix matching; those belong in OPNsense aliases.
 
-The firewall and DNS rules only fire if OPNsense actually ships filterlog and
-Unbound query logs through its agent. As of 2026-09-27 it ships only
-Suricata's `eve.json` — see TODOs.
+### OPNsense log decoding
+
+Since 2026-09-27 OPNsense ships Unbound queries and its `audit` log through
+the agent (`/var/ossec/logs/opnsense_syslog.log`). Two gaps in the image's
+decoders are closed by `local_decoder.xml`:
+
+- **Unbound, non-A/AAAA types** (HTTPS/type 65 — Apple clients send one with
+  every lookup). The image's `unbound-a` child has no `prematch`, so it is
+  *always* the child picked and a differently-named sibling never runs. The
+  local decoder therefore reuses the name `unbound-a` (same-name siblings are
+  evaluated as one decoder) and writes separate fields `dns_client`,
+  `dns_query`, `dns_type` so nothing clashes with `srcip`/`url`.
+- **OPNsense authentication** (`audit[…]: user root authenticated successfully
+  for sshd`) collides with the Solaris BSM decoder, which claims program name
+  `audit`, and died at level 0. `opnsense-audit` is a child of `solaris_bsm`;
+  rules 100150 (success, 3), 100151 (failure, 5), 100152 (6 failures in 2 min,
+  10). These lines carry no source IP.
+
+Rules can be tried without touching the running ruleset: a `PUT /logtest`
+session loads rules and decoders from disk at session start, so temporary
+copies with renamed IDs in `etc/rules/` / `etc/decoders/` can be tested and
+removed again before any reload.
 
 ### Agent configuration is central
 
@@ -352,11 +377,9 @@ kubectl exec -n wazuh wazuh-manager-master-0 -- \
 - Wazuh 5.0 is still in beta as of 2026-09. The upgrade path from 4.14 will need
   its own review — 5.x agents enroll over a single HTTPS channel on port 1517,
   which changes `service-agents.yaml`.
-- **OPNsense sends only Suricata.** The agent's `opnsense_syslog.log` source
-  produced zero events in the week to 2026-09-27, so filterlog, Unbound
-  queries, GUI logins and VPN events never arrive and rules 100110/100111/100120
-  cannot fire. Fix is in the OPNsense GUI (os-wazuh-agent log selection,
-  Unbound "Log queries", logging on the LAN allow rule), not in this repo.
+- **OPNsense filterlog not yet confirmed.** Unbound and audit lines arrive
+  since 2026-09-27; no filterlog line was seen in the first sample, so rules
+  100110/100111 (firewall pass/block to C2) are unverified against live data.
 - **Nobody is notified.** `email_notification` is off and no integration is
   configured, so even a level-14 alert only sits in the dashboard.
 - **Proxmox SSH faces the internet:** ~5,000 invalid-user attempts a week

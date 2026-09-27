@@ -53,6 +53,9 @@ data:
     UA = {"User-Agent": "k8s-ops-wazuh-ioc-feeds/1.0"}
     DOMAIN_RE = re.compile(r"^(?=.{4,253}$)([a-z0-9_-]{1,63}\.)+[a-z]{2,63}$")
     SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+    # Anything the normalisers below can produce; used to drop junk when
+    # reading back an existing list.
+    KEY_RE = re.compile(r"^[0-9a-z._-]+$")
 
     def fetch(url):
         req = urllib.request.Request(url, headers=UA)
@@ -131,17 +134,31 @@ data:
         with urllib.request.urlopen(req, timeout=60, context=API_CTX) as resp:
             return resp.read().decode()
 
+    def check(body, what):
+        """The API reports most failures as HTTP 200 with error != 0."""
+        res = json.loads(body)
+        if res.get("error") != 0 or res["data"].get("total_failed_items"):
+            raise RuntimeError(f"{what} failed: {body[:500]}")
+        return res
+
     def existing(name, token):
         """Current list as {key: last_seen_date}. Empty if not uploaded yet."""
-        try:
-            raw = api("GET", f"/lists/files/{name}?raw=true", token=token)
-        except urllib.error.HTTPError as err:
-            if err.code in (400, 404):
+        raw = api("GET", f"/lists/files/{name}?raw=true", token=token)
+        # With raw=true a hit is plain CDB text, but a miss is still answered
+        # with HTTP 200 and a JSON error body (code 1802, "Lists file not
+        # found"). Parsing that as list lines once put a JSON fragment into the
+        # upload, which the API then rejected -- again with HTTP 200.
+        if raw.lstrip().startswith("{"):
+            err = json.loads(raw)
+            codes = {i["error"]["code"] for i in err["data"].get("failed_items", [])}
+            if codes == {1802}:
                 return {}
-            raise
+            raise RuntimeError(f"GET list {name}: {raw[:300]}")
         out = {}
         for line in raw.splitlines():
             key, _, seen = line.partition(":")
+            if not KEY_RE.match(key):
+                continue
             try:
                 out[key] = datetime.datetime.strptime(seen, "%Y%m%d").date()
             except ValueError:
@@ -181,14 +198,23 @@ data:
                 print(f"{name}: nothing to upload, leaving it untouched")
                 continue
             body = "".join(f"{k}:{d:%Y%m%d}\n" for k, d in sorted(entries.items()))
-            api("PUT", f"/lists/files/{name}?overwrite=true", body.encode(),
-                token=token, ctype="application/octet-stream")
+            try:
+                check(api("PUT", f"/lists/files/{name}?overwrite=true", body.encode(),
+                          token=token, ctype="application/octet-stream"),
+                      f"upload {name}")
+            except Exception as err:  # noqa: BLE001 -- other lists still go up
+                print(f"{name}: {err}", file=sys.stderr)
+                failed = True
+                continue
             print(f"{name}: uploaded {len(entries)} entries "
                   f"(was {before}, {len(fresh)} seen today, ttl {ttl}d)")
 
         # Recompiles the CDB files and picks up rule changes without dropping
         # agent connections, unlike PUT /manager/restart.
-        print(json.loads(api("PUT", "/manager/analysisd/reload", token=token))["message"])
+        res = check(api("PUT", "/manager/analysisd/reload", token=token),
+                    "analysisd reload")
+        for item in res["data"]["affected_items"]:
+            print(f"reload: {item.get('name')}: {item.get('msg')}")
         sys.exit(1 if failed else 0)
 
     main()
