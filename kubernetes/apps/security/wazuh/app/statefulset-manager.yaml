@@ -27,7 +27,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: wazuh-manager
-          image: wazuh/wazuh-manager:4.14.7
+          image: wazuh/wazuh-manager:4.14.8
           securityContext:
             # Capabilities are not dropped wholesale here, unlike the indexer.
             # The manager's entrypoint runs as root and fixes ownership across

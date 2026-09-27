@@ -63,7 +63,7 @@ spec:
               memory: 64Mi
       containers:
         - name: wazuh-indexer
-          image: wazuh/wazuh-indexer:4.14.7
+          image: wazuh/wazuh-indexer:4.14.8
           env:
             - name: NODE_NAME
               valueFrom:
