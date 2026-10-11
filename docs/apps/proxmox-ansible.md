@@ -5,7 +5,7 @@
 > **Hostname**   none — no ingress; egress-only toward the physical Proxmox host
 
 ## What it does here
-A daily `CronJob` that SSHes into the physical Proxmox VE host underlying this cluster and runs an Ansible playbook to harden and maintain it: OS package updates, fail2ban, CIS-flavored `sshd_config`, a Wazuh agent reporting to the in-cluster manager, auditd with command and credential-file auditing for that agent, and vsftpd for a Brother scanner that drops files into Paperless's NFS consume share. It's the one app in this repo that reaches *outside* Kubernetes to manage the hypervisor hosting the cluster itself.
+A daily `CronJob` that SSHes into the physical Proxmox VE host underlying this cluster and runs an Ansible playbook to harden and maintain it: OS package updates, fail2ban, CIS-flavored `sshd_config`, a Wazuh agent reporting to the in-cluster manager, auditd with command and credential-file auditing for that agent, and vsftpd for a Brother scanner that drops files into Paperless's NFS consume share. A staged CIS Debian 13 rollout runs after all of that ([CIS hardening](#cis-hardening-debian-13-benchmark)). It's the one app in this repo that reaches *outside* Kubernetes to manage the hypervisor hosting the cluster itself.
 
 ## Architecture at a glance
 - **Depends on:** ExternalSecret `proxmox-ansible-credentials` (1Password item `proxmox`); ConfigMap `proxmox-ansible-playbook` (`kubernetes/apps/automation/proxmox-ansible/app/configmap-playbook.yaml`) which embeds the entire playbook, a key-fixup script, and the run wrapper; Flux `postBuild.substituteFrom: cluster-secrets` for the `SECRET_ALLOWED_IP` value (`kubernetes/apps/automation/proxmox-ansible/ks.yaml`).
@@ -17,7 +17,7 @@ A daily `CronJob` that SSHes into the physical Proxmox VE host underlying this c
 | `kubernetes/apps/automation/proxmox-ansible/ks.yaml` | Flux Kustomization; `postBuild.substituteFrom: cluster-secrets`, `dependsOn: external-secrets-stores` |
 | `kubernetes/apps/automation/proxmox-ansible/app/cronjob.yaml` | Schedule (`15 3 * * *` UTC), image (`python:3.14-alpine`), env wiring from the ExternalSecret, node affinity (workers only) |
 | `kubernetes/apps/automation/proxmox-ansible/app/externalsecret.yaml` | Credentials pulled from 1Password |
-| `kubernetes/apps/automation/proxmox-ansible/app/configmap-playbook.yaml` | `run.sh` (entrypoint), `fix_key.py` (SSH key repair), `hardening.yml` (the actual Ansible playbook) |
+| `kubernetes/apps/automation/proxmox-ansible/app/configmap-playbook.yaml` | `run.sh` (entrypoint), `fix_key.py` (SSH key repair), `hardening.yml` (the actual Ansible playbook), `cis.yml` (CIS play, imported at the end of `hardening.yml`), `cis_wave1.yml` (wave 1 tasks, included by `cis.yml`) |
 | `kubernetes/apps/automation/proxmox-ansible/app/ciliumnetworkpolicy.yaml` | Egress-only network policy for the Job's pods |
 
 ## Secrets
@@ -53,13 +53,61 @@ None. No PVC in this app's directory, and the `automation` namespace is not in a
 
 ## Common operations
 - Manually trigger a run outside the schedule: `kubectl create job --from=cronjob/proxmox-ansible proxmox-ansible-manual-$(date +%s) -n automation`.
+- Dry run (reports what would change, touches nothing): same, but with `ANSIBLE_CHECK=1` added to the Job's environment, which makes `run.sh` pass `--check --diff`: `kubectl create job --from=cronjob/proxmox-ansible proxmox-ansible-dryrun-$(date +%s) -n automation --dry-run=client -o json | jq '.spec.template.spec.containers[0].env += [{"name":"ANSIBLE_CHECK","value":"1"}]' | kubectl apply -f -`. Check mode skips `command`/`shell` tasks, so it covers the file, copy, lineinfile and apt changes but not what the shell tasks do (the PVE firewall files, `agent-auth`, `chpasswd`); the read-only commands whose output later tasks read carry `check_mode: false` so the dry run does not trip over its own skips.
+- Give `phiros-cmd` its password (once, after the first run that created the account): `ssh root@<host> passwd phiros-cmd`. The playbook creates the account locked and never manages the password; it is only used by `sudo`, SSH accepts keys only.
 - Suspend the schedule: `kubectl patch cronjob proxmox-ansible -n automation -p '{"spec":{"suspend":true}}'`, or pause Flux entirely with `flux suspend kustomization proxmox-ansible -n flux-system`.
 - Update the playbook itself: edit `hardening.yml`/`run.sh`/`fix_key.py` in `configmap-playbook.yaml`, commit, push — the ConfigMap is mounted fresh into the next Job pod, no restart mechanism needed.
 - Rotate a credential: update the 1Password item `proxmox`, then `kubectl annotate externalsecret proxmox-ansible-credentials -n automation force-sync=$(date +%s)` (no `refreshInterval` is set on this ExternalSecret, so don't assume it'll pick up the change on its own within a bounded window).
 - Check the last run's result: `kubectl logs -n automation job/<latest-job-name>` — `run.sh` echoes key diagnostics (Ansible version, SSH key line count, inventory host) before invoking `ansible-playbook`.
 
+## CIS hardening (Debian 13 benchmark)
+Staged, so that each step can be checked before the next one is applied. `cis.yml` (a play for the `ansible` connection, imported at the end of `hardening.yml`) holds the wave switch `cis_waves` and the admin account; each wave is its own task file. It runs only after the maintenance play succeeded, so a problem in a wave cannot stop the nightly updates, and the Job still fails loudly (visible in `kubectl get jobs`).
+
+**Where it comes from and how it is scored.** The control selection follows the `ansible-debian-cis` role (`roles/cis_debian13`, Nextcloud *Repos* folder), but that role is **not run** here: on a hypervisor several of its remediations would break the host (UFW's forward-deny against the iptables NAT in `/etc/network/interfaces`, removing NFS/FTP, an sshd drop-in that this host's own `sshd_config` would ignore, wholesale rewrites of `/etc/pam.d/common-*`). Each wave is a hand-picked, Proxmox-adapted port. The scorer is the **Wazuh SCA policy `cis_debian13`** on the agent `proxmox.${SECRET_DOMAIN}`, not Ansible: it is independent of what the playbook believes it did. Control numbers in the playbook comments are the Wazuh policy's; the role's differ in places (e.g. `PermitRootLogin` is 5.1.20 in Wazuh, 5.1.21 in the role).
+
+Baseline before any wave, scan of 2026-10-11 03:16 UTC: **91 passed, 102 failed, 14 not applicable (47 %)**. Expect the score to move only after the agent's next SCA scan.
+
+| Wave | Content | Status |
+| --- | --- | --- |
+| 1 | Cron permissions (2.4.1.2-2.4.1.7), `opasswd`/`opasswd.old` (7.1.10), telnet client removal (2.2.4), sudo `logfile` and `timestamp_timeout` (5.2.3, 5.2.6), `su` restricted via `pam_wheel` (5.2.7), no `/etc/motd` and a clean `/etc/issue.net` (1.6.1, 1.6.3), chrony user (2.3.3.2), sshd `DisableForwarding` (5.1.8, in `hardening.yml`). Touches none of authentication, SSH access, PAM or the network. Expected to flip 15 checks. | written, tested on Debian 13 in a container, **not yet applied** |
+| 2 | auditd rules and AIDE restricted to configuration paths | not written |
+| 3 | SSH `AllowUsers`, PAM (`faillock`, `pwquality`, `pwhistory`), password aging for new accounts | not written |
+
+**Rule for every wave:** read the SCA result of the previous one first; run the dry run (see Common operations), then one manual real run, then let the nightly schedule have it.
+
+### Accepted exceptions (decided 2026-10-11)
+| Control (Wazuh) | Why it stays failed |
+| --- | --- |
+| Firewall 4.2-4.4 (ufw / nftables / iptables policy and base chains) | The PVE firewall is off on purpose (a stale `ALLOWED_IP` once caused a full lockout) and the packet filter is the iptables rules in `/etc/network/interfaces` plus fail2ban and OPNsense. A second filter such as UFW, whose forward policy is deny, would cut the NAT path to OPNsense. |
+| 5.1.20 `PermitRootLogin no` | `prohibit-password` is kept: the bootstrap play connects as root by key to repair the `ansible` user, which is the only way back if that account breaks. Revisit once the root handoff has been stable for a few weeks. |
+| 5.2.4 sudo `NOPASSWD` | The `ansible` automation user needs it. Compensating controls: key-only SSH, no password set, every command audited. `phiros-cmd` has no `NOPASSWD`. |
+
+### Proposed exceptions (not yet decided)
+| Control | Reason to skip |
+| --- | --- |
+| 1.1.2.x separate partitions and mount options | ZFS root; the role's bind-mount remediation writes `fstab` and has already turned an NFS `/home` into an empty local directory on another host. |
+| 1.3.1.x AppArmor in the bootloader, 1.4.1 GRUB password | Needs a kernel command-line change and a reboot of the hypervisor; a boot password blocks unattended reboots. |
+| 2.1.6 / 2.1.9 / 2.1.12 (ftp, nfs, rpcbind "not in use") | vsftpd serves the scanner, NFS and rpcbind serve the cluster's `k8s-rwx` share. |
+| 5.4.3.1 `nologin` not in `/etc/shells` | vsftpd's `pam_shells` rejects the `scanner` account without it; fixing it properly means a dedicated PAM service file for vsftpd, to be tested against the scanner. |
+| 6.2.3.20 audit configuration immutable (`-e 2`) | Rules could then only change by reboot, which conflicts with the `augenrules --load` handler. |
+| 6.3 AIDE over the whole filesystem, 6.1.2.1 `systemd-journal-remote` | Wazuh FIM and the agent already cover these; wave 2 does AIDE on configuration paths only. |
+
+### Quirks of the Wazuh policy that wave 1 mirrors on purpose
+The checks follow the policy's literal rules, which differ from the CIS text in places, so a "correct" configuration can still score failed:
+- **5.2.6** needs `timestamp_timeout` in `/etc/sudoers` *and* in a `sudoers.d` file (condition `all`); both get the same value.
+- **5.2.7** needs `pam_wheel.so` with both `use_uid` and an explicit `group=`; the role writes a bare `pam_wheel.so`, which would not pass.
+- **7.1.10** stats `opasswd` *and* `opasswd.old`; a missing file fails, so both are created.
+- **1.6.1** contains a bare `\s` in its regex, so any `/etc/motd` with a space in it fails; only an absent file passes (the CIS text allows that). `/etc/issue` (1.6.2) is left alone: `pvebanner` rewrites it at every boot.
+- **2.3.3.2** needs `user _chrony` in `chrony.conf` *and* in a `conf.d` file.
+
+### Admin account
+`cis.yml` creates `phiros-cmd` (key-only SSH, `sudo` group) once at least one public key is listed in `cis_admin_ssh_pubkeys`. Public keys are not secret, so they are in Git, not 1Password. Listed today: the ED25519 key of `cypr0` (fingerprint `SHA256:iw1v8EdDCpznuAFmlTfjBIuzUiLi7U7PyImao7ni60E`). The account is created with a locked password; set it once by hand (see Common operations). SSH never uses that password, `sudo` does, which keeps 5.2.4 true for a human. Until `AllowUsers` arrives in wave 3 nothing restricts who may log in, so the account is an additional way in, not a replacement for `root` and `ansible`.
+
 ## TODOs / unknowns
 - Whether `sshd_config`'s `PermitRootLogin prohibit-password` could be tightened further now that root's role is reduced to four bootstrap tasks per run — not addressed by #70/#71/#77, left as a possible follow-up now that the handoff is confirmed stable in practice.
 - The old, now-orphaned `/tmp/.ansible/tmp` directory (root-owned, `0700`) left behind by years of pre-#71 runs was never cleaned up on the host — harmless (nothing references it anymore), but noted in case it's ever confusing during manual troubleshooting.
 - No `refreshInterval` is set on `externalsecret.yaml`, unlike most other apps' ExternalSecrets in this repo (which explicitly set `1h`) — not confirmed whether this is intentional or an oversight.
-- Whether the CIS Debian 13 `sshd_config` in `hardening.yml` has been checked against a specific CIS benchmark control list the way the cluster's own nodes have (see the `project_cis_benchmark_review` memory) — no cross-reference found in this repo.
+- `sshd_config` is now cross-checked against the Wazuh SCA policy (baseline 2026-10-11): every 5.1.x check passes except 5.1.4 (`AllowUsers`, wave 3), 5.1.8 (`DisableForwarding`, added with wave 1) and 5.1.20 (accepted exception above).
+- `cis.yml` asserts Debian 13 before doing anything, because the waves were checked against Trixie only; a distribution upgrade of the host will stop them until someone re-reads them.
+- 7.2.1 ("accounts use shadowed passwords") fails in SCA although no username in Wazuh's inventory trips its pattern; wave 1 only prints the offending `/etc/passwd` lines (usernames, never the second field) into the Job log instead of running `pwconv` blind.
+- **Internet exposure of the RPC/NFS ports** (111, 20048, 20049; requirement: reachable from the LAN and the WireGuard networks only, not from the internet). Probed from outside on 2026-10-11 over IPv4: TCP 111/2049/20048-20050 get no answer (the playbook's PREROUTING DNAT hands everything but 22 and 8006 to OPNsense) and UDP 111 gets no reply; 22 and 8006 do answer. **IPv6 is unverified**: rpcbind, mountd, statd, pveproxy and spiceproxy listen on `[::]`, the uplink and `vmbr0` carry a global IPv6 address, and no `ip6tables` rule is managed by this playbook. Every run of `cis.yml` prints the live listening sockets and both rule sets (task "Exposure report", read only, also in dry runs); the restriction is to be written against that output rather than against the rules in Git.
