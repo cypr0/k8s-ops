@@ -262,7 +262,7 @@ data:
       </rule>
       <!-- Level 7, not 12: the *source* is on the C2 list, i.e. someone out
            there knocking on the WAN address, which the firewall drops. That
-           was 103 high-priority pushes in two weeks for traffic that never
+           was 102 high-priority pushes in two weeks for traffic that never
            reached a host. The dangerous direction is 100112 (a host of ours
            talking to a C2) and 100110 (the firewall letting it through); both
            stay at 12. -->
@@ -470,11 +470,11 @@ data:
       </rule>
 
       <!-- Operators that rewrite their own webhooks or RBAC as part of normal
-           operation. Without these, 100406 fired ~830 times a day (Kyverno
-           re-stamps its webhook configurations every ~2 minutes, the CNPG
-           operator re-applies its rolebinding on every reconcile, cainjector
-           patches caBundle) and used 9,000 of October's 10,000 Pushover
-           messages in 11 days; see
+           operation. Without these, 100406 fired ~800 times a day (Kyverno
+           updates each of its eight webhook configurations about every 15
+           minutes, the CNPG operator creates its rolebinding ~30 times a
+           day, cainjector patches caBundle) and, with the other noisy rules,
+           used 9,100 of October's 10,000 Pushover messages in 11 days; see
            docs/incidents/2026-10-11-wazuh-pushover-quota-exhaustion.md.
            Each exception is pinned to the service account AND the object it
            owns: the same account touching anything else, or any other
@@ -543,7 +543,7 @@ data:
 
       <!-- 87702 is stock Wazuh's "multiple firewall blocks from the same
            source", level 10. Aimed at the WAN address it is just the internet
-           knocking (528 of its 538 hits in two weeks: scans of 80/443/8080/
+           knocking (523 of its 533 hits in three weeks: scans of 80/443/8080/
            8000/23 ...), already dropped by the firewall; each block is still
            an individual level-5 alert. Blocks towards anything inside stay at
            level 10. -->

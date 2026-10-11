@@ -19,24 +19,20 @@ data:
     exec /var/ossec/framework/python/bin/python3 /var/ossec/integrations/custom-pushover.py "$@"
   custom-pushover.py: |-
     #!/var/ossec/framework/python/bin/python3
-    """Send a Wazuh alert to Pushover, throttled.
+    """Send a Wazuh alert to Pushover.
 
     Called by wazuh-integratord as: custom-pushover <alert_file> <api_key> <hook_url>
     api_key is "<app token>:<user key>", rendered from 1Password.
 
-    The Pushover app token is shared with Alertmanager, Gatus and Falco, and the
-    plan allows 10,000 messages a month. So the notifier protects that budget even
-    when a rule misbehaves (one did, 9,000 messages in 11 days; see
-    docs/incidents/2026-10-11-wazuh-pushover-quota-exhaustion.md):
-
-      * the same message goes out at most once per COOLDOWN, and the next one that
-        does says how many identical ones were swallowed in between;
-      * at most DAILY_CAP messages per UTC day and tier; the first alert over the
-        cap sends a single notice instead, the rest are dropped until midnight.
-
-    Suppressed alerts are still in alerts.json and the dashboard. If the state
-    file cannot be opened the alert is sent unthrottled: losing the throttle is
-    better than losing the alert.
+    Throttled. Pushover allows 10,000 messages a month and the counter is shared
+    with Alertmanager (same token) and, as observed, Gatus and Authentik; a single
+    noisy rule (100406, October 2026) used most of them in 11 days. Per message:
+      * the same message (title and body, timestamp aside) goes out at most once per
+        COOLDOWN; the next one that gets through says how many were held back
+      * at most DAILY_CAP messages per UTC day and priority tier; the first one over
+        the cap sends a single notice, the rest are dropped
+    Nothing is lost, every alert is still in the Wazuh dashboard. If the state file
+    cannot be used the alert is sent unthrottled rather than dropped.
     """
     import fcntl
     import hashlib
@@ -51,39 +47,55 @@ data:
     DASHBOARD = "https://wazuh.${SECRET_DOMAIN}"
     FIELDS = ("srcip", "dstip", "dns_client", "dns_query", "url", "dstuser", "service")
 
-    # On the PVC, so a pod restart does not hand every alert a fresh cooldown.
-    STATE = "/var/ossec/logs/pushover-throttle.json"
-    LOG = "/var/ossec/logs/integrations.log"
-    # Tier "hi" is level 12+ (priority 1, bypasses quiet hours), "lo" is 10-11.
-    COOLDOWN = {"lo": 6 * 3600, "hi": 3600}
-    DAILY_CAP = {"lo": 40, "hi": 100}
-    KEEP = 24 * 3600
+    # On the PVC, so a manager restart does not reset the cooldowns.
+    STATE_FILE = "/var/ossec/logs/pushover-throttle.json"
+    LOG_FILE = "/var/ossec/logs/integrations.log"
+    # Keyed by "high priority" (level 12+): how long an identical message is held back.
+    COOLDOWN = {False: 6 * 3600, True: 3600}
+    # Keyed the same way: messages per UTC day.
+    DAILY_CAP = {False: 40, True: 100}
+
+    def log(msg):
+        print(msg, file=sys.stderr)
+        try:
+            with open(LOG_FILE, "a") as fh:
+                fh.write(f"{time.strftime('%Y/%m/%d %H:%M:%S')} custom-pushover: {msg}\n")
+        except OSError:
+            pass
 
     class Throttle:
-        """Cooldown and daily cap, in a small JSON file under an exclusive lock."""
+        """Cooldown and daily cap, kept in STATE_FILE under an exclusive lock.
 
-        def __init__(self, path):
-            self.path = path
+        The lock is held while the message is posted, so concurrent runs cannot
+        both decide to send. State is only recorded after a successful post.
+        """
+
+        def __init__(self):
             self.fh = None
-            self.st = {}
+            self.state = {}
             self.now = time.time()
 
         def __enter__(self):
             try:
-                self.fh = os.fdopen(os.open(self.path, os.O_RDWR | os.O_CREAT, 0o660), "r+")
+                fd = os.open(STATE_FILE, os.O_RDWR | os.O_CREAT, 0o660)
+                self.fh = os.fdopen(fd, "r+")
                 fcntl.flock(self.fh, fcntl.LOCK_EX)
-                self.st = json.load(self.fh)
-            except ValueError:
-                self.st = {}  # new or corrupt file: start over
+                try:
+                    self.state = json.load(self.fh)
+                except ValueError:
+                    self.state = {}
             except OSError as exc:
-                self.fh = None  # fail open
-                print("custom-pushover: throttle disabled: %s" % exc, file=sys.stderr)
-            day = time.strftime("%Y-%m-%d", time.gmtime(self.now))
-            if self.st.get("day") != day:
-                self.st["day"] = day
-                self.st["sent"] = {"lo": 0, "hi": 0}
-                self.st["capped"] = {"lo": False, "hi": False}
-            self.st["seen"] = {k: v for k, v in self.st.get("seen", {}).items() if self.now - v["ts"] < KEEP}
+                log(f"throttle state unusable ({exc}); sending unthrottled")
+                self.fh = None
+                return self
+            if not isinstance(self.state, dict):
+                self.state = {}
+            today = time.strftime("%Y-%m-%d", time.gmtime(self.now))
+            if self.state.get("day") != today:
+                self.state.update(day=today, sent={}, capped={})
+            seen = self.state.setdefault("seen", {})
+            for key in [k for k, v in seen.items() if self.now - v.get("ts", 0) > 2 * max(COOLDOWN.values())]:
+                del seen[key]
             return self
 
         def __exit__(self, *exc):
@@ -91,46 +103,45 @@ data:
                 try:
                     self.fh.seek(0)
                     self.fh.truncate()
-                    json.dump(self.st, self.fh)
+                    json.dump(self.state, self.fh)
                     self.fh.flush()
+                except OSError as err:
+                    log(f"throttle state not saved ({err})")
                 finally:
-                    self.fh.close()  # releases the lock
+                    self.fh.close()
             return False
 
-        def verdict(self, key, tier):
-            """Return send, drop, or cap (send the one-off cap notice instead)."""
+        @staticmethod
+        def tier(high):
+            return "hi" if high else "lo"
+
+        def check(self, key, high):
+            """Return "send", "drop", or "cap" (send the one-off cap notice)."""
             if self.fh is None:
                 return "send"
-            entry = self.st["seen"].get(key)
-            if entry and self.now - entry["ts"] < COOLDOWN[tier]:
+            entry = self.state["seen"].get(key)
+            if entry and self.now - entry["ts"] < COOLDOWN[high]:
                 entry["n"] += 1
                 return "drop"
-            if self.st["sent"][tier] >= DAILY_CAP[tier]:
+            if self.state["sent"].get(self.tier(high), 0) >= DAILY_CAP[high]:
                 if entry:
                     entry["n"] += 1
-                return "drop" if self.st["capped"][tier] else "cap"
+                return "drop" if self.state["capped"].get(self.tier(high)) else "cap"
             return "send"
 
-        def swallowed(self, key):
-            if self.fh is None:
-                return 0
-            return self.st["seen"].get(key, {}).get("n", 0)
+        def held_back(self, key):
+            entry = self.state.get("seen", {}).get(key) if self.fh is not None else None
+            return entry["n"] if entry else 0
 
-        def sent(self, key, tier):
+        def record_sent(self, key, high):
             if self.fh is not None:
-                self.st["seen"][key] = {"ts": self.now, "n": 0}
-                self.st["sent"][tier] += 1
+                self.state["seen"][key] = {"ts": self.now, "n": 0}
+                sent = self.state["sent"]
+                sent[self.tier(high)] = sent.get(self.tier(high), 0) + 1
 
-        def capped(self, tier):
+        def record_cap(self, high):
             if self.fh is not None:
-                self.st["capped"][tier] = True
-
-    def log(text):
-        try:
-            with open(LOG, "a") as fh:
-                fh.write("%s custom-pushover: %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), text))
-        except OSError:
-            pass
+                self.state["capped"][self.tier(high)] = True
 
     def push(hook_url, token, user, title, message, priority):
         resp = requests.post(hook_url, timeout=10, data={
@@ -138,8 +149,6 @@ data:
             "user": user,
             "title": title,
             "message": message[:1000],
-            # 1 = high: bypasses quiet hours. Reserved for 12+ (C2 contact,
-            # malware hashes, VirusTotal detections, logins from attacker IPs).
             "priority": priority,
             "url": DASHBOARD,
             "url_title": "Wazuh dashboard",
@@ -185,32 +194,31 @@ data:
         if vt.get("positives"):
             lines.append(f"VirusTotal: {vt['positives']}/{vt.get('total')} engines")
 
-        title = f"Wazuh L{level} | {agent}"
+        # 1 = high: bypasses quiet hours. Reserved for 12+ (C2 contact,
+        # malware hashes, VirusTotal detections, logins from attacker IPs).
         high = level >= 12
-        tier = "hi" if high else "lo"
-        # Same text means same alert; the rule/timestamp line below is the one
-        # part that always differs, so it is not part of the key.
-        fingerprint = hashlib.sha1("\n".join([title] + lines).encode()).hexdigest()
+        title = f"Wazuh L{level} | {agent}"
+        # Identity of a message: everything except the timestamp line below.
+        ident = hashlib.sha1("\n".join([str(rule.get("id")), title] + lines).encode()).hexdigest()
         lines.append(f"rule {rule.get('id')} | {alert.get('timestamp', '')}")
 
-        with Throttle(STATE) as throttle:
-            verdict = throttle.verdict(fingerprint, tier)
+        with Throttle() as throttle:
+            verdict = throttle.check(ident, high)
             if verdict == "drop":
                 return
             if verdict == "cap":
                 what = "high-priority (L12+)" if high else "L10-11"
-                log(f"daily cap of {DAILY_CAP[tier]} {what} messages reached, dropping the rest until 00:00 UTC")
-                push(hook_url, token, user, "Wazuh: daily Pushover cap reached",
-                     f"{DAILY_CAP[tier]} {what} alerts already sent today (UTC). Further ones are"
-                     " suppressed until midnight UTC; they are all still in the Wazuh dashboard."
-                     f"\nlast: {lines[0]}", 0)
-                throttle.capped(tier)
+                push(hook_url, token, user, "Wazuh: Pushover cap reached",
+                     f"{DAILY_CAP[high]} {what} notifications already went out today (UTC). "
+                     "The rest of today's are only in the dashboard.", 0)
+                throttle.record_cap(high)
+                log(f"daily cap of {DAILY_CAP[high]} reached for {what}")
                 return
-            swallowed = throttle.swallowed(fingerprint)
-            if swallowed:
-                lines.insert(-1, f"(+{swallowed} identical alerts suppressed since the last one)")
+            held = throttle.held_back(ident)
+            if held:
+                lines.insert(-1, f"+{held} identical alerts held back since the last notification")
             push(hook_url, token, user, title, "\n".join(lines), 1 if high else 0)
-            throttle.sent(fingerprint, tier)
+            throttle.record_sent(ident, high)
 
     if __name__ == "__main__":
         main()
