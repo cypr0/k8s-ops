@@ -7,7 +7,7 @@
 - **Data loss:** None. Every suppressed or held-back alert is still in the Wazuh dashboard.
 
 ## TL;DR
-Wazuh rule 100406 ("RBAC or admission-webhook change not by Flux") was written on the assumption that only Flux touches those objects. In reality Kyverno, the CloudNativePG operator and cert-manager's cainjector rewrite their own webhooks and RoleBindings all day, so the rule fired ~800 times a day, each one a Pushover message, with no rate limit and no monitoring of the quota. It made up 92% of the level-10+ alerts in the October period and, with a few smaller noisy rules, used 9,100 of 10,000 messages. Fixed with level-0 child rules pinned to service account and object, a self-throttling notifier, a stricter Alertmanager route, and cleanup of two alerts that had been firing for two weeks over stale objects.
+Wazuh rule 100406 ("RBAC or admission-webhook change not by Flux") was written on the assumption that only Flux touches those objects. In reality Kyverno, the CloudNativePG operator and cert-manager's cainjector rewrite their own webhooks and RoleBindings all day, so the rule fired ~800 times a day, each one a Pushover message, with no rate limit and no monitoring of the quota. It made up 92% of the level-10+ alerts in the October period and, with a few smaller noisy rules, used 9,100 of 10,000 messages. Fixed with level-0 child rules pinned to service account and object, a self-throttling notifier, a stricter Alertmanager route, and cleanup of the stale Jobs behind one permanently firing alert. The fix for the second one (an undersized Authentik worker CPU request) was merged and then reverted because it rolled the worker pods into MaxMind's exhausted download quota; see "Side effect" below.
 
 ## Impact
 - **Pushover quota:** 9,141 / 10,000 used at 2026-10-11 ~13:47 CEST and still 9,141 at 13:54 (from `GET /1/apps/limits.json`, which costs no message), 859 left, reset 2026-11-01 06:00 CET. Earlier reading: 9,098 at 12:46 CEST.
@@ -55,6 +55,10 @@ All UTC.
 - **10:46** — quota API: 9,098 used, 902 left. Analysis begins: Alertmanager (140 messages in 14 days), Gatus (17 state changes), Authentik (0 failed-login events) ruled out as the main source; Wazuh identified.
 - **10:57** — first fix committed (`05c02d6`: rules 100411-100414, 100113, 100901, a first throttle implementation; the throttle in this PR replaces it).
 - **~11:47 and 11:54** — quota API: 9,141 used both times.
+- **12:00** — PR merged, Flux applies it. The Wazuh manager restarts (pod created 12:00:16) and the Authentik worker Deployment rolls because its CPU request changed (new ReplicaSet 12:00:26).
+- **~12:05-12:10** — the new worker pods stay not Ready: the `geoip` sidecar gets `429 LIMIT_EXCEEDED` from MaxMind. The Helm upgrade times out and the rollback fails (`RollbackFailed`). `authentik-server` and the one old worker pod are never touched; SSO keeps answering (HTTP 302).
+- **~12:15** — the seven stale Failed Jobs are deleted by hand.
+- **~12:25** — decision to revert the CPU change in Git (this follow-up).
 
 ## Diagnosis process
 
@@ -71,7 +75,7 @@ All UTC.
 ## Fix applied
 
 ### Live remediation
-Nothing was changed by hand on the cluster. Everything went through Git so Flux owns it. Temporary test files (`zz_noise_test.xml` in the manager's `etc/rules/`, scripts in `/tmp`) were removed again; `etc/rules/` holds only `local_rules.xml`.
+Configuration went through Git so Flux owns it. The only by-hand changes: deleting the seven stale Failed Jobs (`kubectl delete job`: six `firecrawl-nuq-*` in `hermes-agent` and `node-collector-5c88744994` in `trivy-system`, each confirmed `Failed` first, the trivy one also without an owner), and removing temporary test files again (`zz_noise_test.xml` in the manager's `etc/rules/`, scripts in `/tmp`; `etc/rules/` holds only `local_rules.xml`). A self-test of the deployed notifier ran as the `wazuh` user against a closed port, so no message was sent.
 
 ### Preventive change committed
 - `configmap-manager-ruleset.yaml`: **100411-100414** (level 0) for Kyverno (service accounts `kyverno-admission-controller` and `kyverno-cleanup-controller` on `kyverno-*`), cainjector on `cert-manager-webhook`, the CNPG operator on roles/rolebindings, Envoy Gateway certgen on `envoy-gateway-*`. **100113** drops to level 7. **100901** (level 0) drops 87702 when aimed at the WAN address `192.168.100.1`.
@@ -79,8 +83,13 @@ Nothing was changed by hand on the cluster. Everything went through Git so Flux 
 - `kube-prometheus-stack/app/externalsecret.yaml`: the Alertmanager root receiver is now `null` (before: `pushover`, so anything without a matching route paged). Critical goes to `pushover`; warnings go to a new `pushover-warning` receiver with no "resolved" message and `repeat_interval: 3d`. Checked with `amtool check-config` and six `amtool config routes test` cases (critical, warning, info, Watchdog, InfoInhibitor, no severity).
 - `kube-prometheus-stack/app/prometheusrule.yaml`: `ScrapeTargetSustainedDown` now requires `and up offset 23h == 0`. Over 14 days of real data the old expression fired for 8 series, all one-scrape-old pods during rollouts; the new one fires for none, and for a target that was down a day ago it still does.
 - `hermes-agent/firecrawl/app/cronjob-nuq-maintenance.yaml`: `ttlSecondsAfterFinished: 86400` on both CronJobs' Job templates.
-- `security/authentik/app/helmrelease.yaml`: worker CPU request 50m to 200m (100m was computed and rejected: one replica would run at 91-121%).
+- `security/authentik/app/helmrelease.yaml`: worker CPU request 50m to 200m, **reverted again in the follow-up** (next section). 200m is still the computed target; 100m was rejected (one replica would run at 91-121%).
 - Docs: `docs/apps/wazuh.md`, `kube-prometheus-stack.md`, `authentik.md`, `firecrawl.md`, and a note in `2026-09-20-cilium-cnp-scrape-target-drop.md` about the refined alert expression.
+
+### Side effect: the Authentik worker rollout
+The CPU change was a pod-template change, so the worker pods restarted. This repo's own `docs/incidents/2026-08-16-authentik-geoip-sidecar-sso-outage.md` documents exactly what that does: each new pod's `geoip` sidecar fetches from MaxMind, a crash-looping sidecar keeps the whole pod not Ready, and the Helm remediation (rollback) re-creates the same crash. It was foreseeable and was treated as harmless; it was not. What limited the damage: the `authentik-server` Deployment was not changed (12 days old, SSO endpoints present, `id.` answered 302 throughout), the old worker pod kept running because a rolling update keeps it until a replacement is Ready, and nothing depends on `authentik` via `dependsOn`. Cost: failed Helm releases, several hung worker pods, and a Flux retry loop that kept re-creating them until the Git revert (duration: see the timeline once the revert is applied).
+
+The follow-up PR sets the request back to 50m. Live and Git then agree again (the 50m and 200m ReplicaSets differ in nothing but the CPU request, verified field by field), so the revert converges on the old, healthy ReplicaSet. The 200m change stays a deferred action item with the GeoIP check in front of it. `KubeHpaMaxedOut` keeps firing until then, now as one warning every 3 days.
 
 ## Runbook — if this fires again
 1. **How much is left, without spending a message** (token is in the `wazuh-pushover` secret key `token`; do not print it):
@@ -91,6 +100,8 @@ Nothing was changed by hand on the cluster. Everything went through Git so Flux 
 2. **Who is sending?** Alertmanager: `sum by (integration) (increase(alertmanager_notifications_total[7d]))`. Wazuh: count level 10+ alerts by *unique* `id` and by `rule.id` per day in `/var/ossec/logs/alerts/` inside `wazuh-manager-master-0`. A flat per-hour count means a machine, not an incident. Gatus: `changes(gatus_results_endpoint_success[14d])` by `name`.
 3. **Fix the rule, not the throttle.** Add a level-0 child rule with `if_sid` of the noisy rule, pinned to actor *and* object, never a blanket exclusion of the parent. Test with `wazuh-logtest` inside the manager (output is on stderr) using real events from `full_log`, plus tampered variants that must still alert. Put the test rules in `etc/rules/` under a temp name and delete the file before the pod restarts (the final ConfigMap ships the same IDs).
 4. **A throttle summary** `Wazuh: Pushover cap reached` means a daily cap was hit; look at `/var/ossec/logs/integrations.log` and the "+N held back" counts for the culprit.
+5. **Before changing an Authentik pod template** (resources, env, image, anything under `server:`/`worker:`): `kubectl logs -n security <pod> -c geoip --tail=3` must not show `429`. If it does, wait for 00:00 UTC.
+6. **If a Helm release is already stuck in a rollback loop** because pods cannot become Ready: revert the Git change first. That stops Flux from re-creating the failing pods; do not patch live Deployments by hand.
 
 ## References
 - `fc58dc4` (audit log into Wazuh), `cffc94b`, `b5af4a3`; the fix commits in the PR that carries this file.
@@ -100,10 +111,12 @@ Nothing was changed by hand on the cluster. Everything went through Git so Flux 
 - [x] Rule 100406 exceptions, 100113, 100901 (tested with `wazuh-logtest`)
 - [x] Self-throttling notifier (22 local scenarios, same script that ships in the ConfigMap)
 - [x] Alertmanager route and `ScrapeTargetSustainedDown` expression (tested against live config and 14 days of data)
-- [x] Firecrawl Job TTL, Authentik worker CPU request
+- [x] Firecrawl Job TTL (live: both CronJobs show 86400)
+- [ ] Authentik worker CPU request to ~200m: tried and reverted (see "Side effect"). Re-apply only after `kubectl logs <authentik pod> -c geoip` shows no 429, ideally right after 00:00 UTC, and watch that `authentik-server` stays Ready. Until then `KubeHpaMaxedOut` fires as a 3-day warning.
 - [x] Postmortem written (this file)
-- [ ] Live verification after Flux applies it: the hourly 100406 count drops to ~0, the quota stops falling by ~35 an hour, `custom-pushover` runs under Wazuh's integratord without errors
-- [ ] Delete the six stale Failed Jobs in `hermes-agent` and the orphaned `node-collector-5c88744994` Job in `trivy-system` (the TTL only covers Jobs created after it was added)
+- [x] Live verification after Flux applied it (2026-10-11 ~12:11 UTC): the manager restarted at 12:00 UTC with the new rules and 0 unique level 10+ alerts appeared between 12:01 and 12:11 (before: ~6 per 10 minutes); the deployed notifier runs as `wazuh` and records no state when the post fails; Alertmanager's running route table shows root `null`, `critical` to `pushover`, `warning` to `pushover-warning`; `ScrapeTargetSustainedDown` has the new expression
+- [ ] Confirm over a full day that the quota is flat: it went from 9,141 (11:54 UTC) to 9,145 (12:11 UTC), +4 whose sender was not identified
+- [x] Deleted the six stale Failed Jobs in `hermes-agent` and the orphaned `node-collector-5c88744994` in `trivy-system`; `kubectl get jobs -A` shows no Failed Job
 - [ ] Monitor the quota itself: Pushover exposes `remaining` on the limits API, nothing here polls it. A small CronJob exporting it, with an alert at ~70% used, would have caught this on 2026-09-30.
 - [ ] Investigate why `firecrawl-nuq-reaper`/`-cleanup` failed on 2026-09-27 (`DeadlineExceeded`, ~10 minutes); only the symptom was handled here
 - [ ] Rule 5551 (PAM failures on Proxmox, 214 alerts, all from `151.237.100.194` against `root`) is still level 10 and now at most ~4 messages a day; that volume is a handful of lines, but a root-login probe against the PVE API deserves a look at whether the host should be reachable from the internet at all

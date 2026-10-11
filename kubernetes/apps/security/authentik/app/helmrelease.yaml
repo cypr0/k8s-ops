@@ -146,14 +146,20 @@ spec:
         targetCPUUtilizationPercentage: 70
       resources:
         requests:
-          # 200m, was 50m. Measured over 14 days (Prometheus, summed over
-          # replicas): p50 100m, p99 133m, max 243m. At 50m (+10m geoip) the
-          # HPA's 70% target sat far below that baseline, so it held 2 of 2
-          # replicas permanently and KubeHpaMaxedOut re-notified every 12h for
-          # two weeks. At 200m one replica runs at ~48% (p99 ~63%) and the HPA
-          # settles on 1; blueprint-import peaks (243m) still scale it to 2.
-          # 100m would not do: one replica would sit at 91-121%.
-          cpu: 200m
+          # Deliberately still 50m. Measured over 14 days (Prometheus, summed
+          # over replicas) the worker needs p50 100m, p99 133m, max 243m, so at
+          # 50m (+10m geoip) the HPA's 70% target sits far below baseline and
+          # it holds 2 of 2 replicas: KubeHpaMaxedOut keeps firing (a warning,
+          # repeated every 3d). 200m would fix that (one replica at ~48%, p99
+          # ~63%; 100m would not, 91-121%).
+          # 200m was tried on 2026-10-11 and reverted: ANY change to this pod
+          # template restarts the pods, each new pod's geoip sidecar downloads
+          # from MaxMind, and that day's quota was already used up (429), so
+          # the new pods never became Ready and Helm's upgrade AND its rollback
+          # both timed out. Re-apply only after `kubectl logs <authentik pod>
+          # -c geoip` shows no 429. See
+          # docs/incidents/2026-10-11-wazuh-pushover-quota-exhaustion.md.
+          cpu: 50m
           memory: 512Mi
         limits:
           memory: 1Gi
