@@ -965,11 +965,15 @@ data:
           - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYRsPt1fwbOyxdlFb3Owe0qscK3UIbCuBhcEsy6gqSi cypr0"
 
         # RPC/NFS ports (rpcbind 111, nfsd 2049, mountd 20048, statd 20049,
-        # 20050) reachable from the internal networks only. Measured on the
-        # host on 2026-10-11: over IPv4 the DNAT to OPNsense plus an INPUT drop
-        # on the uplink already keep them off the internet, but IPv6 is active
-        # (global address and gateway on the uplink), the services listen on
-        # [::] and ip6tables INPUT had no rule at all. Allowed sources: the LAN
+        # 20050) and the SPICE proxy (3128) reachable from the internal
+        # networks only. Nothing here uses SPICE (confirmed by the owner
+        # 2026-10-11); like the RPC ports it listens on every address, IPv6
+        # included, and over IPv4 only the DNAT to OPNsense hides it.
+        # Measured on the host on 2026-10-11: over IPv4 the DNAT plus an INPUT
+        # drop on the uplink already keep the RPC ports off the internet, but
+        # IPv6 is active (global address and gateway on the uplink), the
+        # services listen on [::] and ip6tables INPUT had no rule at all.
+        # Allowed sources: the LAN
         # where the cluster's NFS clients live and the two WireGuard networks.
         # Those networks are not written down here: they come from the key
         # SECRET_RPC_ALLOWED_NETS in kubernetes/components/sops/
@@ -979,9 +983,16 @@ data:
         # link-local are allowed there; those two are protocol constants, not
         # site addresses. cis_rpc_lockdown.py refuses public networks and the
         # management ports 22 and 8006.
-        cis_rpc_lockdown_enabled: true
+        #
+        # The switch, controlled from Git: `present` installs and keeps the
+        # lockdown; `absent` takes the rules, the boot unit, the script and the
+        # configuration out again. Change it here, merge, and the next run
+        # (nightly, or a manual Job) does it; nothing has to be done on the
+        # host. `absent` OPENS these ports again to whatever the rest of INPUT
+        # lets through, and it does not need RPC_ALLOWED_NETS.
+        cis_rpc_lockdown_state: present
         cis_rpc_lockdown_manage_unit: true
-        cis_rpc_lockdown_ports: [111, 2049, 20048, 20049, 20050]
+        cis_rpc_lockdown_ports: [111, 2049, 3128, 20048, 20049, 20050]
         cis_rpc_lockdown_allow4: "{{ (lookup('env', 'RPC_ALLOWED_NETS') | default('', true)).split(',') | map('trim') | reject('equalto', '') | list }}"
         cis_rpc_lockdown_allow6: ["::1/128", "fe80::/10"]
 
@@ -1071,7 +1082,6 @@ data:
         # on the host, so a problem in this newer piece cannot hold them back.
         - name: RPC/NFS lockdown
           ansible.builtin.include_tasks: cis_rpc_lockdown.yml
-          when: cis_rpc_lockdown_enabled | bool
 
   cis_wave1.yml: |-
     ---
@@ -1290,7 +1300,28 @@ data:
 
   cis_rpc_lockdown.yml: |-
     ---
-    # RPC/NFS ports reachable from the internal networks only.
+    # RPC/NFS and SPICE proxy ports reachable from the internal networks only,
+    # or, with cis_rpc_lockdown_state: absent in cis.yml, taken out again. The
+    # two states are separate task files so that each stays flat and readable.
+    - name: RPC lockdown | the requested state must be one we know
+      ansible.builtin.assert:
+        that:
+          - cis_rpc_lockdown_state in ['present', 'absent']
+        fail_msg: >-
+          cis_rpc_lockdown_state is '{{ cis_rpc_lockdown_state }}', expected
+          present or absent. Nothing was changed on the host.
+
+    - name: RPC lockdown | install and load it
+      ansible.builtin.include_tasks: cis_rpc_lockdown_present.yml
+      when: cis_rpc_lockdown_state == 'present'
+
+    - name: RPC lockdown | take it out again
+      ansible.builtin.include_tasks: cis_rpc_lockdown_absent.yml
+      when: cis_rpc_lockdown_state == 'absent'
+
+  cis_rpc_lockdown_present.yml: |-
+    ---
+    # RPC/NFS and SPICE proxy ports reachable from the internal networks only.
     #
     # The work is done by /usr/local/sbin/cis-rpc-lockdown (cis_rpc_lockdown.py
     # in this ConfigMap), which keeps one iptables and one ip6tables chain and a
@@ -1321,11 +1352,12 @@ data:
           changed on the host.
 
     #
-    # Emergency off switch, on the host as root:
+    # Off switch, from Git: cis_rpc_lockdown_state: absent in cis.yml (see
+    # cis_rpc_lockdown_absent.yml). On the host as root, for an emergency that
+    # cannot wait for a merge:
     #   systemctl stop cis-rpc-lockdown        (removes the rules again)
     #   /usr/local/sbin/cis-rpc-lockdown remove
-    # The next playbook run puts them back; set cis_rpc_lockdown_enabled: false
-    # in cis.yml (and remove the rules by hand) to switch it off for good.
+    # The next playbook run puts them back unless the state is absent.
     - name: RPC lockdown | install the script
       ansible.builtin.copy:
         src: /scripts/cis_rpc_lockdown.py
@@ -1381,7 +1413,7 @@ data:
         mode: "0644"
         content: |
           [Unit]
-          Description=RPC/NFS ports reachable from the internal networks only
+          Description=RPC/NFS and SPICE proxy ports reachable from the internal networks only
           After=local-fs.target
 
           [Service]
@@ -1417,6 +1449,98 @@ data:
         msg: "{{ cis_rpc_apply.stdout_lines + cis_rpc_status.stdout_lines }}"
       when: not ansible_check_mode
 
+  cis_rpc_lockdown_absent.yml: |-
+    ---
+    # The lockdown taken out again: rules, boot unit, script and configuration.
+    # Selected with cis_rpc_lockdown_state: absent in cis.yml, i.e. from Git.
+    #
+    # Needs neither RPC_ALLOWED_NETS nor a working configuration file: the
+    # point of this path is that it still works when something is wrong.
+    #
+    # Taking the lockdown out OPENS the ports again to whatever the rest of
+    # INPUT lets through. There is no pre-flight check for that, on purpose:
+    # asking for absent is the decision.
+    #
+    # Idempotent: on a host where nothing is installed every task that acts is
+    # skipped, so the nightly run reports no change.
+    #
+    # If the script is gone but the rules are still loaded (deleted by hand),
+    # there is nothing left to take them out with. The play then FAILS at the
+    # confirm step, before it deletes anything, instead of reporting an absent
+    # that is not one. Recover by setting the state back to present for one
+    # run (that installs the script again), then absent; or by hand, for each
+    # of iptables and ip6tables: delete the INPUT rules that jump to
+    # CIS-RPC-LOCKDOWN, then -F and -X that chain.
+    #
+    # Dry run: the stats and the file removals run and show what would go; the
+    # tasks that touch the live packet filter and systemd are skipped.
+    - name: RPC lockdown (absent) | is the script installed
+      ansible.builtin.stat:
+        path: /usr/local/sbin/cis-rpc-lockdown
+      register: cis_rpc_script
+
+    - name: RPC lockdown (absent) | is the unit installed
+      ansible.builtin.stat:
+        path: /etc/systemd/system/cis-rpc-lockdown.service
+      register: cis_rpc_unit
+
+    # The rules first, with the script that loaded them.
+    - name: RPC lockdown (absent) | take the rules out
+      ansible.builtin.command: /usr/local/sbin/cis-rpc-lockdown remove
+      register: cis_rpc_removed
+      changed_when: "'result: changed' in cis_rpc_removed.stdout"
+      when:
+        - cis_rpc_script.stat.exists
+        - not ansible_check_mode
+
+    # Then the unit, so that nothing loads them again at boot. Its ExecStop runs
+    # `remove` once more, which is a no-op by now.
+    - name: RPC lockdown (absent) | stop and disable the unit
+      ansible.builtin.systemd:
+        name: cis-rpc-lockdown.service
+        state: stopped
+        enabled: no
+      when:
+        - cis_rpc_unit.stat.exists
+        - not ansible_check_mode
+
+    # Asked of iptables and ip6tables directly, not of the script, so that it
+    # also works when the script is missing. A chain cannot be deleted while a
+    # rule still jumps to it, so no chain means no jump either. `iptables -S
+    # <chain>` exits non-zero when the chain does not exist; exit 0 means it is
+    # still there, which fails the play: an absent that silently is not absent
+    # is worse than a red Job. This runs BEFORE the files are deleted, so a
+    # failure leaves the script in place for the next attempt.
+    - name: RPC lockdown (absent) | confirm the chain is gone
+      ansible.builtin.command: "{{ item }} -w 10 -S CIS-RPC-LOCKDOWN"
+      loop:
+        - iptables
+        - ip6tables
+      register: cis_rpc_chain
+      changed_when: false
+      failed_when: cis_rpc_chain.rc == 0
+      when: not ansible_check_mode
+
+    - name: RPC lockdown (absent) | delete the unit, the configuration and the script
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/systemd/system/cis-rpc-lockdown.service
+        - /etc/cis-rpc-lockdown.json
+        - /usr/local/sbin/cis-rpc-lockdown
+
+    - name: RPC lockdown (absent) | systemd forgets the unit
+      ansible.builtin.systemd:
+        daemon_reload: yes
+      when:
+        - cis_rpc_unit.stat.exists
+        - not ansible_check_mode
+
+    - name: RPC lockdown (absent) | state
+      ansible.builtin.debug:
+        msg: "{{ ['state: absent'] + (cis_rpc_removed.stdout_lines | default([])) }}"
+
   cis_rpc_lockdown.py: |-
     #!/usr/bin/env python3
     """Keep the RPC/NFS ports reachable from the internal networks only.
@@ -1444,7 +1568,8 @@ data:
                  networks is connected to one of the ports right now. An apply
                  that changes nothing never refuses. --skip-checks omits both
                  checks (the boot unit does).
-        remove   take the rules out again (the emergency off switch)
+        remove   take the rules out again (the emergency off switch); works
+                 even when the configuration is broken or gone
         status   show what is loaded; with --verify exit 1 if it differs from
                  the configuration; --summary leaves the rule lines out (the
                  playbook uses it, so the networks stay out of the Job log)
@@ -1646,18 +1771,21 @@ data:
                     raise Failed("%s failed: %s" % (self.restore, res.stderr.strip()))
                 changed = True
 
-            # Jumps last, so they never point at an unpopulated chain.
+            # Jumps last, so they never point at an unpopulated chain. New ones
+            # go in BEFORE stale ones come out: when the port list changes there
+            # is a moment with both, which is harmless (both lead to the same
+            # chain), instead of a moment with neither.
             want_jumps = self.want_jumps(ports)
             have_jumps = self.have_jumps()
-            for line in have_jumps:
-                if line not in want_jumps:
-                    self.delete_jump(line)
-                    changed = True
             for line in want_jumps:
                 if line not in have_jumps:
                     res = self.ipt("-I", "INPUT", "1", *line.split()[2:])
                     if res.returncode != 0:
                         raise Failed("%s -I INPUT failed: %s" % (self.tool, res.stderr.strip()))
+                    changed = True
+            for line in have_jumps:
+                if line not in want_jumps:
+                    self.delete_jump(line)
                     changed = True
             return changed
 
