@@ -1343,6 +1343,30 @@ data:
         content: "{{ {'ports': cis_rpc_lockdown_ports, 'allow4': cis_rpc_lockdown_allow4, 'allow6': cis_rpc_lockdown_allow6} | to_nice_json }}\n"
       diff: false
 
+    # The checking apply comes BEFORE the unit, and that order matters. Starting
+    # the unit runs `apply --skip-checks`, so if the unit came first it would
+    # load the rules without the pre-flight checks (a peer outside the allowed
+    # networks that is connected right now would simply be cut off), and this
+    # apply would then find nothing to change and never look. Found by running
+    # the play against a systemd container with a stranger connected; the
+    # first version had the unit first and reported success.
+    #
+    # It also means a refusal leaves no unit behind: the script and the
+    # configuration are on the host, nothing is loaded, nothing is enabled.
+    - name: RPC lockdown | apply
+      ansible.builtin.command: /usr/local/sbin/cis-rpc-lockdown apply
+      register: cis_rpc_apply
+      changed_when: "'result: changed' in cis_rpc_apply.stdout"
+      when: not ansible_check_mode
+
+    # Exits non-zero if the chain or a jump is missing or differs, which fails
+    # the play: a lockdown that silently is not there is worse than a red Job.
+    - name: RPC lockdown | verify what is loaded
+      ansible.builtin.command: /usr/local/sbin/cis-rpc-lockdown status --verify --summary
+      register: cis_rpc_status
+      changed_when: false
+      when: not ansible_check_mode
+
     # Deliberately no Before=network-pre.target: ordering a firewall unit ahead
     # of the network targets on a hypervisor risks a dependency cycle, and
     # systemd resolves a cycle by dropping a job, which could be
@@ -1365,9 +1389,10 @@ data:
           RemainAfterExit=yes
           # --skip-checks: the pre-flight checks (the host's own LAN is inside
           # the allowed networks; nobody outside them is connected right now)
-          # guard a change made at deploy time. At boot the interfaces come up
-          # in no fixed order and nothing is connected yet, so a check that
-          # sees only part of the picture could refuse to load the rules at all.
+          # guard a change made at deploy time, which the apply task above has
+          # already done. At boot the interfaces come up in no fixed order and
+          # nothing is connected yet, so a check that sees only part of the
+          # picture could refuse to load the rules at all.
           ExecStart=/usr/local/sbin/cis-rpc-lockdown apply --skip-checks
           ExecStop=/usr/local/sbin/cis-rpc-lockdown remove
 
@@ -1375,6 +1400,8 @@ data:
           WantedBy=multi-user.target
       when: cis_rpc_lockdown_manage_unit | bool
 
+    # The rules are already loaded, so starting the unit changes nothing now;
+    # what this adds is the load at the next boot.
     - name: RPC lockdown | enable and start the unit
       ansible.builtin.systemd:
         name: cis-rpc-lockdown.service
@@ -1384,22 +1411,6 @@ data:
       when:
         - cis_rpc_lockdown_manage_unit | bool
         - not ansible_check_mode
-
-    # Idempotent: a no-op when the unit has just loaded exactly this, and the
-    # step that picks up a changed configuration while the unit stays active.
-    - name: RPC lockdown | apply
-      ansible.builtin.command: /usr/local/sbin/cis-rpc-lockdown apply
-      register: cis_rpc_apply
-      changed_when: "'result: changed' in cis_rpc_apply.stdout"
-      when: not ansible_check_mode
-
-    # Exits non-zero if the chain or a jump is missing or differs, which fails
-    # the play: a lockdown that silently is not there is worse than a red Job.
-    - name: RPC lockdown | verify what is loaded
-      ansible.builtin.command: /usr/local/sbin/cis-rpc-lockdown status --verify --summary
-      register: cis_rpc_status
-      changed_when: false
-      when: not ansible_check_mode
 
     - name: RPC lockdown | state
       ansible.builtin.debug:
