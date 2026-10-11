@@ -24,3 +24,4 @@ Severity scale (sized for a one-operator homelab, no on-call rotation):
 | 2026-08-16 | SEV3 | [Immich VectorChord extension-image GLIBC mismatch on the shared CNPG cluster](2026-08-16-immich-vectorchord-glibc-mismatch.md) |
 | 2026-09-20 | SEV1 | [Missing CiliumNetworkPolicy egress ports silently drop 28% of Prometheus scrape targets](2026-09-20-cilium-cnp-scrape-target-drop.md) |
 | 2026-09-20 | SEV1 | [external-dns v0.22.0 annotation-prefix rename silently drops public DNS](2026-09-20-external-dns-annotation-prefix-rename-breaks-public-dns.md) |
+| 2026-10-11 | SEV3 | [Wazuh rule 100406 burns 83% of the monthly Pushover quota in 11 days](2026-10-11-wazuh-pushover-quota-exhaustion.md) |
