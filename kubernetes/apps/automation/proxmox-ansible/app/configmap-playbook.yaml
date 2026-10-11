@@ -934,7 +934,8 @@ data:
     # Waves (remove a number from cis_waves to switch that wave off):
     #   1  file permissions, banners, telnet removal, sudo logging, su restriction
     #      - touches none of authentication, SSH, PAM or the network
-    #   2  auditd rules and AIDE limited to config paths     (not written yet)
+    #   2  so far only the AppArmor utilities (1.3.1.1)
+    #      auditd rules and AIDE limited to config paths still to come
     #   3  SSH AllowUsers, PAM, password policy               (not written yet)
     #
     # Control numbers in comments are those of the Wazuh policy. The CIS numbers
@@ -945,7 +946,7 @@ data:
       gather_facts: yes
 
       vars:
-        cis_waves: [1]
+        cis_waves: [1, 2]
 
         # A dedicated human admin next to root (bootstrap only) and ansible
         # (automation): key-only SSH, member of the sudo group. Nothing happens
@@ -1078,10 +1079,17 @@ data:
           ansible.builtin.include_tasks: cis_wave1.yml
           when: 1 in cis_waves
 
-        # After the waves on purpose: the waves have been applied and verified
-        # on the host, so a problem in this newer piece cannot hold them back.
+        # Between wave 1 and the later waves on purpose. Wave 1 has been applied
+        # and verified on the host for some time. The lockdown carries the Git
+        # off switch (cis_rpc_lockdown_state: absent), and an off switch that
+        # only runs if every newer wave succeeded first is not one: a failing
+        # wave 2 or 3 would leave `absent` unexecuted.
         - name: RPC/NFS lockdown
           ansible.builtin.include_tasks: cis_rpc_lockdown.yml
+
+        - name: Wave 2 — AppArmor utilities
+          ansible.builtin.include_tasks: cis_wave2.yml
+          when: 2 in cis_waves
 
   cis_wave1.yml: |-
     ---
@@ -1297,6 +1305,96 @@ data:
              | map('split', ':')
              | map('first')
              | list }}
+
+  cis_wave2.yml: |-
+    ---
+    # Wave 2, so far: the AppArmor utilities. The auditd rules and AIDE (config
+    # paths only) are meant to follow here. Numbers are those of the Wazuh SCA
+    # policy cis_debian13.
+    #
+    # Expected effect on the SCA score: 1 check flips to passed (1.3.1.1).
+    # 1.3.1.2 (AppArmor in the boot command line) and 1.4.1 (GRUB password) are
+    # accepted exceptions: both need a reboot of the hypervisor.
+
+    # ── 1.3.1.1  apparmor and apparmor-utils installed ───────────────────────
+    # The SCA rule is two dpkg-query calls, one per package. apparmor itself
+    # came with Proxmox (pve-container needs it); only the utilities are missing.
+    # Proxmox builds its own copies of all of them (4.1.1-pmx1 in the pve
+    # repository), and apparmor-utils there depends on python3-apparmor of the
+    # exact same version, so apt must take the Proxmox build and may not mix in
+    # Debian's. Nothing here installs apparmor itself: if it is missing, that is
+    # not the state this was checked against, and the run stops.
+    - name: CIS 1.3.1.1 | Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: CIS 1.3.1.1 | apparmor itself must already be installed
+      ansible.builtin.assert:
+        that:
+          - "'apparmor' in ansible_facts.packages"
+        fail_msg: >-
+          apparmor is not installed on this host, which is not what this wave
+          was written against. Not installing anything; look at it by hand.
+
+    # Simulate first and refuse to go on unless the only effect is new
+    # packages that belong to AppArmor. Same fail-closed shape as the telnet
+    # removal in wave 1: an installed package that would change version or go
+    # away (the way a mixed Debian/Proxmox dependency would show up), or a new
+    # package that has nothing to do with AppArmor, stops the run with
+    # nothing installed. Recommends are left out as a matter of course on a
+    # hypervisor. The Proxmox build of apparmor-utils recommends nothing
+    # (checked in the pve package index), so today that changes nothing; it
+    # only keeps a Recommends added by a later version from sneaking in.
+    - name: CIS 1.3.1.1 | Install the AppArmor utilities
+      when: "'apparmor-utils' not in ansible_facts.packages"
+      block:
+        # The simulation and the install must see the same package index, so
+        # refresh it once, here, before either of them looks. A no-op when
+        # hardening.yml refreshed it within the hour.
+        - name: CIS 1.3.1.1 | Package index no older than an hour
+          ansible.builtin.apt:
+            update_cache: yes
+            cache_valid_time: 3600
+
+        - name: CIS 1.3.1.1 | Simulate the installation
+          ansible.builtin.command:
+            argv: [apt-get, --simulate, --no-install-recommends, install, apparmor-utils]
+          environment:
+            LC_ALL: C
+          register: cis_aa_sim
+          changed_when: false
+          check_mode: false
+
+        - name: CIS 1.3.1.1 | Refuse unless it only adds AppArmor packages
+          ansible.builtin.assert:
+            that:
+              - "'apparmor-utils' in cis_aa_new"
+              - cis_aa_gone | length == 0
+              - cis_aa_changed | length == 0
+              - cis_aa_new | reject('search', 'apparmor') | list | length == 0
+            fail_msg: >-
+              apt's plan for apparmor-utils is not just new AppArmor packages.
+              New: {{ cis_aa_new | join(', ') | default('(none parsed)', true) }}.
+              Would change an installed package: {{ cis_aa_changed | join(', ') | default('none', true) }}.
+              Would remove: {{ cis_aa_gone | join(', ') | default('none', true) }}.
+              Not installing anything; decide by hand.
+            success_msg: "apt would add only: {{ cis_aa_new | join(', ') }}"
+          vars:
+            # Same regex lesson as the telnet removal: single backslashes and
+            # [^ ]+, never \\S. "Inst name (" is a new package, "Inst name ["
+            # an installed one that would change version.
+            cis_aa_new: >-
+              {{ cis_aa_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \(') | unique | list }}
+            cis_aa_changed: >-
+              {{ cis_aa_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \[') | unique | list }}
+            cis_aa_gone: >-
+              {{ cis_aa_sim.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^ ]+)') | unique | list }}
+
+        - name: CIS 1.3.1.1 | Install apparmor-utils
+          ansible.builtin.apt:
+            name: apparmor-utils
+            state: present
+            install_recommends: no
 
   cis_rpc_lockdown.yml: |-
     ---
