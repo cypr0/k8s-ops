@@ -54,9 +54,22 @@ data:
 
     mkdir -p /tmp/ansible-local
 
+    # Dry run: with ANSIBLE_CHECK=1 in the Job's environment Ansible only
+    # reports what it would change (check mode plus diff) and touches nothing.
+    # Meant for trying a new CIS wave before letting the nightly run apply it;
+    # see docs/apps/proxmox-ansible.md for the one-liner that sets it.
+    CHECK_FLAGS=""
+    if [ "$${ANSIBLE_CHECK:-0}" = "1" ]; then
+      CHECK_FLAGS="--check --diff"
+      echo "DRY RUN: ansible-playbook --check --diff, nothing will be changed"
+    fi
+
+    # CHECK_FLAGS is deliberately unquoted: it must split into two arguments,
+    # or vanish when empty.
     ansible-playbook \
       -i /tmp/inventory.ini \
       /scripts/hardening.yml \
+      $${CHECK_FLAGS} \
       -e "allowed_ip=$${ALLOWED_IP}" \
       -e "proxmox_host=$${PROXMOX_SSH_HOST}" \
       -e "ansible_pubkey_env_name=PROXMOX_ANSIBLE_SSH_PUBKEY"
@@ -186,10 +199,14 @@ data:
             update_cache: yes
             cache_valid_time: 3600
 
+        # check_mode: false on the read-only command tasks in this play: in a
+        # dry run (ANSIBLE_CHECK=1) Ansible would otherwise skip them, leave the
+        # registered variable without stdout, and fail the task that reads it.
         - name: List available upgrades
           ansible.builtin.shell: apt list --upgradable 2>/dev/null
           register: upgradable
           changed_when: false
+          check_mode: false
 
         - name: Report available upgrades
           ansible.builtin.debug:
@@ -292,6 +309,7 @@ data:
           ansible.builtin.command: hostname -s
           register: pve_node
           changed_when: false
+          check_mode: false
 
         - name: Disable cluster-level PVE firewall
           ansible.builtin.shell: >-
@@ -406,6 +424,7 @@ data:
           ansible.builtin.shell: grep -E '(post-up|post-down|address|gateway|route)' /etc/network/interfaces
           register: network_config
           changed_when: false
+          check_mode: false
 
         - name: Report network configuration
           ansible.builtin.debug:
@@ -462,6 +481,12 @@ data:
               AllowTcpForwarding no
               AllowAgentForwarding no
               AllowStreamLocalForwarding no
+              # Wazuh SCA 5.1.8 (CIS 5.1.8). Functionally a no-op here: the four
+              # directives above already deny X11, agent, TCP and StreamLocal
+              # forwarding. DisableForwarding overrides all of them in one place,
+              # which is what the benchmark asks for and what a later Match
+              # block could not quietly reopen.
+              DisableForwarding yes
 
               # ── Logging ─────────────────────────────────────────────────────
               # CIS 5.2.5
@@ -838,10 +863,27 @@ data:
             name: fail2ban
             state: restarted
 
+        # Validate first, then restart whichever unit actually owns port 22.
+        # Debian 13 can run sshd socket-activated (ssh.socket) instead of as a
+        # long-lived ssh.service, and a plain restart of the wrong one either
+        # fails or leaves the new config unread. Taken from the
+        # ansible-debian-cis role, where this bit sap-netbird-router on
+        # 2026-09-23. A failed `sshd -t` stops the run with the daemon
+        # untouched; established sessions survive either path.
         - name: Restart sshd
-          ansible.builtin.service:
-            name: ssh
-            state: restarted
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              /usr/sbin/sshd -t
+              if systemctl is-active --quiet ssh.service; then
+                systemctl restart ssh.service
+              elif systemctl is-active --quiet ssh.socket; then
+                systemctl restart ssh.socket
+              else
+                systemctl start ssh.service
+              fi
+            executable: /bin/bash
+          changed_when: true
 
         - name: Stop pve-firewall
           ansible.builtin.service:
@@ -867,3 +909,354 @@ data:
           ansible.builtin.service:
             name: vsftpd
             state: restarted
+
+    # CIS Debian 13 hardening, applied in waves, lives in its own playbook. It
+    # runs after the plays above and only if they succeeded, so a problem in a
+    # wave can never stop the maintenance that has been running nightly.
+    - ansible.builtin.import_playbook: cis.yml
+
+  cis.yml: |-
+    ---
+    # CIS Debian 13 (Trixie) hardening for the Proxmox host, applied in waves.
+    # Imported at the end of hardening.yml.
+    #
+    # Where the controls come from: the ansible-debian-cis role (roles/cis_debian13,
+    # in the Nextcloud "Repos" folder) is the reference for what each control does.
+    # It is NOT run against this host: this is a hypervisor, and several of the
+    # role's remediations would break it (host firewall, NFS/FTP removal, the
+    # sshd drop-in that this host's own sshd_config would ignore, wholesale PAM
+    # rewrites). Each wave is a hand-picked subset, ported to fit Proxmox, and
+    # checked against the wording of the Wazuh SCA policy cis_debian13, because
+    # Wazuh SCA, not this playbook, is what scores the result. It is the
+    # feedback loop for every wave: look at the agent's SCA results after the
+    # next scan, do not trust "ok" here.
+    #
+    # Waves (remove a number from cis_waves to switch that wave off):
+    #   1  file permissions, banners, telnet removal, sudo logging, su restriction
+    #      - touches none of authentication, SSH, PAM or the network
+    #   2  auditd rules and AIDE limited to config paths     (not written yet)
+    #   3  SSH AllowUsers, PAM, password policy               (not written yet)
+    #
+    # Control numbers in comments are those of the Wazuh policy. The CIS numbers
+    # in the ansible-debian-cis role differ in places (e.g. PermitRootLogin).
+    - name: Proxmox Host — CIS Debian 13 Hardening
+      hosts: proxmox_ansible
+      become: yes
+      gather_facts: yes
+
+      vars:
+        cis_waves: [1]
+
+        # A dedicated human admin next to root (bootstrap only) and ansible
+        # (automation): key-only SSH, member of the sudo group. Nothing happens
+        # until at least one public key is listed here. Public keys are not
+        # secret, so they live in Git rather than in 1Password.
+        #
+        # The password is deliberately NOT managed here. The account is created
+        # locked; set it once by hand (`passwd phiros-cmd` as root), after which
+        # sudo works with that password. Login itself never uses it - sshd only
+        # accepts keys. That keeps CIS 5.2.4 (sudo must ask for a password)
+        # true for a human, with no hash in Git or 1Password.
+        cis_admin_user: phiros-cmd
+        cis_admin_ssh_pubkeys:
+          # cypr0's own key (~/.ssh/id_ed25519_cypr0 on the admin Mac), ED25519,
+          # fingerprint SHA256:iw1v8EdDCpznuAFmlTfjBIuzUiLi7U7PyImao7ni60E.
+          # The trailing "cypr0" is only a label for authorized_keys.
+          - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYRsPt1fwbOyxdlFb3Owe0qscK3UIbCuBhcEsy6gqSi cypr0"
+
+      tasks:
+        - name: Guard — these controls were written for Debian 13
+          ansible.builtin.assert:
+            that:
+              - ansible_facts['distribution'] == 'Debian'
+              - ansible_facts['distribution_major_version'] == '13'
+            fail_msg: >-
+              The CIS waves were written and checked against Debian 13 (Trixie).
+              This host reports {{ ansible_facts['distribution'] }}
+              {{ ansible_facts['distribution_version'] }}; review the waves
+              before running them here.
+
+        # ── Admin account ────────────────────────────────────────────────────
+        - name: Admin account — {{ cis_admin_user }}
+          when: cis_admin_ssh_pubkeys | length > 0
+          block:
+            - name: Create the account (locked password, sudo group)
+              ansible.builtin.user:
+                name: "{{ cis_admin_user }}"
+                shell: /bin/bash
+                groups: sudo
+                append: yes
+                create_home: yes
+                state: present
+
+            - name: Ensure .ssh directory
+              ansible.builtin.file:
+                path: "/home/{{ cis_admin_user }}/.ssh"
+                state: directory
+                owner: "{{ cis_admin_user }}"
+                group: "{{ cis_admin_user }}"
+                mode: "0700"
+
+            - name: Install the SSH public keys
+              ansible.builtin.copy:
+                content: "{{ cis_admin_ssh_pubkeys | join('\n') }}\n"
+                dest: "/home/{{ cis_admin_user }}/.ssh/authorized_keys"
+                owner: "{{ cis_admin_user }}"
+                group: "{{ cis_admin_user }}"
+                mode: "0600"
+
+        # ── Exposure report (read only) ──────────────────────────────────────
+        # rpcbind, mountd and statd listen on every address, IPv6 included
+        # ([::]:111, :20048, :20049), as do pveproxy (8006) and spiceproxy
+        # (3128) as dual-stack sockets, while the packet filtering this repository
+        # sets up for them is IPv4 only (DNAT to OPNsense plus an INPUT drop on
+        # enp5s0), and the uplink carries a global IPv6 address. Whether those
+        # ports answer from the internet over IPv6 therefore cannot be read
+        # from the rules in Git. This prints what the host really has loaded so
+        # that the restriction (reachable from the LAN and the VPN, not from
+        # the internet) is written against facts. It changes nothing and runs
+        # in dry runs too.
+        - name: Exposure report — RPC/NFS ports (report only)
+          ansible.builtin.shell:
+            cmd: |
+              echo "== listening sockets on the management and RPC/NFS ports"
+              ss -H -tulnp | grep -E ':(22|111|2049|3128|8006|20048|20049|20050)[[:space:]]' || echo "(none)"
+              # 2>&1 throughout: a failing iptables must show up as its error
+              # message, not as an empty section that reads like "no rules".
+              echo "== IPv4 filter INPUT"
+              if command -v iptables >/dev/null 2>&1; then iptables -S INPUT 2>&1; else echo "iptables: not installed"; fi
+              echo "== IPv4 nat PREROUTING"
+              if command -v iptables >/dev/null 2>&1; then iptables -t nat -S PREROUTING 2>&1; fi
+              echo "== IPv6 filter INPUT"
+              if command -v ip6tables >/dev/null 2>&1; then ip6tables -S INPUT 2>&1; else echo "ip6tables: not installed"; fi
+              echo "== interfaces carrying a global IPv6 address"
+              ip -6 -o addr show scope global | cut -d' ' -f2 | sort -u
+            executable: /bin/bash
+          register: cis_exposure
+          changed_when: false
+          failed_when: false
+          check_mode: false
+
+        - name: Exposure report — result
+          ansible.builtin.debug:
+            msg: "{{ cis_exposure.stdout_lines }}"
+
+        # ── Waves ────────────────────────────────────────────────────────────
+        - name: Wave 1 — low-risk controls
+          ansible.builtin.include_tasks: cis_wave1.yml
+          when: 1 in cis_waves
+
+  cis_wave1.yml: |-
+    ---
+    # Wave 1: controls that touch none of authentication, SSH, PAM or the network.
+    # Numbers are those of the Wazuh SCA policy cis_debian13.
+    #
+    # Expected effect on the SCA score, from the baseline of 2026-10-11
+    # (91 passed / 102 failed): 15 checks flip to passed -
+    #   1.6.1  1.6.3  2.2.4  2.3.3.2  2.4.1.2-2.4.1.7  5.1.8  5.2.3  5.2.6
+    #   5.2.7  7.1.10
+    # (5.1.8 comes from hardening.yml's sshd_config, the rest from here.)
+
+    # ── 2.4.1.2 - 2.4.1.7  cron permissions ──────────────────────────────────
+    - name: CIS 2.4.1 | Stat the cron paths
+      ansible.builtin.stat:
+        path: "{{ item.path }}"
+      loop:
+        - { path: /etc/crontab, mode: "0600" }
+        - { path: /etc/cron.hourly, mode: "0700" }
+        - { path: /etc/cron.daily, mode: "0700" }
+        - { path: /etc/cron.weekly, mode: "0700" }
+        - { path: /etc/cron.monthly, mode: "0700" }
+        - { path: /etc/cron.d, mode: "0700" }
+      loop_control:
+        label: "{{ item.path }}"
+      register: cis_cron_paths
+
+    # cron itself runs as root and reads these as root, so closing them to
+    # everyone else changes nothing for the jobs that exist.
+    - name: CIS 2.4.1 | Limit the cron paths to root
+      ansible.builtin.file:
+        path: "{{ item.item.path }}"
+        owner: root
+        group: root
+        mode: "{{ item.item.mode }}"
+      loop: "{{ cis_cron_paths.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.stat.exists
+
+    # ── 7.1.10  opasswd ──────────────────────────────────────────────────────
+    # The SCA rule stats BOTH files, and stat on a missing one fails the rule,
+    # so absent is not compliant here the way the CIS text reads. Touching with
+    # preserved times keeps this from reporting "changed" every night.
+    - name: CIS 7.1.10 | opasswd and opasswd.old exist and are root-only
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: touch
+        owner: root
+        group: root
+        mode: "0600"
+        modification_time: preserve
+        access_time: preserve
+      loop:
+        - /etc/security/opasswd
+        - /etc/security/opasswd.old
+
+    # ── 2.2.4  telnet client ─────────────────────────────────────────────────
+    - name: CIS 2.2.4 | Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: CIS 2.2.4 | Which telnet clients are installed
+      ansible.builtin.set_fact:
+        cis_telnet_pkgs: "{{ ['telnet', 'inetutils-telnet'] | select('in', ansible_facts.packages) | list }}"
+
+    # Simulate first and refuse to go on if apt would take anything else with
+    # it. On a Proxmox host a package removal that drags in proxmox-ve is the
+    # failure to rule out. The assertion fails closed: if the simulation prints
+    # nothing parseable, the run stops instead of removing blind.
+    - name: CIS 2.2.4 | Remove the telnet client
+      when: cis_telnet_pkgs | length > 0
+      block:
+        - name: CIS 2.2.4 | Simulate the removal
+          ansible.builtin.command: "apt-get --simulate purge {{ cis_telnet_pkgs | join(' ') }}"
+          register: cis_telnet_sim
+          changed_when: false
+          check_mode: false
+
+        - name: CIS 2.2.4 | Refuse if anything beyond the telnet clients would go
+          ansible.builtin.assert:
+            that:
+              - cis_telnet_sim_pkgs | length > 0
+              - cis_telnet_sim_pkgs | difference(cis_telnet_pkgs) | length == 0
+            fail_msg: >-
+              Removing {{ cis_telnet_pkgs | join(', ') }} would also remove
+              {{ cis_telnet_sim_pkgs | difference(cis_telnet_pkgs) | join(', ') }}.
+              Not removing anything; decide by hand.
+          vars:
+            # [^ ]+ rather than \S+: inside a Jinja string Ansible hands a
+            # doubled backslash to the regex as-is, so \\S matched nothing and
+            # the fail-closed assertion above tripped on a perfectly normal
+            # simulation (found by running this against Debian 13, 2026-10-11).
+            cis_telnet_sim_pkgs: >-
+              {{ cis_telnet_sim.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^ ]+)') | unique | list }}
+
+        - name: CIS 2.2.4 | Purge the telnet client
+          ansible.builtin.apt:
+            name: "{{ cis_telnet_pkgs }}"
+            state: absent
+            purge: yes
+
+    # ── 5.2.3 / 5.2.6  sudo log file and credential cache ────────────────────
+    # The SCA rule for 5.2.6 needs timestamp_timeout in /etc/sudoers itself AND
+    # in a sudoers.d file (condition "all"), which no real configuration needs.
+    # Both get the same value. Every edit is validated with visudo before it
+    # replaces the live file: a broken sudoers locks the automation out.
+    - name: CIS 5.2.3 / 5.2.6 | sudo drop-in
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/99-cis-hardening
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          # Managed by Ansible (proxmox-ansible, CIS wave 1). Do not edit by hand.
+          # 5.2.3: log sudo activity to a file
+          Defaults logfile="/var/log/sudo.log"
+          # 5.2.6: re-ask for the password after 15 minutes
+          Defaults timestamp_timeout=15
+
+    - name: CIS 5.2.6 | timestamp_timeout in /etc/sudoers
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers
+        regexp: '^\s*Defaults\s+timestamp_timeout\s*='
+        line: "Defaults timestamp_timeout=15"
+        insertafter: '^\s*Defaults\s+use_pty'
+        validate: /usr/sbin/visudo -cf %s
+
+    # ── 5.2.7  su restricted ─────────────────────────────────────────────────
+    # The SCA rule wants pam_wheel with use_uid AND an explicit group=, naming
+    # a group that nobody belongs to. (The role writes a bare pam_wheel.so,
+    # which would not pass.) Nothing here depends on su: automation uses sudo,
+    # SSH and the PVE web login do not go through /etc/pam.d/su.
+    - name: CIS 5.2.7 | Empty group that gates su
+      ansible.builtin.group:
+        name: sugroup
+        state: present
+
+    - name: CIS 5.2.7 | Restrict su to that group
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/su
+        regexp: '^\s*#?\s*auth\s+required\s+pam_wheel\.so'
+        line: "auth       required   pam_wheel.so use_uid group=sugroup"
+
+    # ── 1.6.1 / 1.6.3  banners ───────────────────────────────────────────────
+    # 1.6.1: the SCA regex contains a bare \s (whitespace), so any motd text
+    # with a space in it fails; only an absent file passes, which the CIS text
+    # allows ("if the motd is not used, this file can be removed"). The legal
+    # notice is shown before login by the sshd banner instead.
+    - name: CIS 1.6.1 | No /etc/motd
+      ansible.builtin.file:
+        path: /etc/motd
+        state: absent
+
+    # 1.6.3: Debian's stock issue.net names the OS, which the rule rejects.
+    # Reuse the sshd banner file so there is one text to maintain.
+    # /etc/issue (1.6.2) is left alone on purpose: pvebanner rewrites it at
+    # every boot, so managing it here would fight Proxmox, and it passes as is.
+    - name: CIS 1.6.3 | /etc/issue.net carries the same notice as the sshd banner
+      ansible.builtin.copy:
+        src: /etc/ssh/issue.net
+        dest: /etc/issue.net
+        remote_src: yes
+        owner: root
+        group: root
+        mode: "0644"
+
+    # ── 2.3.3.2  chrony user ─────────────────────────────────────────────────
+    # chronyd already runs as _chrony; the process owner is what Wazuh's
+    # inventory shows. The check reads the config instead, and wants the user
+    # named in chrony.conf AND in a conf.d file (condition "all"). Same value
+    # as the built-in default, so no restart is needed.
+    - name: CIS 2.3.3.2 | chrony.conf names the unprivileged user
+      ansible.builtin.lineinfile:
+        path: /etc/chrony/chrony.conf
+        regexp: '^\s*user\s'
+        line: "user _chrony"
+
+    - name: CIS 2.3.3.2 | conf.d directory exists
+      ansible.builtin.file:
+        path: /etc/chrony/conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: CIS 2.3.3.2 | conf.d names it as well
+      ansible.builtin.copy:
+        dest: /etc/chrony/conf.d/10-user.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible (proxmox-ansible, CIS wave 1).
+          user _chrony
+
+    # ── 7.2.1  diagnostic only ───────────────────────────────────────────────
+    # SCA reports "accounts not using shadowed passwords" as failed, but the
+    # usernames Wazuh's inventory lists all fit its pattern, so the trigger is
+    # something else in /etc/passwd. Report which lines the rule rejects
+    # (usernames only, never the second field) instead of running pwconv blind.
+    - name: CIS 7.2.1 | Read /etc/passwd
+      ansible.builtin.slurp:
+        src: /etc/passwd
+      register: cis_passwd
+
+    - name: CIS 7.2.1 | Report lines the SCA rule rejects (report only)
+      ansible.builtin.debug:
+        msg: >-
+          {{ (cis_passwd.content | b64decode).splitlines()
+             | reject('match', '^[A-Za-z0-9_@-]+:x:')
+             | map('split', ':')
+             | map('first')
+             | list }}
