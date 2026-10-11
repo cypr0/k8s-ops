@@ -964,6 +964,27 @@ data:
           # The trailing "cypr0" is only a label for authorized_keys.
           - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYRsPt1fwbOyxdlFb3Owe0qscK3UIbCuBhcEsy6gqSi cypr0"
 
+        # RPC/NFS ports (rpcbind 111, nfsd 2049, mountd 20048, statd 20049,
+        # 20050) reachable from the internal networks only. Measured on the
+        # host on 2026-10-11: over IPv4 the DNAT to OPNsense plus an INPUT drop
+        # on the uplink already keep them off the internet, but IPv6 is active
+        # (global address and gateway on the uplink), the services listen on
+        # [::] and ip6tables INPUT had no rule at all. Allowed sources: the LAN
+        # where the cluster's NFS clients live and the two WireGuard networks.
+        # Those networks are not written down here: they come from the key
+        # SECRET_RPC_ALLOWED_NETS in kubernetes/components/sops/
+        # cluster-secrets.sops.yaml (comma-separated IPv4 CIDRs), reach the Job
+        # as the environment variable RPC_ALLOWED_NETS (cronjob.yaml) and are
+        # read here. IPv6 has no internal clients, so only loopback and
+        # link-local are allowed there; those two are protocol constants, not
+        # site addresses. cis_rpc_lockdown.py refuses public networks and the
+        # management ports 22 and 8006.
+        cis_rpc_lockdown_enabled: true
+        cis_rpc_lockdown_manage_unit: true
+        cis_rpc_lockdown_ports: [111, 2049, 20048, 20049, 20050]
+        cis_rpc_lockdown_allow4: "{{ (lookup('env', 'RPC_ALLOWED_NETS') | default('', true)).split(',') | map('trim') | reject('equalto', '') | list }}"
+        cis_rpc_lockdown_allow6: ["::1/128", "fe80::/10"]
+
       tasks:
         - name: Guard — these controls were written for Debian 13
           ansible.builtin.assert:
@@ -1045,6 +1066,12 @@ data:
         - name: Wave 1 — low-risk controls
           ansible.builtin.include_tasks: cis_wave1.yml
           when: 1 in cis_waves
+
+        # After the waves on purpose: the waves have been applied and verified
+        # on the host, so a problem in this newer piece cannot hold them back.
+        - name: RPC/NFS lockdown
+          ansible.builtin.include_tasks: cis_rpc_lockdown.yml
+          when: cis_rpc_lockdown_enabled | bool
 
   cis_wave1.yml: |-
     ---
@@ -1260,3 +1287,524 @@ data:
              | map('split', ':')
              | map('first')
              | list }}
+
+  cis_rpc_lockdown.yml: |-
+    ---
+    # RPC/NFS ports reachable from the internal networks only.
+    #
+    # The work is done by /usr/local/sbin/cis-rpc-lockdown (cis_rpc_lockdown.py
+    # in this ConfigMap), which keeps one iptables and one ip6tables chain and a
+    # jump to it from INPUT. This file only installs it, feeds it its
+    # configuration, and makes sure it is loaded at boot and now. What the
+    # script does and refuses is documented in its own header.
+    #
+    # Dry run: the script and the unit show what would be written. The apply
+    # step is skipped in check mode, because it would change the live packet
+    # filter.
+    #
+    # The allowed networks are kept out of the Job log, which Fluent Bit ships
+    # to Loki: the configuration task has `diff: false` (its diff would print
+    # the file), the script's `status` is called with --summary (it would list
+    # the rules), and `apply` only prints per-family verdicts. They can still
+    # appear when something fails (a refusal names them, and ansible prints a
+    # failed task's output in full), which is when they are needed.
+    - name: RPC lockdown | the networks must have come through
+      ansible.builtin.assert:
+        that:
+          - cis_rpc_lockdown_allow4 | length > 0
+        fail_msg: >-
+          RPC_ALLOWED_NETS is empty. It is filled from the key
+          SECRET_RPC_ALLOWED_NETS in cluster-secrets (cronjob.yaml). Flux
+          substitutes it into the CronJob, so this means the Secret did not
+          have the key when the CronJob was last reconciled: reconcile the
+          Secret first, then the proxmox-ansible Kustomization. Nothing was
+          changed on the host.
+
+    #
+    # Emergency off switch, on the host as root:
+    #   systemctl stop cis-rpc-lockdown        (removes the rules again)
+    #   /usr/local/sbin/cis-rpc-lockdown remove
+    # The next playbook run puts them back; set cis_rpc_lockdown_enabled: false
+    # in cis.yml (and remove the rules by hand) to switch it off for good.
+    - name: RPC lockdown | install the script
+      ansible.builtin.copy:
+        src: /scripts/cis_rpc_lockdown.py
+        dest: /usr/local/sbin/cis-rpc-lockdown
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: RPC lockdown | write the configuration
+      ansible.builtin.copy:
+        dest: /etc/cis-rpc-lockdown.json
+        owner: root
+        group: root
+        mode: "0600"
+        content: "{{ {'ports': cis_rpc_lockdown_ports, 'allow4': cis_rpc_lockdown_allow4, 'allow6': cis_rpc_lockdown_allow6} | to_nice_json }}\n"
+      diff: false
+
+    # Deliberately no Before=network-pre.target: ordering a firewall unit ahead
+    # of the network targets on a hypervisor risks a dependency cycle, and
+    # systemd resolves a cycle by dropping a job, which could be
+    # networking.service. The rules load a few seconds after boot instead; over
+    # IPv4 the DNAT and the INPUT drops in /etc/network/interfaces already
+    # cover that window.
+    - name: RPC lockdown | install the systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/cis-rpc-lockdown.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=RPC/NFS ports reachable from the internal networks only
+          After=local-fs.target
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          # --skip-checks: the pre-flight checks (the host's own LAN is inside
+          # the allowed networks; nobody outside them is connected right now)
+          # guard a change made at deploy time. At boot the interfaces come up
+          # in no fixed order and nothing is connected yet, so a check that
+          # sees only part of the picture could refuse to load the rules at all.
+          ExecStart=/usr/local/sbin/cis-rpc-lockdown apply --skip-checks
+          ExecStop=/usr/local/sbin/cis-rpc-lockdown remove
+
+          [Install]
+          WantedBy=multi-user.target
+      when: cis_rpc_lockdown_manage_unit | bool
+
+    - name: RPC lockdown | enable and start the unit
+      ansible.builtin.systemd:
+        name: cis-rpc-lockdown.service
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      when:
+        - cis_rpc_lockdown_manage_unit | bool
+        - not ansible_check_mode
+
+    # Idempotent: a no-op when the unit has just loaded exactly this, and the
+    # step that picks up a changed configuration while the unit stays active.
+    - name: RPC lockdown | apply
+      ansible.builtin.command: /usr/local/sbin/cis-rpc-lockdown apply
+      register: cis_rpc_apply
+      changed_when: "'result: changed' in cis_rpc_apply.stdout"
+      when: not ansible_check_mode
+
+    # Exits non-zero if the chain or a jump is missing or differs, which fails
+    # the play: a lockdown that silently is not there is worse than a red Job.
+    - name: RPC lockdown | verify what is loaded
+      ansible.builtin.command: /usr/local/sbin/cis-rpc-lockdown status --verify --summary
+      register: cis_rpc_status
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: RPC lockdown | state
+      ansible.builtin.debug:
+        msg: "{{ cis_rpc_apply.stdout_lines + cis_rpc_status.stdout_lines }}"
+      when: not ansible_check_mode
+
+  cis_rpc_lockdown.py: |-
+    #!/usr/bin/env python3
+    """Keep the RPC/NFS ports reachable from the internal networks only.
+
+    Managed by Ansible (proxmox-ansible, cis.yml). Do not edit by hand.
+
+    What it does
+        Per address family (iptables and ip6tables) it maintains one user chain,
+        CIS-RPC-LOCKDOWN, and one jump to it from INPUT for TCP and one for UDP
+        on the configured ports. Inside the chain, loopback and the allowed
+        source networks RETURN to INPUT and everything else is dropped.
+
+    What it will not do
+        It only ever narrows what INPUT lets through. It never ACCEPTs, never
+        edits any other rule, and refuses the management ports 22 and 8006,
+        public source networks, and an allow list that would cut the host's own
+        LAN. Forwarded traffic (the DNAT to the firewall VM, VM to VM) does not
+        pass through INPUT and is not touched.
+
+    Subcommands
+        apply    create or repair the rules; prints "result: changed" or
+                 "result: unchanged". When that would change something it
+                 first refuses if none of the host's own private addresses is
+                 inside an allowed network, or if a peer outside the allowed
+                 networks is connected to one of the ports right now. An apply
+                 that changes nothing never refuses. --skip-checks omits both
+                 checks (the boot unit does).
+        remove   take the rules out again (the emergency off switch)
+        status   show what is loaded; with --verify exit 1 if it differs from
+                 the configuration; --summary leaves the rule lines out (the
+                 playbook uses it, so the networks stay out of the Job log)
+        plan     print what apply would load, touching nothing
+
+    Exit status: 0 ok, 1 a command failed or verification found a difference,
+    2 the configuration or the host was refused.
+    """
+    import argparse
+    import ipaddress
+    import json
+    import os
+    import shutil
+    import subprocess
+    import sys
+
+    CONFIG = "/etc/cis-rpc-lockdown.json"
+    CHAIN = "CIS-RPC-LOCKDOWN"
+    NEVER_PORTS = (22, 8006)
+    WAIT = ["-w", "10"]
+
+    class Refused(Exception):
+        """The configuration or the host is not something to act on."""
+
+    class Failed(Exception):
+        """A command that should have worked did not."""
+
+    def run(cmd, data=None):
+        return subprocess.run(cmd, input=data, capture_output=True, text=True, check=False)
+
+    def load_config(path):
+        try:
+            with open(path) as handle:
+                raw = json.load(handle)
+        except (OSError, ValueError) as exc:
+            raise Refused("cannot read %s: %s" % (path, exc))
+
+        try:
+            ports = sorted(set(int(p) for p in raw["ports"]))
+        except (KeyError, TypeError, ValueError):
+            raise Refused("'ports' must be a list of port numbers")
+        if not ports:
+            raise Refused("no ports configured")
+        for port in ports:
+            if not 1 <= port <= 65535:
+                raise Refused("port out of range: %d" % port)
+            if port in NEVER_PORTS:
+                raise Refused("port %d is a management port, refusing" % port)
+
+        allow = {4: [], 6: []}
+        for key, version in (("allow4", 4), ("allow6", 6)):
+            for text in raw.get(key, []):
+                try:
+                    net = ipaddress.ip_network(text, strict=True)
+                except ValueError as exc:
+                    raise Refused("%s: %s" % (text, exc))
+                if net.version != version:
+                    raise Refused("%s is not an IPv%d network" % (text, version))
+                if not net.is_private:
+                    raise Refused("%s is not a private network, refusing" % text)
+                allow[version].append(net)
+        if not allow[4]:
+            raise Refused("allow4 is empty: that would cut every internal client")
+        return ports, allow
+
+    def check_local_coverage(allow4):
+        """Refuse if none of the host's own private addresses is inside an allowed
+        network, which would mean the allow list names the wrong LAN."""
+        if shutil.which("ip") is None:
+            return
+        res = run(["ip", "-4", "-o", "addr", "show"])
+        if res.returncode != 0:
+            return
+        local = []
+        for line in res.stdout.splitlines():
+            parts = line.split()
+            if "inet" in parts:
+                addr = ipaddress.ip_interface(parts[parts.index("inet") + 1]).ip
+                if addr.is_private and not addr.is_loopback:
+                    local.append(addr)
+        if local and not any(addr in net for addr in local for net in allow4):
+            raise Refused(
+                "none of this host's private addresses (%s) is inside the allowed "
+                "networks (%s)" % (", ".join(str(a) for a in local), ", ".join(str(n) for n in allow4))
+            )
+
+    def check_established(ports, allow):
+        """Refuse if a peer outside the allowed networks is connected to one of the
+        ports right now. The allow list can be well-formed and still miss a real
+        client; this is the one check that looks at who actually uses the ports.
+        Only TCP shows who is connected (UDP here has no connection state).
+        Addresses appear only in the refusal, which is when they are needed."""
+        if shutil.which("ss") is None:
+            return
+        wanted = set(ports)
+        strangers = {}
+        for version, nets in ((4, allow[4]), (6, allow[6])):
+            res = run(["ss", "-H", "-n", "-t", "state", "established", "-%d" % version])
+            if res.returncode != 0:
+                continue
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                local, peer = parts[-2], parts[-1]
+                try:
+                    local_port = int(local.rsplit(":", 1)[1])
+                    peer_ip = ipaddress.ip_address(peer.rsplit(":", 1)[0].strip("[]"))
+                except (IndexError, ValueError):
+                    continue
+                if local_port not in wanted:
+                    continue
+                # An IPv4 client of a dual-stack socket shows up as ::ffff:a.b.c.d
+                if peer_ip.version == 6 and peer_ip.ipv4_mapped is not None:
+                    peer_ip = peer_ip.ipv4_mapped
+                if peer_ip.is_loopback:
+                    continue
+                family_nets = allow[peer_ip.version]
+                if not any(peer_ip in net for net in family_nets):
+                    strangers.setdefault(str(peer_ip), set()).add(local_port)
+        if strangers:
+            raise Refused(
+                "connected right now from outside the allowed networks: %s. Loading "
+                "the rules would cut them. Add their network to the allow list, or "
+                "stop the client first."
+                % "; ".join("%s -> port %s" % (ip, ",".join(str(p) for p in sorted(ps))) for ip, ps in sorted(strangers.items()))
+            )
+
+    class Family:
+        def __init__(self, version, tool, restore, allow):
+            self.version = version
+            self.tool = tool
+            self.restore = restore
+            self.allow = allow
+            self.label = "ipv%d" % version
+
+        def ipt(self, *args):
+            return run([self.tool] + WAIT + list(args))
+
+        def usable(self):
+            """(True, "") when this family can be managed, (False, reason) when it
+            does not exist on this host. Anything else is a failure."""
+            if shutil.which(self.tool) is None:
+                return False, "%s is not installed" % self.tool
+            res = self.ipt("-S", "INPUT")
+            if res.returncode == 0:
+                return True, ""
+            err = res.stderr.strip()
+            if "family not supported" in err.lower():
+                return False, err
+            raise Failed("%s -S INPUT failed: %s" % (self.tool, err))
+
+        def chain_rules(self):
+            """The chain's rules as iptables -S prints them, None if it is absent."""
+            res = self.ipt("-S", CHAIN)
+            if res.returncode != 0:
+                return None
+            return [line for line in res.stdout.splitlines() if line.startswith("-A ")]
+
+        def want_chain(self):
+            rules = ["-A %s -i lo -j RETURN" % CHAIN]
+            for net in self.allow:
+                rules.append("-A %s -s %s -j RETURN" % (CHAIN, net))
+            rules.append("-A %s -j DROP" % CHAIN)
+            return rules
+
+        def want_jumps(self, ports):
+            plist = ",".join(str(p) for p in ports)
+            return [
+                "-A INPUT -p %s -m multiport --dports %s -j %s" % (proto, plist, CHAIN)
+                for proto in ("tcp", "udp")
+            ]
+
+        def have_jumps(self):
+            res = self.ipt("-S", "INPUT")
+            if res.returncode != 0:
+                raise Failed("%s -S INPUT failed: %s" % (self.tool, res.stderr.strip()))
+            return [line for line in res.stdout.splitlines() if line.endswith("-j " + CHAIN)]
+
+        def delete_jump(self, line):
+            res = self.ipt("-D", "INPUT", *line.split()[2:])
+            if res.returncode != 0:
+                raise Failed("%s -D INPUT failed: %s" % (self.tool, res.stderr.strip()))
+
+        def apply(self, ports):
+            changed = False
+            want = self.want_chain()
+            if self.chain_rules() != want:
+                if self.chain_rules() is None:
+                    res = self.ipt("-N", CHAIN)
+                    if res.returncode != 0:
+                        raise Failed("%s -N %s failed: %s" % (self.tool, CHAIN, res.stderr.strip()))
+                # One transaction: the chain is never half-written. An empty or
+                # missing chain just returns to INPUT, so a re-load fails open
+                # for an instant rather than closed.
+                payload = "*filter\n-F %s\n%s\nCOMMIT\n" % (CHAIN, "\n".join(want))
+                res = run([self.restore, "--noflush"], payload)
+                if res.returncode != 0:
+                    raise Failed("%s failed: %s" % (self.restore, res.stderr.strip()))
+                changed = True
+
+            # Jumps last, so they never point at an unpopulated chain.
+            want_jumps = self.want_jumps(ports)
+            have_jumps = self.have_jumps()
+            for line in have_jumps:
+                if line not in want_jumps:
+                    self.delete_jump(line)
+                    changed = True
+            for line in want_jumps:
+                if line not in have_jumps:
+                    res = self.ipt("-I", "INPUT", "1", *line.split()[2:])
+                    if res.returncode != 0:
+                        raise Failed("%s -I INPUT failed: %s" % (self.tool, res.stderr.strip()))
+                    changed = True
+            return changed
+
+        def remove(self):
+            changed = False
+            for line in self.have_jumps():
+                self.delete_jump(line)
+                changed = True
+            if self.chain_rules() is not None:
+                self.ipt("-F", CHAIN)
+                res = self.ipt("-X", CHAIN)
+                if res.returncode != 0:
+                    raise Failed("%s -X %s failed: %s" % (self.tool, CHAIN, res.stderr.strip()))
+                changed = True
+            return changed
+
+        def problems(self, ports):
+            found = []
+            have = self.chain_rules()
+            if have is None:
+                found.append("chain %s is missing" % CHAIN)
+            elif have != self.want_chain():
+                found.append("chain %s differs from the configuration" % CHAIN)
+            want_jumps = self.want_jumps(ports)
+            have_jumps = self.have_jumps()
+            for line in want_jumps:
+                if line not in have_jumps:
+                    found.append("INPUT jump missing: %s" % line)
+            for line in have_jumps:
+                if line not in want_jumps:
+                    found.append("INPUT jump not in the configuration: %s" % line)
+            return found
+
+        def show(self, ports):
+            print("== %s (%s)" % (self.label, self.tool))
+            have = self.chain_rules()
+            print("chain %s:" % CHAIN)
+            for line in have if have is not None else ["(absent)"]:
+                print("  " + line)
+            print("INPUT jumps:")
+            for line in self.have_jumps() or ["(none)"]:
+                print("  " + line)
+
+    def families(allow):
+        return [
+            Family(4, "iptables", "iptables-restore", allow[4]),
+            Family(6, "ip6tables", "ip6tables-restore", allow[6]),
+        ]
+
+    def command_plan(ports, allow):
+        for fam in families(allow):
+            print("== %s: iptables-restore --noflush would load" % fam.label)
+            print("*filter\n-F %s\n%s\nCOMMIT" % (CHAIN, "\n".join(fam.want_chain())))
+            print("and make sure INPUT holds, at position 1:")
+            for line in fam.want_jumps(ports):
+                print("  " + line)
+        return 0
+
+    def command_apply(ports, allow, skip_checks):
+        fams = families(allow)
+        # The pre-flight checks guard a change. A run that would change nothing
+        # (the nightly one, once the rules are loaded) must not start failing
+        # because some old connection happens to exist, so they only run when
+        # something differs.
+        if not skip_checks:
+            differs = False
+            for fam in fams:
+                ok, _why = fam.usable()
+                if ok and fam.problems(ports):
+                    differs = True
+            if differs:
+                check_local_coverage(allow[4])
+                check_established(ports, allow)
+        changed = False
+        failed = False
+        for fam in fams:
+            try:
+                ok, why = fam.usable()
+                if not ok:
+                    print("%s: skipped (%s)" % (fam.label, why))
+                    continue
+                did = fam.apply(ports)
+                changed = changed or did
+                print("%s: %s" % (fam.label, "changed" if did else "unchanged"))
+            except Failed as exc:
+                failed = True
+                print("%s: FAILED: %s" % (fam.label, exc), file=sys.stderr)
+        print("result: %s" % ("changed" if changed else "unchanged"))
+        return 1 if failed else 0
+
+    def command_remove():
+        failed = False
+        changed = False
+        for fam in families({4: [], 6: []}):
+            try:
+                ok, why = fam.usable()
+                if not ok:
+                    print("%s: skipped (%s)" % (fam.label, why))
+                    continue
+                did = fam.remove()
+                changed = changed or did
+                print("%s: %s" % (fam.label, "removed" if did else "nothing to remove"))
+            except Failed as exc:
+                failed = True
+                print("%s: FAILED: %s" % (fam.label, exc), file=sys.stderr)
+        print("result: %s" % ("changed" if changed else "unchanged"))
+        return 1 if failed else 0
+
+    def command_status(ports, allow, verify, summary):
+        bad = False
+        for fam in families(allow):
+            ok, why = fam.usable()
+            if not ok:
+                print("== %s: skipped (%s)" % (fam.label, why))
+                continue
+            if not summary:
+                fam.show(ports)
+            if verify:
+                for problem in fam.problems(ports):
+                    bad = True
+                    print("PROBLEM (%s): %s" % (fam.label, problem), file=sys.stderr)
+        if verify:
+            print("verify: %s" % ("DIFFERS" if bad else "ok"))
+        return 1 if bad else 0
+
+    def main(argv=None):
+        parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+        parser.add_argument("--config", default=CONFIG)
+        sub = parser.add_subparsers(dest="command", required=True)
+        apply = sub.add_parser("apply")
+        apply.add_argument("--skip-checks", action="store_true")
+        sub.add_parser("remove")
+        status = sub.add_parser("status")
+        status.add_argument("--verify", action="store_true")
+        status.add_argument("--summary", action="store_true")
+        sub.add_parser("plan")
+        args = parser.parse_args(argv)
+
+        try:
+            # remove must work even when the configuration is broken or gone.
+            if args.command == "remove":
+                if os.geteuid() != 0:
+                    raise Refused("needs root")
+                return command_remove()
+            ports, allow = load_config(args.config)
+            if args.command == "plan":
+                return command_plan(ports, allow)
+            if os.geteuid() != 0:
+                raise Refused("needs root")
+            if args.command == "apply":
+                return command_apply(ports, allow, args.skip_checks)
+            return command_status(ports, allow, args.verify, args.summary)
+        except Refused as exc:
+            print("refused: %s" % exc, file=sys.stderr)
+            return 2
+        except Failed as exc:
+            print("failed: %s" % exc, file=sys.stderr)
+            return 1
+
+    if __name__ == "__main__":
+        sys.exit(main())

@@ -65,6 +65,12 @@ spec:
                 # Flux substitutes ${SECRET_ALLOWED_IP} from cluster-secrets
                 - name: ALLOWED_IP
                   value: "${SECRET_ALLOWED_IP}"
+                # Comma-separated IPv4 CIDRs that may reach the RPC/NFS ports
+                # (the LAN and the WireGuard networks). Flux substitutes
+                # ${SECRET_RPC_ALLOWED_NETS} from cluster-secrets; the playbook
+                # refuses to run the lockdown if this arrives empty.
+                - name: RPC_ALLOWED_NETS
+                  value: "${SECRET_RPC_ALLOWED_NETS}"
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts
