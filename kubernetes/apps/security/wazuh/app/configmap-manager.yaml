@@ -272,10 +272,14 @@ data:
         <alert_format>json</alert_format>
       </integration>
 
-      <!-- Push notification for everything at level 10 and above. Last week
-           that was a handful of alerts, so no rate limiting yet. Token and
-           user key are substituted by render-config, like the VirusTotal
-           key; the script is in configmap-manager-integrations.yaml. -->
+      <!-- Push notification for everything at level 10 and above, throttled
+           by the script itself (same message at most once per 6 h, or 1 h at
+           level 12+; daily cap per tier) because the Pushover quota is shared
+           with Alertmanager and Gatus. A rule that is noisy at level 10 still
+           has to be fixed in the ruleset, the throttle is the safety net.
+           Token and user key are substituted by render-config, like the
+           VirusTotal key; the script is in
+           configmap-manager-integrations.yaml. -->
       <integration>
         <name>custom-pushover</name>
         <hook_url>https://api.pushover.net/1/messages.json</hook_url>
