@@ -146,7 +146,14 @@ spec:
         targetCPUUtilizationPercentage: 70
       resources:
         requests:
-          cpu: 50m
+          # 200m, was 50m. Measured over 14 days (Prometheus, summed over
+          # replicas): p50 100m, p99 133m, max 243m. At 50m (+10m geoip) the
+          # HPA's 70% target sat far below that baseline, so it held 2 of 2
+          # replicas permanently and KubeHpaMaxedOut re-notified every 12h for
+          # two weeks. At 200m one replica runs at ~48% (p99 ~63%) and the HPA
+          # settles on 1; blueprint-import peaks (243m) still scale it to 2.
+          # 100m would not do: one replica would sit at 91-121%.
+          cpu: 200m
           memory: 512Mi
         limits:
           memory: 1Gi

@@ -25,6 +25,11 @@ spec:
     spec:
       backoffLimit: 2
       activeDeadlineSeconds: 50
+      # failedJobsHistoryLimit alone keeps a failed Job until three newer ones
+      # fail, i.e. forever once the CronJob recovers: a ten-minute outage on
+      # 2026-09-27 (11:20 UTC) left six Failed Jobs behind and KubeJobFailed
+      # re-notified every 12h for two weeks. A day is enough to read the failure.
+      ttlSecondsAfterFinished: 86400
       template:
         spec:
           restartPolicy: OnFailure
@@ -115,6 +120,8 @@ spec:
     spec:
       backoffLimit: 2
       activeDeadlineSeconds: 100
+      # See the reaper above: expire failed Jobs so KubeJobFailed can resolve.
+      ttlSecondsAfterFinished: 86400
       template:
         spec:
           restartPolicy: OnFailure
