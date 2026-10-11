@@ -272,10 +272,13 @@ data:
         <alert_format>json</alert_format>
       </integration>
 
-      <!-- Push notification for everything at level 10 and above. Last week
-           that was a handful of alerts, so no rate limiting yet. Token and
-           user key are substituted by render-config, like the VirusTotal
-           key; the script is in configmap-manager-integrations.yaml. -->
+      <!-- Push notification for everything at level 10 and above. The script
+           throttles itself (identical messages held back for 6h, 40 a day at
+           level 10-11, 100 at 12+), because a single noisy rule once used
+           most of the month's 10,000 Pushover messages in 11 days; fix the
+           rule first, the throttle is the safety net. Token and user key are
+           substituted by render-config, like the VirusTotal key; the script
+           is in configmap-manager-integrations.yaml. -->
       <integration>
         <name>custom-pushover</name>
         <hook_url>https://api.pushover.net/1/messages.json</hook_url>

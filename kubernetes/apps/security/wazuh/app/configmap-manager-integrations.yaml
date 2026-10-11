@@ -23,15 +23,137 @@ data:
 
     Called by wazuh-integratord as: custom-pushover <alert_file> <api_key> <hook_url>
     api_key is "<app token>:<user key>", rendered from 1Password.
+
+    Throttled. Pushover allows 10,000 messages a month and the counter is shared
+    with Alertmanager (same token) and, as observed, Gatus and Authentik; a single
+    noisy rule (100406, October 2026) used most of them in 11 days. Per message:
+      * the same message (title and body, timestamp aside) goes out at most once per
+        COOLDOWN; the next one that gets through says how many were held back
+      * at most DAILY_CAP messages per UTC day and priority tier; the first one over
+        the cap sends a single notice, the rest are dropped
+    Nothing is lost, every alert is still in the Wazuh dashboard. If the state file
+    cannot be used the alert is sent unthrottled rather than dropped.
     """
+    import fcntl
+    import hashlib
     import json
+    import os
     import sys
+    import time
 
     # The embedded Python has no system CA bundle; requests brings certifi.
     import requests
 
     DASHBOARD = "https://wazuh.${SECRET_DOMAIN}"
     FIELDS = ("srcip", "dstip", "dns_client", "dns_query", "url", "dstuser", "service")
+
+    # On the PVC, so a manager restart does not reset the cooldowns.
+    STATE_FILE = "/var/ossec/logs/pushover-throttle.json"
+    LOG_FILE = "/var/ossec/logs/integrations.log"
+    # Keyed by "high priority" (level 12+): how long an identical message is held back.
+    COOLDOWN = {False: 6 * 3600, True: 3600}
+    # Keyed the same way: messages per UTC day.
+    DAILY_CAP = {False: 40, True: 100}
+
+    def log(msg):
+        print(msg, file=sys.stderr)
+        try:
+            with open(LOG_FILE, "a") as fh:
+                fh.write(f"{time.strftime('%Y/%m/%d %H:%M:%S')} custom-pushover: {msg}\n")
+        except OSError:
+            pass
+
+    class Throttle:
+        """Cooldown and daily cap, kept in STATE_FILE under an exclusive lock.
+
+        The lock is held while the message is posted, so concurrent runs cannot
+        both decide to send. State is only recorded after a successful post.
+        """
+
+        def __init__(self):
+            self.fh = None
+            self.state = {}
+            self.now = time.time()
+
+        def __enter__(self):
+            try:
+                fd = os.open(STATE_FILE, os.O_RDWR | os.O_CREAT, 0o660)
+                self.fh = os.fdopen(fd, "r+")
+                fcntl.flock(self.fh, fcntl.LOCK_EX)
+                try:
+                    self.state = json.load(self.fh)
+                except ValueError:
+                    self.state = {}
+            except OSError as exc:
+                log(f"throttle state unusable ({exc}); sending unthrottled")
+                self.fh = None
+                return self
+            if not isinstance(self.state, dict):
+                self.state = {}
+            today = time.strftime("%Y-%m-%d", time.gmtime(self.now))
+            if self.state.get("day") != today:
+                self.state.update(day=today, sent={}, capped={})
+            seen = self.state.setdefault("seen", {})
+            for key in [k for k, v in seen.items() if self.now - v.get("ts", 0) > 2 * max(COOLDOWN.values())]:
+                del seen[key]
+            return self
+
+        def __exit__(self, *exc):
+            if self.fh is not None:
+                try:
+                    self.fh.seek(0)
+                    self.fh.truncate()
+                    json.dump(self.state, self.fh)
+                    self.fh.flush()
+                except OSError as err:
+                    log(f"throttle state not saved ({err})")
+                finally:
+                    self.fh.close()
+            return False
+
+        @staticmethod
+        def tier(high):
+            return "hi" if high else "lo"
+
+        def check(self, key, high):
+            """Return "send", "drop", or "cap" (send the one-off cap notice)."""
+            if self.fh is None:
+                return "send"
+            entry = self.state["seen"].get(key)
+            if entry and self.now - entry["ts"] < COOLDOWN[high]:
+                entry["n"] += 1
+                return "drop"
+            if self.state["sent"].get(self.tier(high), 0) >= DAILY_CAP[high]:
+                if entry:
+                    entry["n"] += 1
+                return "drop" if self.state["capped"].get(self.tier(high)) else "cap"
+            return "send"
+
+        def held_back(self, key):
+            entry = self.state.get("seen", {}).get(key) if self.fh is not None else None
+            return entry["n"] if entry else 0
+
+        def record_sent(self, key, high):
+            if self.fh is not None:
+                self.state["seen"][key] = {"ts": self.now, "n": 0}
+                sent = self.state["sent"]
+                sent[self.tier(high)] = sent.get(self.tier(high), 0) + 1
+
+        def record_cap(self, high):
+            if self.fh is not None:
+                self.state["capped"][self.tier(high)] = True
+
+    def push(hook_url, token, user, title, message, priority):
+        resp = requests.post(hook_url, timeout=10, data={
+            "token": token,
+            "user": user,
+            "title": title,
+            "message": message[:1000],
+            "priority": priority,
+            "url": DASHBOARD,
+            "url_title": "Wazuh dashboard",
+        })
+        resp.raise_for_status()
 
     def main():
         alert_file, api_key, hook_url = sys.argv[1:4]
@@ -71,20 +193,32 @@ data:
         vt = data.get("virustotal", {})
         if vt.get("positives"):
             lines.append(f"VirusTotal: {vt['positives']}/{vt.get('total')} engines")
+
+        # 1 = high: bypasses quiet hours. Reserved for 12+ (C2 contact,
+        # malware hashes, VirusTotal detections, logins from attacker IPs).
+        high = level >= 12
+        title = f"Wazuh L{level} | {agent}"
+        # Identity of a message: everything except the timestamp line below.
+        ident = hashlib.sha1("\n".join([str(rule.get("id")), title] + lines).encode()).hexdigest()
         lines.append(f"rule {rule.get('id')} | {alert.get('timestamp', '')}")
 
-        resp = requests.post(hook_url, timeout=10, data={
-            "token": token,
-            "user": user,
-            "title": f"Wazuh L{level} | {agent}",
-            "message": "\n".join(lines)[:1000],
-            # 1 = high: bypasses quiet hours. Reserved for 12+ (C2 contact,
-            # malware hashes, VirusTotal detections, logins from attacker IPs).
-            "priority": 1 if level >= 12 else 0,
-            "url": DASHBOARD,
-            "url_title": "Wazuh dashboard",
-        })
-        resp.raise_for_status()
+        with Throttle() as throttle:
+            verdict = throttle.check(ident, high)
+            if verdict == "drop":
+                return
+            if verdict == "cap":
+                what = "high-priority (L12+)" if high else "L10-11"
+                push(hook_url, token, user, "Wazuh: Pushover cap reached",
+                     f"{DAILY_CAP[high]} {what} notifications already went out today (UTC). "
+                     "The rest of today's are only in the dashboard.", 0)
+                throttle.record_cap(high)
+                log(f"daily cap of {DAILY_CAP[high]} reached for {what}")
+                return
+            held = throttle.held_back(ident)
+            if held:
+                lines.insert(-1, f"+{held} identical alerts held back since the last notification")
+            push(hook_url, token, user, title, "\n".join(lines), 1 if high else 0)
+            throttle.record_sent(ident, high)
 
     if __name__ == "__main__":
         main()

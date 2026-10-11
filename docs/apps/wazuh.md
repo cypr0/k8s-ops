@@ -154,7 +154,7 @@ This repo wires up the list part properly:
 
 | List (`etc/lists/…`) | Sources (all free, no account) | TTL | Matched by |
 | --- | --- | --- | --- |
-| `ioc-c2-ip` | abuse.ch Feodo Tracker, ThreatFox ip:port | 30 d | firewall pass/block to C2 (100110/100111), Suricata src/dst (100112/100113), SSH login from C2 (100131) |
+| `ioc-c2-ip` | abuse.ch Feodo Tracker, ThreatFox ip:port | 30 d | firewall pass/block to C2 (100110/100111), Suricata src/dst (100112, 100113 at level 7: an outside host on the list hitting the WAN address, already dropped), SSH login from C2 (100131) |
 | `ioc-scanner-ip` | blocklist.de, CINS Army, ET compromised | 7 d | *successful* SSH login from an attacker IP (100130) — failed ones are not raised |
 | `ioc-domains` | ThreatFox domains, URLhaus hostfile | 30 d | Unbound queries: A/AAAA (100120), any type incl. HTTPS (100121) |
 | `ioc-sha256` | ThreatFox SHA256, MalwareBazaar recent | 30 d | FIM added/modified file (100100) |
@@ -200,11 +200,23 @@ decoders are closed by `local_decoder.xml`:
   `audit`, and died at level 0. `opnsense-audit` is a child of `solaris_bsm`;
   rules 100150 (success, 3), 100151 (failure, 5), 100152 (6 failures in 2 min,
   10). These lines carry no source IP.
+- **Firewall block floods are not pages.** Stock 87702 ("multiple blocks from
+  the same source", level 10, 18 in 45 s) fired 533 times between 20 Sep and
+  11 Oct, 523 of them internet scans (80/443/8080/8000/23 ...) aimed at the WAN address
+  `192.168.100.1`, which the firewall drops anyway. Child rule **100901**
+  (`if_sid` 87702, `dstip` the WAN address, level 0) drops those; each block is
+  still its own level-5 alert, and a flood towards an *inside* address keeps
+  level 10.
 
 Rules can be tried without touching the running ruleset: a `PUT /logtest`
-session loads rules and decoders from disk at session start, so temporary
-copies with renamed IDs in `etc/rules/` / `etc/decoders/` can be tested and
-removed again before any reload.
+session (or the `wazuh-logtest` CLI, which prints on stderr) loads rules and
+decoders from disk at session start, so temporary copies in `etc/rules/` /
+`etc/decoders/` can be tested and removed again before any reload. New child
+rules can keep their final IDs in the temporary file because the live
+analysisd has not loaded them; **delete the file before the pod restarts**, a
+duplicate rule ID once the ConfigMap ships the same rule stops the manager from
+starting. Frequency rules need their full count in one session (87702: 18
+identical events).
 
 ### VirusTotal
 
@@ -246,8 +258,32 @@ fields the alert carries.
   as `wazuh` and the entrypoint copies files in as root:root, hence mode 0755.
 - The embedded Python has no system CA bundle; the script uses `requests`,
   which brings certifi. A bare `urllib` call would fail TLS.
-- No rate limiting: level 10+ was a handful of alerts a week before this. If a
-  noisy rule ever crosses 10, fix the rule, not the notifier.
+- **Throttled, because the Pushover quota is shared.** The plan allows 10,000
+  messages a month. Alertmanager uses the same app token as this script;
+  Gatus and Authentik use their own tokens, yet the limits API reports one
+  identical counter for all three (checked 2026-10-11; why Pushover accounts it
+  that way was not established). Falcosidekick has no Pushover output, Falco
+  pages through Wazuh. Rule 100406 alone sent ~800 a day (92% of all level
+  10+ alerts) and, with the rest, used 9,100 of October's in 11 days
+  (`docs/incidents/2026-10-11-wazuh-pushover-quota-exhaustion.md`).
+  Now, per message:
+  - the same message (rule, title and body, timestamp aside) goes out at most
+    **once per 6 h** (once per 1 h at level 12+); the next one that gets through
+    says `+N identical alerts held back`;
+  - at most **40 a day at level 10-11 and 100 at level 12+** (UTC day, separate
+    counters, so a flood of 10s cannot hold back a malware hit). The first
+    message over the cap sends one `Wazuh: Pushover cap reached` notice, the
+    rest are dropped; midnight UTC resets it;
+  - state lives in `/var/ossec/logs/pushover-throttle.json` (PVC, survives
+    restarts), under an exclusive `flock`, and a post that fails is not
+    recorded. If the file cannot be used the alert is sent unthrottled: a
+    broken notifier must never swallow an alert.
+  Held-back alerts are not lost, they are in the dashboard like any other.
+  The throttle is a safety net, not a tuning tool: if a rule trips it, fix the
+  rule (a child rule with `level="0"` and `if_sid`, see 100411-100414 and
+  100901), and check the quota with
+  `GET https://api.pushover.net/1/apps/limits.json?token=<app token>`, which
+  does not cost a message.
 
 ### Command auditing on Proxmox
 
@@ -347,9 +383,23 @@ than the kubelet's `/readyz`/`/livez` probes.
 | 100404 | a human reads/lists/changes a Secret | 6 |
 | 100405 | a human writes anything | 5 |
 | **100406** | RBAC or admission-webhook change **not by Flux** | **10** (pages) |
+| 100411-100414 | child of 100406: Kyverno (`kyverno-admission/cleanup-controller` on `kyverno-*`), cert-manager cainjector (`cert-manager-webhook`), the CNPG operator (roles/rolebindings), Envoy Gateway certgen (`envoy-gateway-*`) | 0 (suppressed) |
 | 100407 / 100408 / 100409 | 403 / 401 / anonymous | 5 / 7 / 7 |
 | **100410** | same user denied 10× in 2 min | **10** |
 
+- **100411-100414 exist because operators rewrite their own webhooks.**
+  Without them 100406 fired ~800 times a day (10,993 times between 27 Sep and
+  11 Oct: Kyverno updates each of its eight webhook configurations about every
+  15 minutes, the CNPG operator issues a `create` for its `postgres`
+  RoleBinding roughly 30 times a day, cainjector patches the `caBundle` of the
+  cert-manager webhooks).  Counts here are unique alert IDs; `alerts.json` and
+  the dated file overlap, so a naive `grep -c` over both overstates by ~4%. Each exception names the service account
+  **and** the object it owns, so the same account touching anything else, or
+  any other account (a human, `admin`) touching these objects, still raises
+  100406. Verified with `wazuh-logtest` against seven real events (all
+  suppressed) and six tampered variants (all still level 10). A new operator
+  that does this will show up as 100406 pages; add it as another child rule
+  rather than loosening the parent.
 - The Talos admin kubeconfig authenticates as `admin`, so every `kubectl`
   action of yours shows up as 100402/100404/100405 — that is the point.
 - Syslog_MaxSize is raised to 65000: the Fluent Bit default of 1 KiB would

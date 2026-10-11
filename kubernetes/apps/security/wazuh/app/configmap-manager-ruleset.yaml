@@ -260,7 +260,13 @@ data:
         <description>Suricata: $(alert.signature) -- destination $(dest_ip) is a known C2 server</description>
         <group>malware,c2,</group>
       </rule>
-      <rule id="100113" level="12">
+      <!-- Level 7, not 12: the *source* is on the C2 list, i.e. someone out
+           there knocking on the WAN address, which the firewall drops. That
+           was 102 high-priority pushes in two weeks for traffic that never
+           reached a host. The dangerous direction is 100112 (a host of ours
+           talking to a C2) and 100110 (the firewall letting it through); both
+           stay at 12. -->
+      <rule id="100113" level="7">
         <if_sid>86601</if_sid>
         <list field="src_ip" lookup="address_match_key">etc/lists/ioc-c2-ip</list>
         <description>Suricata: $(alert.signature) -- source $(src_ip) is a known C2 server</description>
@@ -463,6 +469,42 @@ data:
         </mitre>
       </rule>
 
+      <!-- Operators that rewrite their own webhooks or RBAC as part of normal
+           operation. Without these, 100406 fired ~800 times a day (Kyverno
+           updates each of its eight webhook configurations about every 15
+           minutes, the CNPG operator creates its rolebinding ~30 times a
+           day, cainjector patches caBundle) and, with the other noisy rules,
+           used 9,100 of October's 10,000 Pushover messages in 11 days; see
+           docs/incidents/2026-10-11-wazuh-pushover-quota-exhaustion.md.
+           Each exception is pinned to the service account AND the object it
+           owns: the same account touching anything else, or any other
+           account touching these objects, still raises 100406. Level 0 keeps
+           the churn out of the index too; a human change is still level 10. -->
+      <rule id="100411" level="0">
+        <if_sid>100406</if_sid>
+        <field name="user.username">^system:serviceaccount:kyverno:kyverno-admission-controller$|^system:serviceaccount:kyverno:kyverno-cleanup-controller$</field>
+        <field name="objectRef.name">^kyverno-</field>
+        <description>K8s: Kyverno maintaining its own webhook configuration (suppressed)</description>
+      </rule>
+      <rule id="100412" level="0">
+        <if_sid>100406</if_sid>
+        <field name="user.username">^system:serviceaccount:cert-manager:cert-manager-cainjector$</field>
+        <field name="objectRef.name">^cert-manager-webhook$</field>
+        <description>K8s: cert-manager cainjector patching the cert-manager webhook CA bundle (suppressed)</description>
+      </rule>
+      <rule id="100413" level="0">
+        <if_sid>100406</if_sid>
+        <field name="user.username">^system:serviceaccount:database:cloudnative-pg$</field>
+        <field name="objectRef.resource">^roles$|^rolebindings$</field>
+        <description>K8s: CloudNativePG operator reconciling the per-cluster Role/RoleBinding (suppressed)</description>
+      </rule>
+      <rule id="100414" level="0">
+        <if_sid>100406</if_sid>
+        <field name="user.username">^system:serviceaccount:network:envoy-gateway-gateway-helm-certgen$</field>
+        <field name="objectRef.name">^envoy-gateway-</field>
+        <description>K8s: Envoy Gateway certgen job updating its own webhook (suppressed)</description>
+      </rule>
+
       <rule id="100407" level="5">
         <if_sid>100401</if_sid>
         <field name="responseStatus.code">^403$</field>
@@ -497,5 +539,17 @@ data:
         <if_sid>86601</if_sid>
         <field name="alert.signature">^OPN_</field>
         <description>Suricata: OPNsense app-detection match (suppressed)</description>
+      </rule>
+
+      <!-- 87702 is stock Wazuh's "multiple firewall blocks from the same
+           source", level 10. Aimed at the WAN address it is just the internet
+           knocking (523 of its 533 hits in three weeks: scans of 80/443/8080/
+           8000/23 ...), already dropped by the firewall; each block is still
+           an individual level-5 alert. Blocks towards anything inside stay at
+           level 10. -->
+      <rule id="100901" level="0">
+        <if_sid>87702</if_sid>
+        <dstip>192.168.100.1</dstip>
+        <description>OPNsense: repeated blocks of internet scans against the WAN address (suppressed)</description>
       </rule>
     </group>

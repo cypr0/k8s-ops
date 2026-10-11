@@ -27,7 +27,12 @@ spec:
           annotations:
             description: '{{ $labels.job }}/{{ $labels.instance }} in namespace {{ $labels.namespace }} has reported up == 0 continuously for at least 24h. This catches targets that are down from the moment they''re first scraped (e.g. a missing CiliumNetworkPolicy port), which the percentage-based TargetDown alert can miss if the target never had a healthy baseline. See docs/incidents/2026-09-20-cilium-cnp-scrape-target-drop.md.'
             summary: A scrape target has been down for a sustained period (24h+).
-          expr: max_over_time(up[24h]) == 0
+          # `max_over_time(up[24h]) == 0` alone is also true for a pod that
+          # is one scrape old and still starting up, so every rollout paged
+          # for a minute (20 episodes in 14 days: grafana, authentik-server).
+          # `up offset 23h == 0` requires the series to have existed -- and
+          # been down -- a day ago, which is what "24h+" was meant to say.
+          expr: max_over_time(up[24h]) == 0 and up offset 23h == 0
           for: 0m
           labels:
             severity: warning
