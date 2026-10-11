@@ -58,7 +58,8 @@ All UTC.
 - **12:00** — PR merged, Flux applies it. The Wazuh manager restarts (pod created 12:00:16) and the Authentik worker Deployment rolls because its CPU request changed (new ReplicaSet 12:00:26).
 - **~12:05-12:10** — the new worker pods stay not Ready: the `geoip` sidecar gets `429 LIMIT_EXCEEDED` from MaxMind. The Helm upgrade times out and the rollback fails (`RollbackFailed`). `authentik-server` and the one old worker pod are never touched; SSO keeps answering (HTTP 302).
 - **~12:15** — the seven stale Failed Jobs are deleted by hand.
-- **~12:25** — decision to revert the CPU change in Git (this follow-up).
+- **~12:22** — decision to revert the CPU change in Git. While preparing it, the live worker template was found at 200m again: Flux was retrying the upgrade after the failed rollback and kept creating pods.
+- **12:27** — revert merged (#171) and applied. By 12:30 the Deployment template is 50m again, `authentik-server` is unchanged (created 2026-09-29), SSO answers 302, and the worker pods that already exist are still waiting on MaxMind (see "Side effect").
 
 ## Diagnosis process
 
@@ -89,7 +90,11 @@ Configuration went through Git so Flux owns it. The only by-hand changes: deleti
 ### Side effect: the Authentik worker rollout
 The CPU change was a pod-template change, so the worker pods restarted. This repo's own `docs/incidents/2026-08-16-authentik-geoip-sidecar-sso-outage.md` documents exactly what that does: each new pod's `geoip` sidecar fetches from MaxMind, a crash-looping sidecar keeps the whole pod not Ready, and the Helm remediation (rollback) re-creates the same crash. It was foreseeable and was treated as harmless; it was not. What limited the damage: the `authentik-server` Deployment was not changed (12 days old, SSO endpoints present, `id.` answered 302 throughout), the old worker pod kept running because a rolling update keeps it until a replacement is Ready, and nothing depends on `authentik` via `dependsOn`. Cost: failed Helm releases, several hung worker pods, and a Flux retry loop that kept re-creating them until the Git revert (duration: see the timeline once the revert is applied).
 
-The follow-up PR sets the request back to 50m. Live and Git then agree again (the 50m and 200m ReplicaSets differ in nothing but the CPU request, verified field by field), so the revert converges on the old, healthy ReplicaSet. The 200m change stays a deferred action item with the GeoIP check in front of it. `KubeHpaMaxedOut` keeps firing until then, now as one warning every 3 days.
+The follow-up (#171) sets the request back to 50m. Its rendered diff was exactly that one line, the parsed HelmRelease equals the one before #170, and the 50m and 200m worker ReplicaSets differ in nothing but the CPU request (verified field by field), so no third template was created and `authentik-server` was not touched.
+
+What the revert did **not** do is undo the pods that already exist. The HPA still wants two workers (110-235% CPU against a 50m request), so the Deployment keeps starting worker pods, and each new pod's `geoip` sidecar hits the same `429` at start. At 14:30 CEST: one healthy old worker, two worker pods that are not Ready (the `worker` container is up, `geoip` crash-loops), the HelmRelease `UpgradeFailed` (failures=5), and SSO unaffected. These should recover by themselves once MaxMind lets the sidecar download again; the earlier incident doc says the quota resets at 00:00 UTC (02:00 CEST), which was not re-verified today. Until then the HelmRelease stays red. Nothing was patched by hand, because the 2026-08-16 experience is that hand-patching Deployments under a failing HelmRelease creates its own conflicts.
+
+The 200m change stays a deferred action item with the GeoIP check in front of it. `KubeHpaMaxedOut` keeps firing until then, now as one warning every 3 days.
 
 ## Runbook — if this fires again
 1. **How much is left, without spending a message** (token is in the `wazuh-pushover` secret key `token`; do not print it):
@@ -112,6 +117,7 @@ The follow-up PR sets the request back to 50m. Live and Git then agree again (th
 - [x] Self-throttling notifier (22 local scenarios, same script that ships in the ConfigMap)
 - [x] Alertmanager route and `ScrapeTargetSustainedDown` expression (tested against live config and 14 days of data)
 - [x] Firecrawl Job TTL (live: both CronJobs show 86400)
+- [ ] **After MaxMind's quota resets (expected 00:00 UTC):** confirm the two not-Ready worker pods become Ready (`kubectl logs -n security <pod> -c geoip --tail=2` shows `Sleeping for 48 hours`, no 429) and that the `authentik` HelmRelease turns Ready. If it is `Stalled` with `RetriesExceeded`, a bare reconcile will not retry: `flux suspend helmrelease authentik -n security` then `flux resume helmrelease authentik -n security`. Check that `authentik-server` was never restarted in the meantime; a server restart while the quota is gone is a full SSO outage.
 - [ ] Authentik worker CPU request to ~200m: tried and reverted (see "Side effect"). Re-apply only after `kubectl logs <authentik pod> -c geoip` shows no 429, ideally right after 00:00 UTC, and watch that `authentik-server` stays Ready. Until then `KubeHpaMaxedOut` fires as a 3-day warning.
 - [x] Postmortem written (this file)
 - [x] Live verification after Flux applied it (2026-10-11 ~12:11 UTC): the manager restarted at 12:00 UTC with the new rules and 0 unique level 10+ alerts appeared between 12:01 and 12:11 (before: ~6 per 10 minutes); the deployed notifier runs as `wazuh` and records no state when the post fails; Alertmanager's running route table shows root `null`, `critical` to `pushover`, `warning` to `pushover-warning`; `ScrapeTargetSustainedDown` has the new expression
