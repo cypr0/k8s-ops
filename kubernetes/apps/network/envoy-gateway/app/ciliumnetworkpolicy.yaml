@@ -76,7 +76,10 @@ spec:
               protocol: TCP
             - port: "10443"
               protocol: TCP
-    # Direct LoadBalancer access (fallback / health checks from world)
+    # Direct LoadBalancer access from the LAN/VPN (192.168.10.101/.103). The
+    # Services are externalTrafficPolicy: Local (see envoy.yaml), so the L2-lease
+    # node hands the packet to its own Envoy pod without SNAT and the source
+    # is the real client IP, which Cilium classifies as world.
     - fromEntities:
         - world
       toPorts:
@@ -87,12 +90,12 @@ spec:
               protocol: TCP
             - port: "10443"
               protocol: UDP
-    # SNAT mode (loadBalancer.mode: snat + kubeProxyReplacement): the L2-owner
-    # node SNATs the client IP to its own node IP before forwarding to this
-    # backend pod. Cilium then classifies the source as remote-node (or
-    # kube-apiserver for CP nodes), NOT world. Without this rule, all north-south
-    # LoadBalancer traffic to envoy-external (192.168.10.103) and envoy-internal
-    # (192.168.10.101) is dropped. Mirrors the k8s-gateway policy.
+    # Node-sourced traffic. Under externalTrafficPolicy: Cluster with
+    # loadBalancer.mode: snat, this used to carry all LAN/VPN traffic: the L2-owner
+    # node SNATed the client to its own node IP, which Cilium classifies as
+    # remote-node. With Local that path is gone. The rule stays for
+    # host-namespace callers on other nodes, and as the safety net if the
+    # Services ever go back to Cluster. Mirrors the k8s-gateway policy.
     - fromEntities:
         - remote-node
       toPorts:

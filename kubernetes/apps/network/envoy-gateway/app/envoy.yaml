@@ -36,7 +36,26 @@ spec:
                 type: Utilization
                 averageUtilization: 70
       envoyService:
-        externalTrafficPolicy: Cluster
+        # Local, so LAN/VPN clients reach Envoy with their own source IP. With
+        # Cluster, the L2-lease node SNATs to its own node IP whenever Maglev
+        # picks an Envoy pod on another node: measured 2026-10-17 from the VPN
+        # (10.10.0.2), envoy-external saw the client 16/30 times and
+        # 192.168.10.23 otherwise; envoy-internal, whose lease node had no
+        # pod, saw 192.168.10.20 19/19 times.
+        #
+        # Requires Cilium >= 1.20.2. Only from that version on do nodes without
+        # a live local Envoy pod stay out of the L2-announcement election for
+        # a Local Service (upstream fix for cilium/cilium#27800). On older
+        # Cilium, the lease node can answer ARP with no local backend and
+        # blackhole the VIP: the Mailu incident on 1.20.1 (see
+        # kubernetes/apps/mail/mailu/app/helmrelease.yaml) is that failure.
+        #
+        # In-cluster callers are unaffected: ClusterIP traffic (CoreDNS
+        # split-horizon sends id./cloud. to the envoy-internal ClusterIP) and
+        # pod/host connections to the LB IPs use Cilium's internal scope,
+        # which keeps every backend. Cloudflare Tunnel traffic also arrives
+        # via the ClusterIP.
+        externalTrafficPolicy: Local
   shutdown:
     drainTimeout: 180s
   telemetry:
