@@ -6,6 +6,15 @@ metadata:
   name: open-webui
 spec:
   interval: 1h
+  # Long on purpose: an upgrade has to fit a ~1.6 GB image pull (85s seen on
+  # 2026-10-17) plus Open WebUI's alembic migrations, which run at import time
+  # before the port opens (see the startup probe below). With the 5m default
+  # the v0.12.0 -> v0.12.3 upgrade timed out, the cluster-wide
+  # RemediateOnFailure default (kubernetes/flux/cluster/ks.yaml) rolled back
+  # to v0.12.0, and that crash-looped on "Can't locate revision" because the
+  # database had already been migrated forward. Migrations are forward-only:
+  # a rollback after one has started can only make things worse.
+  timeout: 20m
   chartRef:
     kind: OCIRepository
     name: app-template
@@ -169,6 +178,20 @@ spec:
                   name: open-webui-immich-secret
                   optional: true
             probes:
+              # Holds off liveness/readiness until /health answers once. The
+              # alembic migrations run before uvicorn binds the port, so without
+              # this the liveness probe (~60s budget) killed the container in
+              # the middle of a schema migration. 90 x 10s = 15 minutes.
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: *webuiPort
+                  periodSeconds: 10
+                  failureThreshold: 90
+                  timeoutSeconds: 5
               liveness:
                 enabled: true
                 custom: true
