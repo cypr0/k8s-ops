@@ -36,3 +36,20 @@ spec:
           for: 0m
           labels:
             severity: warning
+    # 2026-10-11 12:15Z to 2026-10-17 18:06Z: fluent-bit's syslog output
+    # (kube-audit -> Wazuh) delivered 0 records and dropped ~1.7k per 6h after
+    # the wazuh-manager pod was replaced, and nothing alerted. Fluent Bit only
+    # logs "[engine] failed to flush chunk", so this rule watches the counters.
+    - name: fluent-bit-output-stalled
+      rules:
+        - alert: FluentBitOutputStalled
+          annotations:
+            description: 'Fluent Bit output {{ $labels.name }} has dropped records and delivered none for 30m. For a UDP output (syslog.*) this usually means its socket was disconnected or pinned to a dead backend when the destination pod was replaced; restart the fluent-bit DaemonSet.'
+            summary: A Fluent Bit output is dropping everything.
+          expr: |
+            sum by (name) (increase(fluentbit_output_dropped_records_total[30m])) > 0
+            and
+            sum by (name) (increase(fluentbit_output_proc_records_total[30m])) == 0
+          for: 30m
+          labels:
+            severity: warning
