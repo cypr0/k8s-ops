@@ -171,6 +171,19 @@ spec:
         # actually for here.
         maxReplicas: 2
         targetCPUUtilizationPercentage: 70
+        # Without a scale-up window, one 15-second CPU burst was enough to
+        # add the second replica, and the default 5-minute scale-down window
+        # removed it again: 18-29 scale-ups a day (Prometheus, 2026-10-06 to
+        # 2026-10-17), each a new pod whose geoip sidecar downloads both
+        # editions and uses up MaxMind's daily limit. Most bursts are gunicorn
+        # recycling a Django worker (max_requests 1000 per worker at ~25 req/min,
+        # mostly probes, so about every 80 min per worker; the re-boot costs
+        # ~1s of CPU, 90-300m for one scrape vs ~20m median). Requiring the
+        # load to hold for 5 minutes would have allowed 1 scale-up in those
+        # 12 days instead of ~280.
+        behavior:
+          scaleUp:
+            stabilizationWindowSeconds: 300
       resources:
         requests:
           cpu: 100m
