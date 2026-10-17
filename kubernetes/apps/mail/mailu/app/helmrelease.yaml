@@ -246,6 +246,126 @@ spec:
           memory: 256Mi
         limits:
           memory: 512Mi
+      # Bump whenever `overrides` below or rspamd-unbound.conf change. The
+      # chart doesn't checksum either into the pod template, and Mailu's
+      # start.py only copies /overrides into rspamd's local.d at container
+      # start, so a config-only change would otherwise never take effect.
+      podAnnotations:
+        k8s-ops/rspamd-config-revision: "1"
+      # rspamd resolves through its own unbound sidecar (initContainers
+      # below), not cluster DNS. Two independent reasons, both confirmed
+      # live 2026-10-17:
+      #  1. Every CoreDNS rollout blinded rspamd until its next restart.
+      #     Cilium's socket-LB (bpf-lb-sock, not hostns-only) tears down
+      #     connected UDP sockets whose Service backend goes away, and
+      #     rspamd's DNS library never reconnects them: "cannot send DNS
+      #     request: Destination address required" on every query from the
+      #     2026-10-11 CoreDNS chart bump (#158) until a manual restart six
+      #     days later, and the same after the 2026-09-12 bump. Meanwhile
+      #     SPF/DKIM/DMARC and every RBL/URIBL silently scored zero (spam
+      #     landed at ~0.25, PayPal receipts at 6.7). 127.0.0.1 is no Service
+      #     VIP, so socket-LB never touches rspamd's socket any more.
+      #  2. CoreDNS forwards to Cloudflare (cluster.toml dns_servers), and
+      #     Spamhaus ZEN/DBL, URIBL and SURBL refuse queries relayed by big
+      #     public resolvers -- those lists answered nothing even with DNS up.
+      # searches/ndots mirror ClusterFirst so start.py's own lookups behave
+      # as before; unbound forwards cluster.local to CoreDNS.
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 127.0.0.1
+        searches:
+          - mail.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+        options:
+          - name: ndots
+            value: "5"
+      initContainers:
+        # Native sidecar (restartPolicy: Always): it has to be up and pass
+        # its startupProbe before rspamd's start.py resolves anything.
+        - name: unbound
+          # Mailu's own resolver image (same release and supply chain as
+          # every other Mailu component here), but with our own config: the
+          # image's templated one has no cluster.local forward and a stale
+          # DNSSEC trust anchor -- see rspamd-unbound.conf.
+          image: ghcr.io/mailu/unbound:2024.06.58
+          restartPolicy: Always
+          command:
+            - "/usr/sbin/unbound"
+            - "-d"
+            - "-c"
+            - "/config/unbound.conf"
+          startupProbe:
+            exec:
+              command: &unboundProbe
+                - "sh"
+                - "-c"
+                - "dig @127.0.0.1 localhost A +short +time=2 +tries=1 | grep -qx 127.0.0.1"
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: *unboundProbe
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Binds :53 unprivileged (containerd allows unprivileged ports in
+          # the pod netns) -- verified live as uid 101 with every capability
+          # dropped and a read-only root filesystem.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: unbound-config
+              mountPath: /config
+              readOnly: true
+      extraVolumes:
+        - name: unbound-config
+          configMap:
+            name: mailu-rspamd-unbound
+      # Rules for the "support@<spoofed domain>" diet/heater/joint-pain
+      # campaign that dominated the inbox (Sept-Oct 2026), including all of
+      # the fake "Die Höhle der Löwen" ads. Checked against the mailbox on
+      # 2026-10-17: 206 of 206 messages delivered straight from a
+      # *.bc.googleusercontent.com host were this campaign (none legitimate
+      # -- GCP blocks outbound port 25, so real senders there relay through
+      # an ESP), and every Löwen/DHDL subject or sender name was too. With
+      # both rules, a re-scan put every campaign sample at >= 15 (reject)
+      # and no legitimate inbox mail of the past week above 3.3.
+      overrides:
+        multimap.conf: |
+          CLOUD_VM_DIRECT {
+            type = "hostname";
+            regexp = true;
+            map = ["/etc/rspamd/local.d/cloud_vm_rdns.map"];
+            score = 6.0;
+            description = "Delivered straight from a public-cloud VM's default rDNS";
+          }
+        # Copied into local.d by start.py. `$$` is Flux postBuild escaping
+        # for a literal `$` (end-of-hostname anchor).
+        cloud_vm_rdns.map: |
+          /\.bc\.googleusercontent\.com$$/i
+        regexp.conf: |
+          DHDL_DIET_CAMPAIGN {
+            re = "Subject=/H(?:ö|oe)hle der L(?:ö|oe)wen|\\bDHDL\\b|\\bL(?:ö|oe)wen\\b|\\bWEGO ?6\\b/i{header} | From=/H(?:ö|oe)hle der L(?:ö|oe)wen|\\bDHDL\\b|\\bL(?:ö|oe)wen\\b|\\bWEGO ?6\\b/i{header}";
+            score = 3.0;
+            description = "Fake 'Die Hoehle der Loewen' diet-pill advertising";
+          }
 
     clamav:
       enabled: true

@@ -1,0 +1,33 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: mailu-rspamd
+  namespace: mail
+spec:
+  # Additive to ciliumnetworkpolicy.yaml (which also selects this pod):
+  # only the extra egress rspamd itself needs, kept off every other Mailu
+  # component.
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: mailu
+      app.kubernetes.io/component: rspamd
+  egress:
+    # 53: the unbound sidecar resolves recursively from the root servers
+    # rather than through CoreDNS/Cloudflare (see helmrelease.yaml's
+    # rspamd.dnsPolicy comment). Verified 2026-10-17 that outbound 53
+    # reaches the root servers unmodified (authoritative "aa" answer, no
+    # DNS interception on the router).
+    # 11335/UDP: rspamd's built-in public fuzzy-hash feed
+    # (fuzzy1/fuzzy2.rspamd.com) -- enabled by rspamd's defaults but blocked
+    # until now, which also cost every scan a 4s FUZZY_CALLBACK timeout.
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+            - port: "11335"
+              protocol: UDP
