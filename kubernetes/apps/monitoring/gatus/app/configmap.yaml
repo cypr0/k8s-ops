@@ -30,6 +30,16 @@ data:
         group: Security
         url: "https://id.${SECRET_DOMAIN}"
         interval: 1m
+        # Force a fresh TCP+TLS handshake on every check. Gatus's HTTP client
+        # keeps the connection to Envoy alive indefinitely (1m interval never
+        # lets it go idle) and Envoy does not drop established connections when
+        # cert-manager rotates the certificate, so without this the
+        # [CERTIFICATE_EXPIRATION] condition keeps reading the leaf from the
+        # very first handshake -- it went negative (-230h) and the endpoint
+        # showed unhealthy for ~10 days although the served cert was valid.
+        # Required on every endpoint that uses [CERTIFICATE_EXPIRATION].
+        headers:
+          Connection: close
         conditions:
           - "[STATUS] == 200"
           - "[RESPONSE_TIME] < 3000"
