@@ -24,3 +24,21 @@ spec:
         - name: authentik-server
           namespace: security
           port: 80
+      # Hand authentik exactly one X-Forwarded-For entry: the client IP Envoy
+      # already resolved (ClientTrafficPolicy trustedCIDRs 10.42.0.0/16 in
+      # network/envoy-gateway/app/envoy.yaml, i.e. rightmost entry not added by
+      # a pod). authentik 2026.8.4 takes the LEFTMOST XFF entry whenever its
+      # peer is a trusted proxy (goauthentik/authentik#26353, see #26941), and
+      # Cloudflare keeps a client-supplied XFF and only appends the real IP --
+      # so without this, anyone on the internet chooses the IP that events,
+      # the reputation policy, ak_client_ip expression policies and GeoIP see.
+      # Also closes the LAN-direct case that 2026.8.3 already got wrong
+      # (authentik trusts 192.168.0.0/16 by default and skipped the LAN peer).
+      # Envoy evaluates the %...% command operator; Envoy Gateway passes the
+      # value through verbatim. Docs: docs/apps/authentik.md (Routing).
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"

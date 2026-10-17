@@ -18,7 +18,7 @@ SSO/OIDC broker for every user-facing app in the cluster (Grafana, Paperless, Op
 | `kubernetes/apps/security/authentik/app/externalsecret.yaml` | Core secret (DB/redis creds, MaxMind, Turnstile) from 1Password |
 | `kubernetes/apps/security/authentik/app/externalsecret-*-oidc.yaml` | One per OIDC client (grafana, proxmox, paperless, open-webui, nextcloud, immich, wazuh, pushover) |
 | `kubernetes/apps/security/authentik/app/blueprints/` | OAuth2Provider + flow blueprints, hash-triggered re-apply |
-| `kubernetes/apps/security/authentik/app/httproute.yaml` | Dual-gateway routing (see Routing) |
+| `kubernetes/apps/security/authentik/app/httproute.yaml` | Dual-gateway routing, X-Forwarded-For overwrite (see Routing) |
 
 ## Secrets
 | ExternalSecret | 1Password source | Consumed by |
@@ -31,6 +31,7 @@ SSO/OIDC broker for every user-facing app in the cluster (Grafana, Paperless, Op
 
 ## Routing & access
 - **Dual-gateway HTTPRoute** (`httproute.yaml`): `id.${SECRET_DOMAIN}` is attached to both `envoy-external` (public) and `envoy-internal`. The internal attachment exists because in-cluster OIDC clients (the Wazuh dashboard, and its indexer validating JWKS) hitting the public hostname get hairpinned through Cloudflare, which drops it as a CDN loop — breaking token/JWKS validation. CoreDNS split-horizon (`kubernetes/apps/kube-system/coredns/app/helmrelease.yaml`, `hosts` plugin) resolves `id.${SECRET_DOMAIN}` in-cluster straight to the internal gateway ClusterIP instead of forwarding upstream.
+- **The client IP authentik sees is set by Envoy, not by the client (since 2026-10-17).** The route's `RequestHeaderModifier` overwrites `X-Forwarded-For` with `%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%`. That is the IP Envoy already resolved via the `ClientTrafficPolicy` (`trustedCIDRs: 10.42.0.0/16`): the rightmost entry that no pod added. Without it, the request reaching authentik on the Cloudflare path carries `<whatever the client sent>,<real IP>,<cloudflared pod IP>`, because Cloudflare keeps a client-supplied XFF and only appends. authentik 2026.8.4 takes the *leftmost* entry from a trusted peer (goauthentik/authentik#26353; the spoofing is reported upstream as #26941), so anyone on the internet could choose the IP used by events, the reputation policy, `ak_client_ip` expression policies (`cisotop-policy-require-password-remote`) and GeoIP. This was verified live on 2026-10-17. 2026.8.3 already got the LAN-direct case wrong: authentik trusts `192.168.0.0/16` by default, so it skipped the LAN peer that Envoy appended. Residual: a pod inside `10.42.0.0/16` can still forge XFF through Envoy. To check after any authentik or Envoy change, send `curl --resolve id.${SECRET_DOMAIN}:443:<a Cloudflare edge IP> https://id.${SECRET_DOMAIN}/api/v3/root/config/ -H 'X-Forwarded-For: 192.0.2.1'` (no event, no flow). The `remote` field in the server log must be the real IP. LAN DNS resolves straight to the gateway LB, so `--resolve` is what forces the Cloudflare path.
 - OIDC issuer for every dependent app is `https://id.${SECRET_DOMAIN}/application/o/<slug>/` — also used directly by the Kubernetes API server itself (`talos/patches/controller/cluster.yaml`, `cluster.apiServer.extraArgs.oidc-issuer-url`) as an *additive* auth method alongside the Talos-generated client-cert admin kubeconfig.
 
 ## Storage
