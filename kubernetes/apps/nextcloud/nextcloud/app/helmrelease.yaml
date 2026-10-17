@@ -215,9 +215,15 @@ spec:
                     1 => 'cloud.${SECRET_DOMAIN}',
                     2 => 'id.${SECRET_DOMAIN}'
                 ),
+                // Pod CIDR only, not 10.0.0.0/8: that range also covers the
+                // WireGuard clients (10.10.0.0/24), which reach Envoy with their
+                // own IP since the envoy Services went externalTrafficPolicy:
+                // Local. Nextcloud skips trusted entries walking X-Forwarded-For
+                // from the right, so a VPN client would come out as the Envoy pod
+                // IP, or as whatever it put further left in the header.
                 'trusted_proxies' => array(
                     0 => '127.0.0.1',
-                    1 => '10.0.0.0/8'
+                    1 => '10.42.0.0/16'
                 ),
                 'forwarded_for_headers' => array(
                   0 => 'HTTP_X_FORWARDED_FOR',
