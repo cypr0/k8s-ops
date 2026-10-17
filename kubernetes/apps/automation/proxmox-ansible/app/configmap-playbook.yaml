@@ -935,7 +935,7 @@ data:
     #   1  file permissions, banners, telnet removal, sudo logging, su restriction
     #      - touches none of authentication, SSH, PAM or the network
     #   2  AppArmor utilities (1.3.1.1); auditd: audispd-plugins, the CIS rules,
-    #      explicit log rotation
+    #      explicit log rotation; time servers (chrony, same as the Talos nodes)
     #      AIDE limited to config paths still to come
     #   3  SSH AllowUsers, PAM, password policy               (not written yet)
     #
@@ -996,6 +996,22 @@ data:
           # fingerprint SHA256:iw1v8EdDCpznuAFmlTfjBIuzUiLi7U7PyImao7ni60E.
           # The trailing "cypr0" is only a label for authorized_keys.
           - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYRsPt1fwbOyxdlFb3Owe0qscK3UIbCuBhcEsy6gqSi cypr0"
+
+        # Time: the same two servers as the Talos nodes (their NTP controller
+        # uses machine.time.servers from talos/patches/global/machine-time.yaml,
+        # which is also cluster.toml ntp_servers), not the Debian pool. `present`
+        # switches chrony over once both servers have answered, `absent` brings
+        # the stock sources back. See cis_wave2_time.yml for the order of steps
+        # and the rollback.
+        cis_time_state: present
+        cis_time_servers:
+          - 162.159.200.1
+          - 162.159.200.123
+        cis_time_sources_file: 10-cloudflare.sources
+        cis_time_marker: "# disabled by proxmox-ansible: "
+        cis_time_probe_retries: 12
+        cis_time_sync_retries: 12
+        cis_time_probe_delay: 5
 
         # RPC/NFS ports (rpcbind 111, nfsd 2049, mountd 20048, statd 20049,
         # 20050) and the SPICE proxy (3128) reachable from the internal
@@ -1125,6 +1141,10 @@ data:
 
         - name: Wave 2 — auditd
           ansible.builtin.include_tasks: cis_wave2_audit.yml
+          when: 2 in cis_waves
+
+        - name: Wave 2 — time servers
+          ansible.builtin.include_tasks: cis_wave2_time.yml
           when: 2 in cis_waves
 
       handlers:
@@ -1787,6 +1807,290 @@ data:
     - name: auditd | Report
       ansible.builtin.debug:
         msg: "{{ cis_audit_report.stdout_lines }}"
+
+  cis_wave2_time.yml: |-
+    ---
+    # Wave 2, time: the host takes its time from the same two servers as the
+    # Talos nodes (talos/patches/global/machine-time.yaml), instead of the
+    # Debian pool that chrony ships with. Decided 2026-10-17.
+    #
+    # The Wazuh policy has no check for the servers themselves, only for
+    # chrony's user (2.3.3.2) and for the service being enabled and active
+    # (2.3.3.3), so this changes no score. Both stay true: chrony.conf keeps
+    # its `user _chrony` setting and the service is running at the end.
+    #
+    # Order matters, because a host without a working time source is worse than
+    # one with the wrong source:
+    #   1. write the new servers to sources.d/ and let chronyd load them
+    #      (`chronyc reload sources`, no restart; the pool keeps working)
+    #   2. WAIT until every new server has answered at least once
+    #   3. only then comment out the pool/server lines in chrony.conf and
+    #      restart chronyd
+    #   4. wait until chronyd is synchronised again
+    # If 2 fails, the new file is removed and nothing else was touched. If 4
+    # fails, the pool lines are put back, the new file is removed and chronyd is
+    # restarted. Both end in a failed run, loudly.
+    #
+    # Steps 2 and 4 only happen in the run that actually retires the pool. On
+    # every later night chrony.conf has no active pool/server line any more, the
+    # new servers are the only sources, and a short outage at the far end must
+    # not trigger a rollback that would leave chronyd with no source at all.
+    #
+    # Not touched: `sourcedir /run/chrony-dhcp` (servers a DHCP lease hands out,
+    # if any) and the files in conf.d. The report before and after shows what
+    # chronyd really uses.
+    #
+    # Dry run (--check): files and the chrony.conf edit are shown as a diff; the
+    # reachability wait is skipped, because the new file is not written then.
+    #
+    # No dollar signs in this file: Flux substitutes them in the ConfigMap.
+    - name: time | the requested state must be one we know
+      ansible.builtin.assert:
+        that:
+          - cis_time_state in ['present', 'absent']
+          - cis_time_state == 'absent' or cis_time_servers | length > 0
+          - cis_time_servers | unique | length == cis_time_servers | length
+        fail_msg: >-
+          cis_time_state is '{{ cis_time_state }}' (present or absent expected)
+          or cis_time_servers is empty or has duplicates. Nothing was changed
+          on the host.
+
+    - name: time | chrony must be installed
+      ansible.builtin.stat:
+        path: /etc/chrony/chrony.conf
+      register: cis_time_conf_stat
+
+    - name: time | chrony must be installed (result)
+      ansible.builtin.assert:
+        that: cis_time_conf_stat.stat.exists
+        fail_msg: >-
+          /etc/chrony/chrony.conf does not exist. This task file edits chrony's
+          configuration; it does not install chrony. Nothing was changed.
+
+    - name: time | Report configuration and sources before (read only)
+      ansible.builtin.shell:
+        cmd: |
+          echo "== active lines in chrony.conf"
+          grep -E '^[[:space:]]*[a-z]' /etc/chrony/chrony.conf 2>&1
+          echo "== files in sources.d and conf.d"
+          ls -1 /etc/chrony/sources.d /etc/chrony/conf.d 2>&1
+          echo "== sources"
+          chronyc -n sources 2>&1
+          echo "== tracking"
+          chronyc tracking 2>&1 | grep -E '^(Reference ID|Stratum|Leap status)'
+        executable: /bin/bash
+      register: cis_time_before
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: time | Before
+      ansible.builtin.debug:
+        msg: "{{ cis_time_before.stdout_lines }}"
+
+    # grep exits 0 with a match, 1 without; anything else is a real error.
+    - name: time | are pool/server lines still active in chrony.conf?
+      ansible.builtin.command: grep -c -E '^[[:space:]]*(pool|server)[[:space:]]' /etc/chrony/chrony.conf
+      register: cis_time_upstream
+      changed_when: false
+      failed_when: cis_time_upstream.rc > 1
+      check_mode: false
+
+    # Debian's chrony.conf reads /etc/chrony/sources.d/*.sources through this
+    # directive. Without it the new file would never be loaded and the wait
+    # below could only time out; say so up front instead.
+    - name: time | does chrony.conf read sources.d?
+      ansible.builtin.command: grep -c -x -E '[[:space:]]*sourcedir[[:space:]]+/etc/chrony/sources[.]d[[:space:]]*(#.*)?' /etc/chrony/chrony.conf
+      register: cis_time_sourcedir
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: cis_time_state == 'present'
+
+    - name: time | chrony.conf must read sources.d
+      ansible.builtin.assert:
+        that: cis_time_sourcedir.stdout | trim | int > 0
+        fail_msg: >-
+          /etc/chrony/chrony.conf has no active line "sourcedir
+          /etc/chrony/sources.d", the way Debian ships it, so a file in that
+          directory would be ignored. Nothing was changed on the host.
+      when: cis_time_state == 'present'
+
+    # ── present: add the servers, prove they answer, then retire the pool ────
+    - name: time | add the new servers and prove they answer
+      when: cis_time_state == 'present'
+      block:
+        - name: time | sources.d exists
+          ansible.builtin.file:
+            path: /etc/chrony/sources.d
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: time | the servers ({{ cis_time_sources_file }})
+          ansible.builtin.copy:
+            dest: "/etc/chrony/sources.d/{{ cis_time_sources_file }}"
+            content: |
+              # Managed by proxmox-ansible (CIS wave 2, time). Do not edit.
+              # The same servers as the Talos nodes use.
+              {% for s in cis_time_servers %}
+              server {{ s }} iburst
+              {% endfor %}
+            owner: root
+            group: root
+            mode: "0644"
+
+        # Always, not only when the file changed: it is cheap, it does nothing
+        # when chronyd already knows the file, and it covers a chronyd that was
+        # restarted between two runs.
+        - name: time | let chronyd load them (no restart)
+          ansible.builtin.command: chronyc reload sources
+          changed_when: false
+
+        # chronyc -c prints CSV: mode,state,name,stratum,poll,reach,... ; reach
+        # is an octal shift register, zero until the first answer.
+        - name: time | every new server must have answered before anything else changes
+          ansible.builtin.command: chronyc -n -c sources
+          register: cis_time_probe
+          changed_when: false
+          check_mode: false
+          when:
+            - not ansible_check_mode
+            - cis_time_upstream.rc == 0
+          retries: "{{ cis_time_probe_retries }}"
+          delay: "{{ cis_time_probe_delay }}"
+          until: >-
+            cis_time_probe.stdout_lines
+            | select('search', '^[^,]*,[^,]*,(' ~ (cis_time_servers | map('regex_escape') | join('|')) ~ '),[^,]*,[^,]*,[1-7][0-7]*,')
+            | list | length == cis_time_servers | length
+      rescue:
+        # Only while the original pool lines are still active is there a
+        # fallback to return to. If they are already retired, the new file IS
+        # the time source and must not be removed.
+        - name: time | take the new sources file out again (chrony.conf was not touched)
+          ansible.builtin.file:
+            path: "/etc/chrony/sources.d/{{ cis_time_sources_file }}"
+            state: absent
+          when: cis_time_upstream.rc == 0
+
+        - name: time | let chronyd forget them
+          ansible.builtin.command: chronyc reload sources
+          changed_when: false
+          failed_when: false
+          when: cis_time_upstream.rc == 0
+
+        - name: time | stop here
+          ansible.builtin.fail:
+            msg: >-
+              Adding the time servers ({{ cis_time_servers | join(', ') }})
+              failed: they did not all answer within
+              {{ cis_time_probe_retries | int * cis_time_probe_delay | int }}
+              seconds (is UDP 123 outbound open from this host?), or writing
+              the file failed. While the Debian pool lines were still active in
+              chrony.conf, the new sources file was removed again and
+              chrony.conf and the running chronyd are as they were. If they
+              were already retired, nothing was removed.
+
+    - name: time | retire the other upstream sources
+      when: cis_time_state == 'present'
+      block:
+        - name: time | comment out pool and server lines in chrony.conf
+          ansible.builtin.replace:
+            path: /etc/chrony/chrony.conf
+            regexp: '^([ \t]*(?:pool|server)[ \t].*)'
+            replace: '{{ cis_time_marker }}\1'
+          register: cis_time_conf
+
+        - name: time | restart chrony (only if chrony.conf changed)
+          ansible.builtin.systemd:
+            name: chrony
+            state: restarted
+          when: cis_time_conf is changed
+
+        # The last CSV field of `chronyc -c tracking` is the leap status:
+        # Normal once synchronised, "Not synchronised" before.
+        - name: time | wait until chrony is synchronised again
+          ansible.builtin.command: chronyc -c tracking
+          register: cis_time_track
+          changed_when: false
+          check_mode: false
+          when: cis_time_conf is changed and not ansible_check_mode
+          retries: "{{ cis_time_sync_retries }}"
+          delay: "{{ cis_time_probe_delay }}"
+          until: cis_time_track.stdout.split(',')[-1] | trim == 'Normal'
+      rescue:
+        - name: time | put the original upstream sources back
+          ansible.builtin.replace:
+            path: /etc/chrony/chrony.conf
+            regexp: '^{{ cis_time_marker | regex_escape }}(.*)'
+            replace: '\1'
+          when: cis_time_conf is defined and cis_time_conf is changed
+
+        - name: time | take the new sources file out again
+          ansible.builtin.file:
+            path: "/etc/chrony/sources.d/{{ cis_time_sources_file }}"
+            state: absent
+          when: cis_time_conf is defined and cis_time_conf is changed
+
+        - name: time | restart chrony with the original configuration
+          ansible.builtin.systemd:
+            name: chrony
+            state: restarted
+          when: cis_time_conf is defined and cis_time_conf is changed
+
+        - name: time | stop here
+          ansible.builtin.fail:
+            msg: >-
+              chrony did not become synchronised against the new servers within
+              {{ cis_time_sync_retries | int * cis_time_probe_delay | int }}
+              seconds after the restart, or the edit itself failed. If
+              chrony.conf had been changed in this run, it was put back, the
+              new sources file was removed and chrony was restarted: the
+              Debian pool applies again.
+
+    # ── absent: back to what Debian ships ────────────────────────────────────
+    - name: time | back to the stock upstream sources
+      when: cis_time_state == 'absent'
+      block:
+        - name: time | remove the sources file
+          ansible.builtin.file:
+            path: "/etc/chrony/sources.d/{{ cis_time_sources_file }}"
+            state: absent
+          register: cis_time_src_gone
+
+        - name: time | restore the commented-out pool/server lines
+          ansible.builtin.replace:
+            path: /etc/chrony/chrony.conf
+            regexp: '^{{ cis_time_marker | regex_escape }}(.*)'
+            replace: '\1'
+          register: cis_time_conf_back
+
+        - name: time | restart chrony (only if something changed)
+          ansible.builtin.systemd:
+            name: chrony
+            state: restarted
+          when: cis_time_src_gone is changed or cis_time_conf_back is changed
+
+    - name: time | Report sources and tracking afterwards (read only)
+      ansible.builtin.shell:
+        cmd: |
+          echo "== sources"
+          chronyc -n sources 2>&1
+          echo "== tracking"
+          chronyc tracking 2>&1 | grep -E '^(Reference ID|Stratum|Leap status)'
+          echo "== enabled / active"
+          systemctl is-enabled chrony.service 2>&1
+          systemctl is-active chrony.service 2>&1
+        executable: /bin/bash
+      register: cis_time_after
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: time | After
+      ansible.builtin.debug:
+        msg: "{{ cis_time_after.stdout_lines }}"
 
   cis_rpc_lockdown.yml: |-
     ---
