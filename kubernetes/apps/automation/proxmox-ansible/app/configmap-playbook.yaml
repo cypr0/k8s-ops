@@ -943,7 +943,8 @@ data:
     #   2  AppArmor utilities (1.3.1.1); auditd: audispd-plugins, the CIS rules,
     #      explicit log rotation; time servers (chrony, same as the Talos nodes)
     #      AIDE limited to config paths still to come
-    #   3  SSH AllowUsers (5.1.4); PAM, password policy       (PAM not written yet)
+    #   3  SSH AllowUsers (5.1.4); PAM: faillock, pwhistory, no nullok,
+    #      libpam-pwquality (5.3.1.3, 5.3.2.2, 5.3.2.4, 5.3.3.4.1, 5.3.3.4.4)
     #
     # Control numbers in comments are those of the Wazuh policy. The CIS numbers
     # in the ansible-debian-cis role differ in places (e.g. PermitRootLogin).
@@ -1029,6 +1030,33 @@ data:
         cis_ssh_access_state: present
         cis_ssh_allow_users: "{{ ['root', 'ansible'] + ([cis_admin_user] if cis_admin_ssh_pubkeys | length > 0 else []) }}"
         cis_ssh_dropin: /etc/ssh/sshd_config.d/10-cis-allowusers.conf
+
+        # PAM: pam_faillock, pam_pwhistory, pam_unix without nullok, libpam-pwquality.
+        # `present` applies it behind a snapshot and a restore timer, `absent` takes
+        # it out again (back to the packaged unix profile; the pwquality package
+        # stays installed). The reasons for every number are in cis_wave3_pam.yml.
+        # The FTP account's password comes from the Job's environment, as in
+        # hardening.yml; it is only used to check that the account can still log in.
+        cis_pam_state: present
+        cis_pam_deny: 5
+        cis_pam_unlock_time: 900
+        cis_pam_remember: 24
+        cis_pam_guard_seconds: 900
+        cis_pam_ftp_password: "{{ lookup('env', 'FTP_SCANNER_PASSWORD') }}"
+        # The packages apt adds for libpam-pwquality WITH its recommends in a clean
+        # Debian 13 container (measured 2026-10-17, apt-get --simulate). Anything
+        # outside this list stops the run; a package of it that the host already has
+        # simply does not show up as new.
+        cis_pam_pwquality_packages:
+          - cracklib-runtime
+          - file
+          - libcrack2
+          - libmagic-mgc
+          - libmagic1t64
+          - libpam-pwquality
+          - libpwquality-common
+          - libpwquality1
+          - wamerican
 
         # RPC/NFS ports (rpcbind 111, nfsd 2049, mountd 20048, statd 20049,
         # 20050) and the SPICE proxy (3128) reachable from the internal
@@ -1166,6 +1194,10 @@ data:
 
         - name: Wave 3 — SSH access list
           ansible.builtin.include_tasks: cis_wave3_ssh.yml
+          when: 3 in cis_waves
+
+        - name: Wave 3 — PAM
+          ansible.builtin.include_tasks: cis_wave3_pam.yml
           when: 3 in cis_waves
 
       handlers:
@@ -2706,6 +2738,923 @@ data:
 
     if __name__ == "__main__":
         main()
+
+  cis_wave3_pam.yml: |-
+    ---
+    # Wave 3, PAM. Numbers are those of the Wazuh SCA policy cis_debian13.
+    #
+    # PAM is shared by sshd, sudo, su, login, vsftpd and the PVE web login (there
+    # is no /etc/pam.d/proxmox-ve-auth on this host, so it falls back to `other`
+    # and with it to common-auth), and a broken stack can lock out the very
+    # connection that is changing it, sudo included. Nothing here changes PAM
+    # unguarded. The work is done by /usr/local/sbin/cis-pam (cis_pam.py), which
+    # takes a snapshot first and starts a systemd timer that puts it back after
+    # cis_pam_guard_seconds unless this play commits. If this play, the Job or the
+    # connection dies half way, the host returns to where it was by itself.
+    #
+    # What changes, with the verdicts the real Wazuh agent 4.14.8 gave for it in a
+    # container whose 5.3.x verdicts matched the host's in all 25 checks:
+    #   5.3.2.2   pam_faillock in common-auth and common-account
+    #   5.3.2.4   pam_pwhistory in common-password
+    #   5.3.3.4.1 pam_unix without nullok (a profile that replaces the packaged one)
+    #   5.3.3.4.4 use_authtok (comes with pam_pwhistory in front of pam_unix)
+    #   5.3.1.3   libpam-pwquality installed
+    #   5.3.3.2.8 (was not applicable) passes through a commented line in the
+    #             pwquality.conf the package ships; nothing is enforced for root
+    # Nothing gets worse. Not pursued: 5.3.2.3 (the rule has a literal (d+)),
+    # 5.3.3.2.1 to .7 (rules on d:/.../* that the agent does not evaluate),
+    # 5.3.3.3.1 to .3 (see below).
+    #
+    # Decided and measured:
+    # - The numbers are in faillock.conf (deny 5, unlock_time 900) and in
+    #   pwhistory.conf (remember 24), not in the PAM lines. 5.3.3.4.2 searches the
+    #   common-* files for the word "remember" and passes today; with it in the
+    #   PAM line it would fail, and 5.3.3.3.1 wants exactly that. They cannot both
+    #   pass. The remember value in pwhistory.conf is effective (measured: after
+    #   13 changes the first password is refused again with 24, allowed with the
+    #   default).
+    # - enforce_for_root is NOT set for pwhistory. The nightly chpasswd for the FTP
+    #   account sets the same password every night; with enforce_for_root it fails
+    #   with exit 1 (measured), without it it ends in exit 0.
+    # - root never locks (even_deny_root is off), and a locked account can still log
+    #   in with an SSH key: sshd here is publickey only, so only the account and
+    #   session stages run (measured). A successful key login resets the count.
+    # - libpam-pwquality is installed WITH its recommends. Without them there is no
+    #   dictionary and passwd refuses every new password of an ordinary user, strong
+    #   ones included (measured). pam-auth-update turns the package's profile on by
+    #   itself at install time, so the install is inside the guarded window.
+    # - The scanner account is checked through the PAM service vsftpd with its real
+    #   password, right password only: a wrong one would be a failed login and,
+    #   with deny 5, would add up to a locked FTP account after a few nights.
+    #
+    # Dry run: only the read-only part runs; the plan is the report. Nothing is
+    # installed, snapshotted or changed.
+    #
+    # No dollar signs in this file: Flux substitutes them in the ConfigMap.
+    - name: PAM | the requested state must be one we know
+      ansible.builtin.assert:
+        that:
+          - cis_pam_state in ['present', 'absent']
+          - cis_pam_deny | int in range(3, 11)
+          - cis_pam_unlock_time | int >= 900
+          - cis_pam_remember | int >= 24
+          - cis_pam_guard_seconds | int >= 300
+        fail_msg: >-
+          cis_pam_state is '{{ cis_pam_state }}' (present or absent expected), or a
+          number is out of range: deny 3 to 10, unlock_time at least 900, remember
+          at least 24, guard at least 300 seconds. Nothing was changed on the host.
+
+    # In a dry run `copy` writes nothing, so the installed script may not exist yet.
+    # The read-only calls therefore run straight from /scripts with the script
+    # module, forced to run in check mode too; only what changes the host uses the
+    # installed copy (the restore timer needs it there).
+    - name: PAM | install the helper script
+      ansible.builtin.copy:
+        src: /scripts/cis_pam.py
+        dest: /usr/local/sbin/cis-pam
+        owner: root
+        group: root
+        mode: "0750"
+      diff: false
+
+    - name: PAM | Report the state before (read only)
+      ansible.builtin.script:
+        cmd: /scripts/cis_pam.py report
+      register: cis_pam_before
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: PAM | Before
+      ansible.builtin.debug:
+        msg: "{{ cis_pam_before.stdout_lines }}"
+
+    - name: PAM | does the host match the wanted state?
+      ansible.builtin.script:
+        cmd: >-
+          /scripts/cis_pam.py status
+          {{ '--absent' if cis_pam_state == 'absent' else
+             '--deny ' ~ cis_pam_deny ~ ' --unlock-time ' ~ cis_pam_unlock_time ~ ' --remember ' ~ cis_pam_remember }}
+      register: cis_pam_status
+      changed_when: false
+      failed_when: cis_pam_status.rc not in [0, 3]
+      check_mode: false
+
+    # `dpkg-query -s` prints "Status: install ok installed" for an installed
+    # package and exits non-zero for an unknown one; no format string needed.
+    - name: PAM | the pwquality package is part of the wanted state
+      ansible.builtin.command: dpkg-query -s libpam-pwquality
+      register: cis_pam_pkg
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when: cis_pam_state == 'present'
+
+    - name: PAM | what has to be done
+      ansible.builtin.set_fact:
+        cis_pam_pkg_missing: "{{ cis_pam_state == 'present' and 'install ok installed' not in (cis_pam_pkg.stdout | default('')) }}"
+        cis_pam_need: "{{ cis_pam_status.rc == 3 or (cis_pam_state == 'present' and 'install ok installed' not in (cis_pam_pkg.stdout | default(''))) }}"
+
+    - name: PAM | Status
+      ansible.builtin.debug:
+        msg: "{{ cis_pam_status.stdout_lines + ['package libpam-pwquality missing: ' ~ cis_pam_pkg_missing, 'change needed: ' ~ cis_pam_need] }}"
+
+    # ── the package, first, under the same fail-closed rule as the other installs.
+    # apt-get --simulate changes nothing, so it runs in a dry run too and the plan
+    # shows up in the dry-run log before anything real happens. The allowed list is
+    # what apt chose in a clean Debian 13 container with the recommends (the
+    # dictionary comes with them, see the header); anything else new, any installed
+    # package that would change and anything removed stops the run.
+    # The same recommends switch the install below passes (the apt module adds
+    # -o APT::Install-Recommends=yes). Without it a host whose apt config turns
+    # recommends off would show four packages here and install six (measured).
+    - name: PAM | what apt would do for libpam-pwquality
+      ansible.builtin.command: apt-get --simulate -o APT::Install-Recommends=yes install libpam-pwquality
+      register: cis_pam_sim
+      changed_when: false
+      check_mode: false
+      when: cis_pam_pkg_missing | bool
+
+    - name: PAM | refuse unless it only adds the expected packages
+      ansible.builtin.assert:
+        that:
+          - "'libpam-pwquality' in cis_pam_new"
+          - cis_pam_changed | length == 0
+          - cis_pam_gone | length == 0
+          - cis_pam_new | difference(cis_pam_pwquality_packages) | length == 0
+        fail_msg: >-
+          apt's plan for libpam-pwquality is not just the expected new packages.
+          New: {{ cis_pam_new | join(', ') | default('(none parsed)', true) }}.
+          Unexpected among them: {{ cis_pam_new | difference(cis_pam_pwquality_packages) | join(', ') | default('none', true) }}.
+          Would change an installed package: {{ cis_pam_changed | join(', ') | default('none', true) }}.
+          Would remove: {{ cis_pam_gone | join(', ') | default('none', true) }}.
+          Nothing was installed or changed; decide by hand.
+        success_msg: "apt would add only: {{ cis_pam_new | join(', ') }}"
+      vars:
+        # Same regex lesson as the other installs: single backslashes and
+        # [^ ]+, never \\S. "Inst name (" is a new package, "Inst name ["
+        # an installed one that would change version.
+        cis_pam_new: >-
+          {{ cis_pam_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \(') | unique | list }}
+        cis_pam_changed: >-
+          {{ cis_pam_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \[') | unique | list }}
+        cis_pam_gone: >-
+          {{ cis_pam_sim.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^ ]+)') | unique | list }}
+      when: cis_pam_pkg_missing | bool
+
+    # A pending change is not carried out in a dry run: the guard timer, the
+    # package install and pam-auth-update cannot be shown in check mode.
+    - name: PAM | the change, guarded
+      when:
+        - cis_pam_need | bool
+        - not ansible_check_mode
+      block:
+        # ── the guard, then everything that touches PAM
+        - name: PAM | take the snapshot and start the restore timer
+          ansible.builtin.command: /usr/local/sbin/cis-pam arm --seconds {{ cis_pam_guard_seconds }}
+          register: cis_pam_arm
+          changed_when: true
+
+        - name: PAM | install libpam-pwquality with its recommends
+          ansible.builtin.apt:
+            name: libpam-pwquality
+            state: present
+            install_recommends: yes
+          when: cis_pam_pkg_missing | bool
+
+        - name: PAM | apply the profiles and settings
+          ansible.builtin.command:
+            argv:
+              - /usr/local/sbin/cis-pam
+              - apply
+              - --deny
+              - "{{ cis_pam_deny }}"
+              - --unlock-time
+              - "{{ cis_pam_unlock_time }}"
+              - --remember
+              - "{{ cis_pam_remember }}"
+          register: cis_pam_apply
+          changed_when: true
+          when: cis_pam_state == 'present'
+
+        - name: PAM | take them out again
+          ansible.builtin.command: /usr/local/sbin/cis-pam remove
+          register: cis_pam_remove
+          changed_when: true
+          when: cis_pam_state == 'absent'
+
+        - name: PAM | the host must match the wanted state now
+          ansible.builtin.command:
+            argv: >-
+              {{ ['/usr/local/sbin/cis-pam', 'status']
+                 + (['--absent'] if cis_pam_state == 'absent' else
+                    ['--deny', cis_pam_deny | string, '--unlock-time', cis_pam_unlock_time | string,
+                     '--remember', cis_pam_remember | string]) }}
+          changed_when: false
+
+        # Fresh processes, ControlPath=none: Ansible's own connection is persistent and
+        # would report success even if no new login worked. root has no password
+        # here (key only), so what is checked is that a new session opens and that
+        # sudo, which goes through common-auth and common-account, still works for
+        # the account that runs the play.
+        - name: PAM | fresh logins work, as root and as ansible, and sudo still works
+          ansible.builtin.command:
+            argv:
+              - ssh
+              - -F
+              - /dev/null
+              - -i
+              - "{{ item.key }}"
+              - -o
+              - IdentitiesOnly=yes
+              - -o
+              - BatchMode=yes
+              - -o
+              - ControlMaster=no
+              - -o
+              - ControlPath=none
+              - -o
+              - StrictHostKeyChecking=no
+              - -o
+              - UserKnownHostsFile=/dev/null
+              - -o
+              - ConnectTimeout=20
+              - -o
+              - ConnectionAttempts=1
+              - -l
+              - "{{ item.user }}"
+              - "{{ hostvars[inventory_hostname]['ansible_host'] }}"
+              - "{{ item.cmd }}"
+          loop:
+            - user: root
+              key: "{{ hostvars[groups['proxmox_root'][0]]['ansible_ssh_private_key_file'] }}"
+              cmd: echo cis-login-ok
+            - user: ansible
+              key: "{{ hostvars[inventory_hostname]['ansible_ssh_private_key_file'] }}"
+              cmd: sudo -n true && echo cis-login-ok
+          loop_control:
+            label: "{{ item.user }}"
+          delegate_to: localhost
+          become: false
+          register: cis_pam_fresh
+          changed_when: false
+          failed_when: cis_pam_fresh.rc != 0 or 'cis-login-ok' not in cis_pam_fresh.stdout
+
+        # The FTP account is the one account here with a password that a service
+        # uses. Right password only (see above). Skipped without a password.
+        # no_log hides the task's arguments, which hold the password. What cis-pam
+        # prints holds none (service, user, return codes), so the verdict is shown
+        # by a separate task; without it a failure here would be unreadable.
+        - name: PAM | authenticate the FTP account (services vsftpd and other)
+          ansible.builtin.command: /usr/local/sbin/cis-pam authcheck --service {{ item }} --user scanner
+          args:
+            stdin: "{{ cis_pam_ftp_password }}"
+          no_log: true
+          register: cis_pam_auth
+          changed_when: false
+          failed_when: false
+          loop:
+            - vsftpd
+            - other
+          when:
+            - cis_pam_state == 'present'
+            - cis_pam_ftp_password | length > 0
+
+        # An assert prints the item it failed on, in full, and the item is the whole
+        # registered result of the command above, whose module_args hold the
+        # password (found by running it: a failure printed the password into the
+        # log). So the verdicts are reduced to plain strings and numbers first and
+        # the assert never sees anything else.
+        - name: PAM | reduce the authentication results to what is safe to print
+          ansible.builtin.set_fact:
+            cis_pam_auth_safe: >-
+              {{ cis_pam_auth.results | default([])
+                 | map(attribute='stdout') | map('default', 'no output') | map('trim') | list }}
+            cis_pam_auth_bad: >-
+              {{ cis_pam_auth.results | default([]) | rejectattr('rc', 'equalto', 0) | list | length }}
+          no_log: true
+          when:
+            - cis_pam_state == 'present'
+            - cis_pam_ftp_password | length > 0
+
+        - name: PAM | the FTP account's authentication result
+          ansible.builtin.fail:
+            msg: >-
+              {{ cis_pam_auth_safe | join(' | ') }}. Measured meaning: auth rc=6 is
+              a password that was not accepted (wrong or changed), auth rc=7 is a
+              locked account (five failed FTP logins, see faillock --user scanner).
+              The snapshot is put back.
+          when:
+            - cis_pam_state == 'present'
+            - cis_pam_ftp_password | length > 0
+            - cis_pam_auth_bad | int > 0
+
+        - name: PAM | all checks passed, stop the restore timer
+          ansible.builtin.command: /usr/local/sbin/cis-pam commit
+          changed_when: true
+      rescue:
+        - name: PAM | put the snapshot back
+          ansible.builtin.command: /usr/local/sbin/cis-pam restore
+          register: cis_pam_back
+          changed_when: true
+          failed_when: false
+          when: cis_pam_arm is defined
+
+        - name: PAM | stop here
+          ansible.builtin.fail:
+            msg: >-
+              Changing PAM failed (the output above shows at which step: simulation,
+              snapshot, install, apply, the final comparison, a fresh login, sudo, or
+              the FTP account's authentication). The snapshot was put back
+              ({{ (cis_pam_back.stdout | default('no snapshot was taken yet')) | trim }}).
+              If even that did not happen, the timer puts it back
+              {{ cis_pam_guard_seconds }} seconds after it was armed. Note that a
+              package installed by this play stays installed.
+
+    - name: PAM | Report the state afterwards (read only)
+      ansible.builtin.script:
+        cmd: /scripts/cis_pam.py report
+      register: cis_pam_after
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: PAM | After
+      ansible.builtin.debug:
+        msg: "{{ cis_pam_after.stdout_lines }}"
+
+  cis_pam.py: |-
+    #!/usr/bin/env python3
+    """cis-pam: the PAM changes of CIS wave 3, with a way back.
+
+    PAM is shared by sshd, sudo, su, login, vsftpd and the PVE web login, and a
+    broken stack can lock out the very connection that is changing it. So nothing
+    here changes PAM unguarded:
+
+      report              read only; names and counts, never a password or a hash
+      status [--absent]   read only; exit 0 if the host is as wanted, 3 if not,
+                          4 if a precondition is missing
+      arm [--seconds N]   take a snapshot and start a systemd timer that restores
+                          it after N seconds (default 900); a snapshot left behind
+                          by an interrupted run is restored first
+      apply               (armed only) write the profiles and settings, run
+                          pam-auth-update, check the result; on a bad result the
+                          snapshot is restored here and the exit code is 5
+      remove              (armed only) take it all out again, back to the packaged
+                          unix profile
+      commit              stop the timer, delete the snapshot
+      restore             put the snapshot back and stop the timer (also what the
+                          timer runs)
+      authcheck           with the password on stdin: the right password through the
+                          PAM service, authentication and account, as a login would
+                          (no wrong attempt: it would count against the lockout)
+
+    pam-auth-update's exit code is never trusted: it returns 0 for an unknown
+    profile name and, with --remove unix, can leave no unix profile at all, so the
+    result is always checked in the generated files (measured in a Debian 13
+    container).
+
+    What the profiles do: pam_faillock (CIS 5.3.2.2), pam_pwhistory (5.3.2.4),
+    and the packaged unix profile without nullok (5.3.3.4.1, 5.3.3.4.4 is already
+    true in it). The numbers (deny, unlock_time, remember) go to faillock.conf and
+    pwhistory.conf, not into the PAM lines: the word "remember" must not appear in
+    the common-* files at all (5.3.3.4.2 searches them for it). enforce_for_root
+    is deliberately not set: the nightly chpasswd for the FTP account sets the
+    same password every night, and with it chpasswd fails (measured, exit 1).
+
+    No dollar signs in this file: Flux substitutes them in the ConfigMap.
+    """
+    import argparse
+    import ctypes
+    import glob
+    import os
+    import re
+    import shutil
+    import subprocess
+    import sys
+
+    PAMD = "/etc/pam.d"
+    LIBPAM = "/var/lib/pam"
+    CONFIGS = "/usr/share/pam-configs"
+    SEC = "/etc/security"
+    STATE = "/var/lib/cis-pam"
+    SNAP = STATE + "/snapshot"
+    UNIT = "cis-pam-restore"
+    SELF = "/usr/local/sbin/cis-pam"
+    COMMON = ["common-auth", "common-account", "common-password", "common-session",
+              "common-session-noninteractive"]
+    CIS_PROFILES = ["cis-unix", "cis-faillock", "cis-faillock-notify", "cis-pwhistory"]
+    CONF_FILES = ["faillock.conf", "pwhistory.conf"]
+    BEGIN = "# BEGIN proxmox-ansible CIS wave 3 (managed, do not edit)"
+    END = "# END proxmox-ansible CIS wave 3"
+    ENV = dict(os.environ, DEBIAN_FRONTEND="noninteractive", LC_ALL="C")
+
+    def out(msg):
+        print(msg)
+        sys.stdout.flush()
+
+    def run(cmd, stdin=None):
+        return subprocess.run(cmd, input=stdin, capture_output=True, text=True, env=ENV)
+
+    def read(path):
+        with open(path) as f:
+            return f.read()
+
+    def put(path, text, mode=0o644):
+        """Write atomically: a half-written PAM file would be worse than either version."""
+        tmp = path + ".cis-tmp"
+        with open(tmp, "w") as f:
+            f.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+
+    def put_copy(src, dst):
+        tmp = dst + ".cis-tmp"
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+
+    def active_lines(path):
+        lines = []
+        with open(path) as f:
+            for line in f:
+                s = line.strip()
+                if s and not s.startswith("#"):
+                    lines.append(s)
+        return lines
+
+    def find(lines, *needles):
+        for i, line in enumerate(lines):
+            if all(n in line for n in needles):
+                return i
+        return -1
+
+    # ── the wanted state ────────────────────────────────────────────────────────
+    def profile_faillock():
+        return ("Name: Lock out an account after repeated failed logins (pam_faillock, CIS)\n"
+                "Default: yes\n"
+                "Priority: 0\n"
+                "Auth-Type: Primary\n"
+                "Auth:\n"
+                "\t[default=die]\tpam_faillock.so authfail\n")
+
+    def profile_faillock_notify():
+        return ("Name: Reset the failed login count on success (pam_faillock, CIS)\n"
+                "Default: yes\n"
+                "Priority: 1024\n"
+                "Auth-Type: Primary\n"
+                "Auth:\n"
+                "\trequisite\tpam_faillock.so preauth\n"
+                "Account-Type: Primary\n"
+                "Account:\n"
+                "\trequired\tpam_faillock.so\n")
+
+    def profile_pwhistory():
+        return ("Name: Password history (pam_pwhistory, CIS)\n"
+                "Default: yes\n"
+                "Priority: 512\n"
+                "Password-Type: Primary\n"
+                "Password:\n"
+                "\trequisite\tpam_pwhistory.so try_first_pass\n")
+
+    def profile_unix():
+        """The packaged unix profile without nullok, replacing it. Derived, not copied,
+        so that a libpam-runtime upgrade that changes the packaged profile is picked up
+        by the next run instead of being silently undone."""
+        lines = []
+        for line in read(CONFIGS + "/unix").splitlines():
+            if line.startswith("Name:"):
+                lines.append("Name: Unix authentication (CIS, replaces the packaged unix profile)")
+                continue
+            lines.append(line.replace(" nullok", ""))
+            if line.startswith("Priority:"):
+                lines.append("Conflicts: unix")
+        text = "\n".join(lines) + "\n"
+        if "nullok" in text or "pam_unix.so" not in text or "Conflicts: unix" not in text:
+            raise RuntimeError("the packaged unix profile has a shape this script does not know")
+        return text
+
+    def wanted_profiles():
+        return {"cis-unix": profile_unix(), "cis-faillock": profile_faillock(),
+                "cis-faillock-notify": profile_faillock_notify(), "cis-pwhistory": profile_pwhistory()}
+
+    def conf_lines(args):
+        return {"faillock.conf": ["deny = %d" % args.deny, "unlock_time = %d" % args.unlock_time],
+                "pwhistory.conf": ["remember = %d" % args.remember]}
+
+    def strip_block(text):
+        kept, skip = [], False
+        for line in text.splitlines():
+            if line == BEGIN:
+                skip = True
+                continue
+            if line == END:
+                skip = False
+                continue
+            if not skip:
+                kept.append(line)
+        return "\n".join(kept).rstrip("\n")
+
+    def with_block(text, lines):
+        return strip_block(text) + "\n\n" + BEGIN + "\n" + "\n".join(lines) + "\n" + END + "\n"
+
+    def block_text(lines):
+        return BEGIN + "\n" + "\n".join(lines) + "\n" + END + "\n"
+
+    # ── looking at the host ─────────────────────────────────────────────────────
+    def debconf_profiles():
+        r = run(["debconf-show", "libpam-runtime"])
+        m = re.search(r"libpam-runtime/profiles: *(.*)", r.stdout)
+        return [p.strip() for p in m.group(1).split(",") if p.strip()] if m else []
+
+    def set_debconf_profiles(profiles):
+        return run(["debconf-communicate", "libpam-runtime"],
+                   stdin="SET libpam-runtime/profiles " + ", ".join(profiles) + "\n")
+
+    def find_module(name):
+        return bool(glob.glob("/usr/lib/*/security/" + name) or glob.glob("/lib/*/security/" + name)
+                    or glob.glob("/usr/lib/security/" + name))
+
+    def preconditions(need_self=True):
+        errs = []
+        for m in ("pam_unix.so", "pam_faillock.so", "pam_pwhistory.so"):
+            if not find_module(m):
+                errs.append("module %s not found" % m)
+        for tool in ("pam-auth-update", "systemd-run", "systemctl", "debconf-show", "debconf-communicate"):
+            if not shutil.which(tool):
+                errs.append("%s not found" % tool)
+        if not os.path.exists(CONFIGS + "/unix"):
+            errs.append(CONFIGS + "/unix does not exist")
+        for f in COMMON:
+            if not os.path.exists(PAMD + "/" + f):
+                errs.append("%s/%s does not exist" % (PAMD, f))
+        if need_self and not os.path.exists(SELF):
+            errs.append(SELF + " is not installed (the timer needs it)")
+        return errs
+
+    def verify_common(cis):
+        """Problems in the generated files, as a list of strings. Empty means good."""
+        probs = []
+        try:
+            files = {f: active_lines(PAMD + "/" + f) for f in COMMON}
+        except OSError as e:
+            return ["cannot read the common files: %s" % e]
+        for f, lines in files.items():
+            if find(lines, "pam_unix.so") < 0:
+                probs.append("%s has no pam_unix.so" % f)
+        for f in ("common-auth", "common-account", "common-password"):
+            for mod in ("pam_deny.so", "pam_permit.so"):
+                if find(files[f], mod) < 0:
+                    probs.append("%s has no %s" % (f, mod))
+        if cis:
+            for f, lines in files.items():
+                if find(lines, "nullok") >= 0:
+                    probs.append("%s still has nullok" % f)
+                if find(lines, "remember") >= 0:
+                    probs.append("%s has the word remember (5.3.3.4.2 forbids it)" % f)
+            a = files["common-auth"]
+            pre, unix, fail = find(a, "pam_faillock.so", "preauth"), find(a, "pam_unix.so"), find(a, "pam_faillock.so", "authfail")
+            if pre < 0 or fail < 0:
+                probs.append("common-auth lacks pam_faillock preauth/authfail")
+            elif not pre < unix < fail:
+                probs.append("common-auth order is wrong: preauth, pam_unix, authfail expected")
+            if find(files["common-account"], "pam_faillock.so") < 0:
+                probs.append("common-account has no pam_faillock.so")
+            p = files["common-password"]
+            hist, punix = find(p, "pam_pwhistory.so"), find(p, "pam_unix.so")
+            if hist < 0:
+                probs.append("common-password has no pam_pwhistory.so")
+            elif hist > punix:
+                probs.append("common-password: pam_pwhistory.so must come before pam_unix.so")
+            if punix >= 0 and "use_authtok" not in p[punix]:
+                probs.append("common-password: pam_unix.so has no use_authtok")
+        else:
+            for f, lines in files.items():
+                for mod in ("pam_faillock.so", "pam_pwhistory.so"):
+                    if find(lines, mod) >= 0:
+                        probs.append("%s still has %s" % (f, mod))
+        return probs
+
+    def status(args):
+        diffs = []
+        try:
+            want = wanted_profiles() if not args.absent else {}
+        except (RuntimeError, OSError) as e:
+            return ["cannot derive the profiles: %s" % e]
+        profiles = debconf_profiles()
+        if args.absent:
+            for p in CIS_PROFILES:
+                if os.path.exists(CONFIGS + "/" + p):
+                    diffs.append("profile file %s exists" % p)
+                if p in profiles:
+                    diffs.append("profile %s is enabled" % p)
+            diffs += verify_common(False)
+            for f in CONF_FILES:
+                if os.path.exists(SEC + "/" + f) and BEGIN in read(SEC + "/" + f):
+                    diffs.append("%s has the managed block" % f)
+            return diffs
+        for name, text in want.items():
+            path = CONFIGS + "/" + name
+            if not os.path.exists(path):
+                diffs.append("profile file %s is missing" % name)
+            elif read(path) != text:
+                diffs.append("profile file %s differs" % name)
+            if name not in profiles:
+                diffs.append("profile %s is not enabled" % name)
+        if "unix" in profiles:
+            diffs.append("the packaged unix profile is still enabled (nullok)")
+        diffs += verify_common(True)
+        for f, lines in conf_lines(args).items():
+            path = SEC + "/" + f
+            if not os.path.exists(path) or block_text(lines) not in read(path):
+                diffs.append("%s lacks the managed block %s" % (f, lines))
+        return diffs
+
+    # ── snapshot, timer, restore ────────────────────────────────────────────────
+    def timer_active():
+        return run(["systemctl", "is-active", UNIT + ".timer"]).stdout.strip() == "active"
+
+    def disarm():
+        run(["systemctl", "stop", UNIT + ".timer"])
+        run(["systemctl", "reset-failed", UNIT + ".service"])
+
+    def snapshot():
+        shutil.rmtree(SNAP, ignore_errors=True)
+        os.makedirs(SNAP + "/pam.d")
+        os.makedirs(SNAP + "/lib-pam")
+        os.makedirs(SNAP + "/cis-profiles")
+        os.makedirs(SNAP + "/security")
+        for f in COMMON:
+            shutil.copy2(PAMD + "/" + f, SNAP + "/pam.d/" + f)
+        for f in os.listdir(LIBPAM):
+            shutil.copy2(LIBPAM + "/" + f, SNAP + "/lib-pam/" + f)
+        for path in glob.glob(CONFIGS + "/cis-*"):
+            shutil.copy2(path, SNAP + "/cis-profiles/" + os.path.basename(path))
+        for f in CONF_FILES:
+            if os.path.exists(SEC + "/" + f):
+                shutil.copy2(SEC + "/" + f, SNAP + "/security/" + f)
+        put(SNAP + "/profiles.txt", ", ".join(debconf_profiles()) + "\n")
+        os.chmod(STATE, 0o700)
+
+    def do_restore():
+        if not os.path.isdir(SNAP):
+            out("restore: no snapshot, nothing to put back")
+            disarm()
+            return 0
+        for f in COMMON:
+            put_copy(SNAP + "/pam.d/" + f, PAMD + "/" + f)
+        kept = set(os.listdir(SNAP + "/lib-pam"))
+        for f in os.listdir(LIBPAM):
+            if f not in kept:
+                os.remove(LIBPAM + "/" + f)
+        for f in kept:
+            put_copy(SNAP + "/lib-pam/" + f, LIBPAM + "/" + f)
+        for path in glob.glob(CONFIGS + "/cis-*"):
+            os.remove(path)
+        for f in os.listdir(SNAP + "/cis-profiles"):
+            put_copy(SNAP + "/cis-profiles/" + f, CONFIGS + "/" + f)
+        for f in CONF_FILES:
+            if os.path.exists(SNAP + "/security/" + f):
+                put_copy(SNAP + "/security/" + f, SEC + "/" + f)
+        set_debconf_profiles([p.strip() for p in read(SNAP + "/profiles.txt").split(",") if p.strip()])
+        # If the snapshot was taken without the CIS profiles, the restored stack must look like
+        # that; if it had them (a re-apply with new numbers), only the files are put back.
+        probs = verify_common(False) if not os.listdir(SNAP + "/cis-profiles") else []
+        shutil.rmtree(SNAP, ignore_errors=True)
+        disarm()
+        if probs:
+            out("restore: put back, but the result looks odd: " + "; ".join(probs))
+            return 1
+        out("restore: the snapshot is back, the timer is stopped")
+        return 0
+
+    def cmd_status(args):
+        # Read only, so it must also work in a dry run, before the script is installed.
+        errs = preconditions(need_self=False)
+        if errs:
+            out("status: precondition missing: " + "; ".join(errs))
+            return 4
+        diffs = status(args)
+        if diffs:
+            out("status: differs:")
+            for d in diffs:
+                out("  - " + d)
+            return 3
+        out("status: in sync")
+        return 0
+
+    def cmd_arm(args):
+        errs = preconditions()
+        if errs:
+            out("arm: precondition missing: " + "; ".join(errs))
+            return 4
+        if os.path.isdir(SNAP):
+            out("arm: a snapshot from an interrupted run exists; restoring it first")
+            do_restore()
+        os.makedirs(STATE, exist_ok=True)
+        snapshot()
+        disarm()
+        cmd = ["systemd-run", "--unit", UNIT, "--on-active=%ds" % args.seconds,
+               "--timer-property=AccuracySec=1s", "--collect", SELF, "restore", "--from-timer"]
+        r = run(cmd)
+        if r.returncode != 0 or not timer_active():
+            shutil.rmtree(SNAP, ignore_errors=True)
+            out("arm: the timer did not start: " + (r.stderr or r.stdout).strip()[-200:])
+            return 4
+        out("armed: snapshot taken, restore in %d seconds unless committed" % args.seconds)
+        return 0
+
+    def armed():
+        return os.path.isdir(SNAP) and timer_active()
+
+    def cmd_apply(args):
+        if not armed():
+            out("apply: refused, not armed (no snapshot and timer)")
+            return 6
+        try:
+            for name, text in wanted_profiles().items():
+                put(CONFIGS + "/" + name, text)
+            for f, lines in conf_lines(args).items():
+                path = SEC + "/" + f
+                put(path, with_block(read(path) if os.path.exists(path) else "", lines))
+        except (RuntimeError, OSError) as e:
+            out("apply: failed before pam-auth-update: %s; restoring" % e)
+            do_restore()
+            return 5
+        r = run(["pam-auth-update", "--remove", "unix", "--enable"] + CIS_PROFILES)
+        probs = verify_common(True)
+        profiles = debconf_profiles()
+        for p in CIS_PROFILES:
+            if p not in profiles:
+                probs.append("profile %s is not enabled afterwards" % p)
+        if "unix" in profiles:
+            probs.append("the packaged unix profile is still enabled")
+        if probs:
+            out("apply: the result is not right, restoring: " + "; ".join(probs))
+            out("apply: pam-auth-update said rc=%d: %s" % (r.returncode, (r.stdout + r.stderr).strip()[-300:]))
+            do_restore()
+            return 5
+        out("applied: profiles " + ", ".join(profiles))
+        return 0
+
+    def cmd_remove(args):
+        if not armed():
+            out("remove: refused, not armed (no snapshot and timer)")
+            return 6
+        for p in CIS_PROFILES:
+            path = CONFIGS + "/" + p
+            if os.path.exists(path):
+                os.remove(path)
+        for f in CONF_FILES:
+            path = SEC + "/" + f
+            if os.path.exists(path) and BEGIN in read(path):
+                text = strip_block(read(path))
+                put(path, text + "\n" if text else "")
+        r = run(["pam-auth-update", "--enable", "unix", "--remove"] + CIS_PROFILES)
+        probs = verify_common(False)
+        profiles = debconf_profiles()
+        if "unix" not in profiles:
+            probs.append("the unix profile is not enabled afterwards")
+        if probs:
+            out("remove: the result is not right, restoring: " + "; ".join(probs))
+            out("remove: pam-auth-update said rc=%d: %s" % (r.returncode, (r.stdout + r.stderr).strip()[-300:]))
+            do_restore()
+            return 5
+        out("removed: profiles " + ", ".join(profiles))
+        return 0
+
+    def cmd_report(args):
+        """Read only. Names and counts, never a password or a hash."""
+        out("== profiles enabled")
+        out("  " + ", ".join(debconf_profiles()))
+        for f in ("common-auth", "common-account", "common-password"):
+            out("== active lines, " + f)
+            try:
+                for line in active_lines(PAMD + "/" + f):
+                    out("  " + line)
+            except OSError as e:
+                out("  cannot read: %s" % e)
+        out("== settings (active lines)")
+        for f in CONF_FILES:
+            path = SEC + "/" + f
+            lines = active_lines(path) if os.path.exists(path) else ["(absent)"]
+            out("  %s: %s" % (f, "; ".join(lines) if lines else "(no active lines)"))
+        r = run(["dpkg-query", "-W", "-f=" + "{" + "Package}" + " " + "{" + "Version}" + " " + "{" + "db:Status-Abbrev}",
+                 "libpam-pwquality"])
+        out("== libpam-pwquality")
+        out("  " + ((r.stdout or r.stderr).strip().splitlines() or ["(no answer)"])[0])
+        names, empty = [], []
+        try:
+            with open("/etc/shadow") as f:
+                for line in f:
+                    parts = line.rstrip("\n").split(":")
+                    if len(parts) > 1:
+                        if parts[1] == "":
+                            empty.append(parts[0])
+                        elif parts[1][0] not in "!*":
+                            names.append(parts[0])
+        except OSError as e:
+            out("  cannot read /etc/shadow: %s" % e)
+        out("== accounts with a usable password (names only): " + (", ".join(names) or "(none)"))
+        out("== accounts with an EMPTY password field (nullok let them in): " + (", ".join(empty) or "(none)"))
+        r = run(["faillock"])
+        out("== failed-login records")
+        for line in ((r.stdout or r.stderr).strip().splitlines() or ["(none)"])[:10]:
+            out("  " + line)
+        out("== restore timer: " + ("active" if timer_active() else "inactive")
+            + "; snapshot: " + ("present" if os.path.isdir(SNAP) else "none"))
+        return 0
+
+    def cmd_commit(args):
+        disarm()
+        shutil.rmtree(SNAP, ignore_errors=True)
+        out("committed: timer stopped, snapshot deleted")
+        return 0
+
+    def cmd_restore(args):
+        return do_restore()
+
+    # ── a login the way a service does it ───────────────────────────────────────
+    class _Msg(ctypes.Structure):
+        _fields_ = [("msg_style", ctypes.c_int), ("msg", ctypes.c_char_p)]
+
+    class _Resp(ctypes.Structure):
+        _fields_ = [("resp", ctypes.c_void_p), ("resp_retcode", ctypes.c_int)]
+
+    _CONV = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.POINTER(_Msg)),
+                             ctypes.POINTER(ctypes.POINTER(_Resp)), ctypes.c_void_p)
+
+    class _Conv(ctypes.Structure):
+        _fields_ = [("conv", _CONV), ("appdata_ptr", ctypes.c_void_p)]
+
+    def pam_try(service, user, password, account):
+        libpam = ctypes.CDLL("libpam.so.0")
+        libc = ctypes.CDLL("libc.so.6")
+        libc.calloc.restype = ctypes.c_void_p
+        libc.calloc.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
+        libc.strdup.restype = ctypes.c_void_p
+        libc.strdup.argtypes = [ctypes.c_char_p]
+
+        def conv_fn(n, msgs, resp, _data):
+            arr = libc.calloc(n, ctypes.sizeof(_Resp))
+            res = ctypes.cast(arr, ctypes.POINTER(_Resp))
+            for i in range(n):
+                if msgs[i].contents.msg_style in (1, 2):
+                    res[i].resp = libc.strdup(password.encode())
+            resp[0] = res
+            return 0
+
+        conv = _Conv(_CONV(conv_fn), None)
+        handle = ctypes.c_void_p()
+        if libpam.pam_start(service.encode(), user.encode(), ctypes.byref(conv), ctypes.byref(handle)) != 0:
+            return -1, None
+        rc = libpam.pam_authenticate(handle, 0)
+        rc2 = libpam.pam_acct_mgmt(handle, 0) if (rc == 0 and account) else None
+        libpam.pam_end(handle, rc)
+        return rc, rc2
+
+    def cmd_authcheck(args):
+        password = sys.stdin.read().rstrip("\n")
+        if not password:
+            out("authcheck: no password on stdin")
+            return 7
+        # Only the RIGHT password. A wrong one would count as a failed login and, with
+        # deny = 5, a few nights of it would lock the account (measured: a wrong
+        # attempt is recorded by pam_faillock at once). That a wrong password fails
+        # was measured in a container, it is not worth a failure record here.
+        right, acct = pam_try(args.service, args.user, password, True)
+        out("authcheck: %s as %s: right password -> auth rc=%s, account rc=%s (0 and 0 expected)"
+            % (args.service, args.user, right, acct))
+        return 0 if (right == 0 and acct == 0) else 7
+
+    def main():
+        ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+        sub = ap.add_subparsers(dest="cmd", required=True)
+        for name, fn in (("status", cmd_status), ("arm", cmd_arm), ("apply", cmd_apply), ("remove", cmd_remove),
+                         ("commit", cmd_commit), ("restore", cmd_restore), ("authcheck", cmd_authcheck),
+                         ("report", cmd_report)):
+            p = sub.add_parser(name)
+            p.set_defaults(fn=fn)
+            if name in ("status", "apply"):
+                p.add_argument("--deny", type=int, default=5)
+                p.add_argument("--unlock-time", type=int, default=900)
+                p.add_argument("--remember", type=int, default=24)
+            if name == "status":
+                p.add_argument("--absent", action="store_true")
+            if name == "arm":
+                p.add_argument("--seconds", type=int, default=900)
+            if name == "restore":
+                p.add_argument("--from-timer", action="store_true")
+            if name == "authcheck":
+                p.add_argument("--service", default="vsftpd")
+                p.add_argument("--user", required=True)
+        args = ap.parse_args()
+        if os.geteuid() != 0:
+            out("must run as root")
+            return 4
+        return args.fn(args)
+
+    if __name__ == "__main__":
+        sys.exit(main())
 
   cis_rpc_lockdown.yml: |-
     ---
