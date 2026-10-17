@@ -436,6 +436,18 @@ spec:
                 secretKeyRef:
                   name: hermes-agent-secrets
                   key: WEBHOOK_SHARED_SECRET
+            # Backend for the Hermes Desktop app: the image's s6 "dashboard"
+            # service only starts when this is truthy, then runs
+            # `hermes dashboard --host 0.0.0.0 --port 9119` as the same
+            # unprivileged hermes user the gateway drops to, sharing this
+            # container's env and HERMES_HOME. Auth (Authentik OIDC) is in
+            # config.yaml's dashboard: block -- without a registered provider
+            # the server refuses to start on a non-loopback bind, so this
+            # can't come up open by accident. Exposed via httproute.yaml.
+            - name: HERMES_DASHBOARD
+              value: "1"
+            - name: HERMES_DASHBOARD_PORT
+              value: "9119"
             # portfolio_price_check.py (cron script) connects via psycopg2.
             # connect() with no arguments, which reads these standard PG*
             # vars automatically -- no need to wire them through the
@@ -466,12 +478,14 @@ spec:
                 name: hermes-agent-secrets
           resources:
             requests:
-              # Idles around 250Mi; 512Mi keeps a real reservation for the
-              # bursty phases without parking 1Gi that no scheduler can hand to
-              # anything else. The 4Gi ceiling is unchanged, so headroom for a
-              # heavy run is untouched.
+              # The gateway idles around 250Mi; the desktop backend
+              # (HERMES_DASHBOARD) is a second long-lived Python process in
+              # this container, hence 768Mi rather than 512Mi. Still well short
+              # of parking 1Gi that no scheduler can hand to anything else. The
+              # 4Gi ceiling is unchanged, so headroom for a heavy run is
+              # untouched.
               cpu: 500m
-              memory: 512Mi
+              memory: 768Mi
             limits:
               cpu: "2"
               memory: 4Gi

@@ -37,5 +37,6 @@ configMapGenerator:
       - blueprints/07-immich-oidc.yaml
       - blueprints/08-kubernetes-oidc.yaml
       - blueprints/09-wazuh-oidc.yaml
+      - blueprints/10-hermes-oidc.yaml
     options:
       disableNameSuffixHash: true

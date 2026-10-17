@@ -26,6 +26,80 @@ data:
       default: mistralai/mistral-medium-3.1
       provider: auto
       base_url: https://openrouter.ai/api/v1
+    # ── One model per use case, all through the one OpenRouter key ─────────
+    # Three vendors (Mistral, Anthropic, Google) behind one API key, so a
+    # vendor outage or a bad model release only costs the lane that uses it.
+    # Every model below was checked live (2026-10-17) to return a real
+    # tool_call through OpenRouter with data_collection=deny still set.
+    #
+    # The default above stays mistral-medium-3.1 on purpose: the Paperless
+    # extraction prompt and the cron jobs were tuned against it, and the
+    # unattended pipelines are where a model swap hurts first. Everything
+    # else is opt-in:
+    #   - per session (desktop app / any chat): `/model code`, `/model tief`, ...
+    #   - per cron job: `hermes cron edit <id> --model <id> --provider openrouter`
+    #   - subagents and side tasks: delegation / auxiliary below, automatic
+    model_aliases:
+      alltag:
+        model: mistralai/mistral-medium-3.1
+        provider: openrouter
+      # Agentic coding / long tool-call chains (desktop work sessions).
+      code:
+        model: anthropic/claude-sonnet-5.5
+        provider: openrouter
+      # Hard analysis, 1M context. ~10x the default's price per token, which
+      # is why it's an alias and never a default.
+      tief:
+        model: anthropic/claude-opus-5.5
+        provider: openrouter
+      schnell:
+        model: google/gemini-3.1-flash-lite
+        provider: openrouter
+    # Tried in order when the primary model fails with a rate-limit, overload
+    # or connection error. Different vendors on purpose: a Mistral-side outage
+    # surfaces on OpenRouter as errors for exactly that model, so retrying
+    # another Mistral model would mostly hit the same incident.
+    fallback_providers:
+      - provider: openrouter
+        model: anthropic/claude-haiku-5.5
+      - provider: openrouter
+        model: google/gemini-3.1-flash-lite
+    # OpenRouter only routes to upstream hosts that don't store or train on
+    # prompts. Applies to main turns, cron and desktop sessions -- NOT to
+    # auxiliary calls (by upstream design, see hermes_cli/config_defaults.py),
+    # which is why every pinned auxiliary task below repeats it in extra_body.
+    provider_routing:
+      data_collection: deny
+    # Subagents carry most of the tokens in a delegated task; a cheap model
+    # with solid tool use keeps the parent's planning quality without paying
+    # the parent's price for the legwork.
+    delegation:
+      model: anthropic/claude-haiku-5.5
+      provider: openrouter
+    # Side tasks (vision, page summaries, context compression, titles, smart
+    # approvals, MCP routing, ...). `openrouter_model` replaces upstream's
+    # auto-chain default (google/gemini-3.6-flash) for every task not pinned
+    # below; the pinned ones are the high-volume ones.
+    auxiliary:
+      openrouter_model: google/gemini-3.1-flash-lite
+      vision:
+        provider: openrouter
+        model: google/gemini-3.1-flash-lite
+        extra_body: &noDataCollection
+          provider:
+            data_collection: deny
+      web_extract:
+        provider: openrouter
+        model: google/gemini-3.1-flash-lite
+        extra_body: *noDataCollection
+      compression:
+        provider: openrouter
+        model: google/gemini-3.1-flash-lite
+        extra_body: *noDataCollection
+      title_generation:
+        provider: openrouter
+        model: google/gemini-3.1-flash-lite
+        extra_body: *noDataCollection
     agent:
       # Lowered from 90: bounds worst-case stuck-loop time if a bad
       # tool-call round still happens, without cutting off legitimate
@@ -58,6 +132,33 @@ data:
       # lets the action through). This agent has shell + WhatsApp + a
       # read-only k8s view, so flip to fail-closed instead.
       tirith_fail_open: false
+    # Backend for the Hermes Desktop app (HERMES_DASHBOARD=1 in deployment.yaml
+    # starts the image's own s6-supervised `hermes dashboard` on :9119, next to
+    # the gateway, same HERMES_HOME). Desktop sessions run HERE -- the agent
+    # loop, its tools, MCP servers and LLM calls -- the desktop only renders.
+    #
+    # A non-loopback bind always engages the auth gate (upstream hardening,
+    # June 2026); this block registers the self-hosted OIDC provider against
+    # Authentik (blueprint 10-hermes-oidc.yaml). Public client with PKCE, so
+    # there is no client secret to manage. Who may sign in is decided in
+    # Authentik: only members of the `hermes-users` group.
+    # The desktop never talks to Authentik as an OAuth client itself: this
+    # server brokers RFC 8252 (system browser -> /auth/native/authorize ->
+    # Authentik -> /auth/callback -> 127.0.0.1 loopback), so the only
+    # redirect URI Authentik needs is the /auth/callback below.
+    dashboard:
+      # Pins the OAuth redirect_uri instead of rebuilding it from Envoy's
+      # X-Forwarded-* headers.
+      public_url: https://hermes.${SECRET_DOMAIN}
+      oauth:
+        provider: self-hosted
+        self_hosted:
+          issuer: https://id.${SECRET_DOMAIN}/application/o/hermes/
+          client_id: hermes
+          # offline_access: without it Authentik issues no refresh token and
+          # the desktop has to sign in again every time the 10-minute ID
+          # token expires.
+          scopes: "openid profile email offline_access"
     # Self-hosted Firecrawl (kubernetes/apps/hermes-agent/firecrawl/) as the
     # web-search/scrape/extract backend -- FIRECRAWL_API_URL (deployment.yaml)
     # points at it; no API key needed since USE_DB_AUTHENTICATION=false there

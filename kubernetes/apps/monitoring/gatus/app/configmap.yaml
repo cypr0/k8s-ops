@@ -353,6 +353,19 @@ data:
         alerts:
           - type: pushover
 
+      - name: Hermes Agent (Desktop Backend)
+        group: Hermes Agent
+        url: "http://hermes-agent.hermes-agent.svc.cluster.local:9119/api/status"
+        interval: 1m
+        # /api/status is the backend's public liveness probe. The second
+        # condition is the point of this check: the backend is reachable from
+        # the LAN, so it must never answer with its auth gate down.
+        conditions:
+          - "[STATUS] == 200"
+          - "[BODY].auth_required == true"
+        alerts:
+          - type: pushover
+
       - name: Firecrawl (Scrape API)
         group: Hermes Agent
         url: "http://firecrawl-api.hermes-agent.svc.cluster.local:3002/v0/health/readiness"

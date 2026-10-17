@@ -1,0 +1,109 @@
+---
+version: 1
+metadata:
+  name: Hermes Agent OIDC
+  labels:
+    app: hermes-agent
+
+entries:
+  # ── OAuth2 / OIDC Provider ────────────────────────────────────────────
+  # Sign-in for the Hermes Desktop app against the cluster's hermes-agent
+  # (kubernetes/apps/hermes-agent/hermes-agent/app/configmap.yaml, dashboard:
+  # block). Public client (no secret), same reasoning as the kubernetes
+  # provider: the RP is hermes' self-hosted OIDC plugin, which runs PKCE either
+  # way, and a public client leaves no credential to rotate.
+  #
+  # Only ONE redirect URI: the desktop app never redirects to Authentik
+  # itself. hermes brokers the RFC 8252 flow (desktop -> hermes
+  # /auth/native/authorize -> here -> hermes /auth/callback -> 127.0.0.1
+  # loopback on the desktop), so the loopback port never has to be allowed
+  # here.
+  - model: authentik_providers_oauth2.oauth2provider
+    id: hermes-oidc-provider
+    identifiers:
+      name: hermes-oidc
+    attrs:
+      authentication_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - cisotop-authentication
+      authorization_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-provider-authorization-implicit-consent
+      invalidation_flow: !Find
+        - authentik_flows.flow
+        - - slug
+          - default-provider-invalidation-flow
+      client_type: public
+      client_id: hermes
+      redirect_uris:
+        - matching_mode: strict
+          url: https://hermes.${SECRET_DOMAIN}/auth/callback
+      access_code_validity: minutes=1
+      # hermes verifies the ID token on every API call and the desktop
+      # rotates it via /auth/native/refresh, so a short lifetime costs
+      # nothing but bounds how long a stolen token stays useful.
+      access_token_validity: minutes=10
+      # The refresh token lives on the desktop (OS keychain), so it is the
+      # long-lived device credential. A week means a weekly re-login with
+      # MFA, which is the PoV's stand-in for a company session policy.
+      refresh_token_validity: days=7
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      signing_key: !Find
+        - authentik_crypto.certificatekeypair
+        - - name
+          - "authentik Self-signed Certificate"
+      property_mappings:
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - openid
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - email
+        - !Find
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - profile
+        - !Find
+          # Without offline_access Authentik issues no refresh token, and the
+          # desktop would have to sign in again every 10 minutes.
+          - authentik_providers_oauth2.scopemapping
+          - - scope_name
+            - offline_access
+
+  # ── Application ───────────────────────────────────────────────────────
+  - model: authentik_core.application
+    id: hermes-app
+    identifiers:
+      slug: hermes
+    attrs:
+      name: Hermes Agent
+      group: Productivity
+      provider: !KeyOf hermes-oidc-provider
+      meta_launch_url: https://hermes-agent.nousresearch.com/desktop
+      policy_engine_mode: all
+
+  # ── Access: hermes-users only ─────────────────────────────────────────
+  # The backend can run shell commands, read mail and Paperless and see the
+  # cluster, so "any Authentik account" is far too wide. Membership isn't
+  # set here -- add accounts via the Authentik UI (Directory > Groups >
+  # hermes-users > Users) after this reconciles.
+  - model: authentik_core.group
+    id: hermes-users-group
+    identifiers:
+      name: hermes-users
+
+  - model: authentik_policies.policybinding
+    id: hermes-app-group-binding
+    identifiers:
+      target: !KeyOf hermes-app
+      order: 0
+    attrs:
+      group: !KeyOf hermes-users-group
+      enabled: true
+      negate: false
+      timeout: 30
