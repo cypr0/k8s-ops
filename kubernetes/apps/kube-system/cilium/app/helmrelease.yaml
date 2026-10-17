@@ -133,10 +133,25 @@ spec:
     socketLB:
       enabled: true
       # hostNamespaceOnly=true bypasses socket-LB inside pod namespaces and
-      # falls back to the per-packet tc LB at the veth. On this Talos setup that
-      # breaks pods connecting to a LoadBalancer/ClusterIP that hairpins back to
-      # the same node (e.g. dashboards -> envoy LB -> authentik), and is only
-      # needed for Multus/KubeVirt/Istio-sidecar style setups — none of which are
-      # deployed here. Disabling it enables in-pod socket-LB so ClusterIP/LB
-      # hairpin works cluster-wide.
-      hostNamespaceOnly: false
+      # falls back to the per-packet tc LB at the veth.
+      #
+      # Why true: in-pod socket-LB pins a connected UDP socket to the backend
+      # picked at connect(). When that backend goes away Cilium either aborts
+      # the socket (clients that never reconnect -- rspamd's DNS, fluent-bit's
+      # syslog output -- then fail with "Destination address required" until
+      # restarted) or, once cilium_lb4_reverse_sk is full, skips it and the
+      # socket keeps sending to the dead pod IP (k8s-wrk-3 2026-10-17: 68561 of
+      # 68834 entries, nearly all per-query DNS; fluent-bit was still sending
+      # to an IP that had been reassigned to authentik-worker). Per-packet LB
+      # keeps the ClusterIP as the peer and picks a live backend per flow, so
+      # CoreDNS/Wazuh rollouts are invisible to these clients. This is the
+      # mitigation Cilium's kube-proxy-free docs give for reverse-SK exhaustion.
+      #
+      # History: set to false on 2026-06-20 (63be357) because pod ->
+      # envoy-internal -> authentik ("hairpin") stopped answering. Envoy-proxy
+      # CNP fixes for that same path landed the same day (ca2cfce, 554bab3).
+      # Re-tested 2026-10-17 with a CiliumNodeConfig canary on k8s-wrk-1:
+      # wazuh-dashboard -> id.${SECRET_DOMAIN} (envoy-internal ClusterIP) 40/40
+      # OK, 17 of them to the envoy-internal replica on the same node, no
+      # drops; connected sockets kept the ClusterIP as their peer.
+      hostNamespaceOnly: true
