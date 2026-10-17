@@ -173,10 +173,16 @@ def main() -> None:
             # Load the module the same way Open WebUI does at chat time, so
             # `specs` and `has_user_valves` match exactly what the running
             # instance would compute if you pasted this into the UI.
+            # Indexed, not unpacked: v0.12.3 started returning
+            # (Tools instance, frontmatter, module) instead of the earlier
+            # (Tools instance, frontmatter), and the 2-name unpack failed
+            # every sync with "too many values to unpack". The first two
+            # positions mean the same thing in both shapes.
             try:
-                module, frontmatter = asyncio.run(
+                loaded = asyncio.run(
                     load_tool_module_by_id(tool_id, content=content)
                 )
+                module, frontmatter = loaded[0], loaded[1]
             except Exception as e:  # noqa: BLE001
                 log.error("Failed to load tool module %s: %s", tool_id, e)
                 sys.exit(1)
