@@ -289,7 +289,7 @@ spec:
           # every other Mailu component here), but with our own config: the
           # image's templated one has no cluster.local forward and a stale
           # DNSSEC trust anchor -- see rspamd-unbound.conf.
-          image: ghcr.io/mailu/unbound:2024.06.58
+          image: ghcr.io/mailu/unbound:2024.06.64
           restartPolicy: Always
           command:
             - "/usr/sbin/unbound"
