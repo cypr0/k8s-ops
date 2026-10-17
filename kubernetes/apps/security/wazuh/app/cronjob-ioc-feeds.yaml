@@ -251,7 +251,7 @@ spec:
             - name: update
               # Stdlib only, so a stock python image with nothing installed.
               # renovate: datasource=docker depName=python
-              image: python:3.14-alpine
+              image: python:3.15-alpine
               command:
                 - "python3"
                 - "/scripts/update.py"

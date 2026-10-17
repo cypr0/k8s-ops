@@ -14,3 +14,15 @@ resources:
   - ./helmrelease.yaml
   - ./service-front-webmail-lan.yaml
   - ./ciliumnetworkpolicy.yaml
+  - ./ciliumnetworkpolicy-rspamd.yaml
+
+# Fixed name (no hash suffix): it's referenced from inside the HelmRelease's
+# values, which kustomize can't rewrite. A change to the file therefore does
+# NOT restart rspamd by itself -- bump rspamd.podAnnotations'
+# config-revision in helmrelease.yaml alongside it.
+configMapGenerator:
+  - name: mailu-rspamd-unbound
+    files:
+      - unbound.conf=rspamd-unbound.conf
+    options:
+      disableNameSuffixHash: true

@@ -76,7 +76,7 @@ Baseline before any wave, scan of 2026-10-11 03:16 UTC: **91 passed, 102 failed,
 | --- | --- | --- |
 | 1 | Cron permissions (2.4.1.2-2.4.1.7), `opasswd`/`opasswd.old` (7.1.10), telnet client removal (2.2.4), sudo `logfile` and `timestamp_timeout` (5.2.3, 5.2.6), `su` restricted via `pam_wheel` (5.2.7), no `/etc/motd` and a clean `/etc/issue.net` (1.6.1, 1.6.3), chrony user (2.3.3.2), sshd `DisableForwarding` (5.1.8, in `hardening.yml`). Touches none of authentication, SSH access, PAM or the network. Expected to flip 15 checks. | **applied 2026-10-11** (PR #173): dry run, one real run and a verification run, all `failed=0`; the second run changed only the three tasks that always report `changed` (the two PVE firewall files, the FTP password). A fresh SSH connection after the `sshd` restart worked. **SCA result confirmed 2026-10-17**: all 15 expected checks `passed` (see the measurement above). |
 | 2 | AppArmor utilities (1.3.1.1), auditd (`audispd-plugins`, the CIS rules 6.2.3.x, explicit log rotation) and the time servers of chrony. Still to be written for this wave: AIDE restricted to configuration paths. | **1.3.1.1 applied 2026-10-11** (PR #177): dry run, one real run and a second run, all `failed=0`. See [Wave 2](#wave-2-apparmor-utilities-1311). **1.3.1.1 confirmed `passed` on 2026-10-17.** **auditd applied 2026-10-17** (PR #179): dry run, one real run and a verification run, all `failed=0`, see [Wave 2: auditd](#wave-2-auditd). **Time servers applied 2026-10-17** (PR #182): dry run, one real run and a verification run, all `failed=0`, see [Wave 2: time servers](#wave-2-time-servers). |
-| 3 | SSH `AllowUsers` (5.1.4), PAM (`faillock`, `pwquality`, `pwhistory`) | **`AllowUsers` applied 2026-10-17** (PR #187): dry run, one real run and a verification run, all `failed=0`, see [Wave 3: SSH access list](#wave-3-ssh-access-list). PAM: not written. Password aging: decided against. |
+| 3 | SSH `AllowUsers` (5.1.4), PAM (`faillock`, `pwquality`, `pwhistory`) | **`AllowUsers` applied 2026-10-17** (PR #187): dry run, one real run and a verification run, all `failed=0`, see [Wave 3: SSH access list](#wave-3-ssh-access-list). **PAM written and tested in containers, not applied yet**, see [Wave 3: PAM](#wave-3-pam). Password aging: decided against. |
 
 **Rule for every wave:** read the SCA result of the previous one first; run the dry run (see Common operations), then one manual real run, then let the nightly schedule have it.
 
@@ -206,6 +206,55 @@ The run stops before changing anything if the state value is unknown, the server
 
 **Not verified.** That the `phiros-cmd` account can really log in (the probe tests the `AllowUsers` decision with its own key, not the account's `authorized_keys`, which this wave does not touch; and until the owner sets its password, `sudo` for it stays refused); whether the Job's source address is on the fail2ban whitelist; that the host's OpenSSH behaves like the one tested (its version was not read).
 
+### Wave 3: PAM
+`cis_wave3_pam.yml` with the helper `cis_pam.py` (installed as `/usr/local/sbin/cis-pam`), after the SSH access list in `cis.yml`. PAM is shared by sshd, sudo, su, login, vsftpd and the PVE web login (there is no `/etc/pam.d/proxmox-ve-auth` on this host, so that login falls back to `other` and with it to `common-auth`), and a broken stack can lock out the very connection that is changing it, `sudo` included. So nothing here changes PAM unguarded.
+
+**What changes, and what the real Wazuh agent 4.14.8 said.** In a container whose `common-*` files and `pam-auth-update` profiles (`unix`, `wtmpdb`, `systemd`) are line for line those of the host (compared against a read-only report of the host), and whose 5.3.x verdicts matched the host's in all 25 checks: exactly **six** change to `passed`, nothing gets worse.
+
+| Check | What makes it pass |
+| --- | --- |
+| 5.3.2.2 | `pam_faillock` in `common-auth` (preauth before `pam_unix`, authfail after it) and in `common-account` |
+| 5.3.2.4 | `pam_pwhistory` in `common-password`, before `pam_unix` |
+| 5.3.3.4.1 | `pam_unix` without `nullok`, through a profile that replaces the packaged one |
+| 5.3.3.4.4 | `use_authtok` on `pam_unix` in `common-password` (comes with `pam_pwhistory` in front of it) |
+| 5.3.1.3 | `libpam-pwquality` installed |
+| 5.3.3.2.8 | was not applicable (no `pwquality.conf`); passes through a *commented* `enforce_for_root` in the file the package ships. Nothing is enforced for root. |
+
+5.3.3.1.1 to .3 and 5.3.1.1, 5.3.1.2, 5.3.2.1, 5.3.3.4.2, 5.3.3.4.3 pass today and keep passing.
+
+**Not pursued, and why.**
+- **5.3.2.3** has a literal `(d+)` in its regex (`retry=(d+)`), which no real configuration matches.
+- **5.3.3.2.1 to 5.3.3.2.7** read `pwquality.conf` and `d:/etc/security/pwquality.conf.d/*`. With the file as the package ships it they stay not applicable in the real agent's verdicts (all seven, in the state above). Other file contents were not tried, and no limits are set here: the numbers CIS asks for (minimum length 14, complexity) would also apply to every password an ordinary user sets.
+- **5.3.3.3.1 to 5.3.3.3.3** want the word `remember` in the `pam_pwhistory` line of `common-password`, while 5.3.3.4.2 searches every `common-*` file for the word `remember` and passes today. They cannot both pass; the numbers go to `/etc/security/pwhistory.conf` instead (`remember = 24`, measured effective: after 13 password changes the first one is refused again, with the library default it is allowed). 5.3.3.3.2 and .3 also want `enforce_for_root`, see below.
+
+**Decided and measured.**
+- `deny = 5`, `unlock_time = 900` in `faillock.conf`, in a managed block that keeps the shipped commented defaults, so 5.3.3.1.1 to .3 keep passing.
+- **No `enforce_for_root`.** The nightly `chpasswd` for the FTP account sets the same password every night; with `enforce_for_root` it fails with exit 1, without it it ends in exit 0 (it only prints "Password has been already used").
+- **Root never locks** (`even_deny_root` stays off). A locked account can still log in with an SSH key, since sshd here is key-only and only the account and session stages of PAM run; a successful key login resets the failure count. Both measured.
+- **`libpam-pwquality` is installed with its recommends.** Without them there is no dictionary, and `passwd` refuses every new password of an ordinary user, strong ones included (`error loading dictionary`). With them: a strong password is accepted, `abc` is refused; `chpasswd` as root ends in exit 0 either way. In a clean Debian 13 container apt adds nine packages: `libpam-pwquality`, `libpwquality1`, `libpwquality-common`, `libcrack2`, `cracklib-runtime`, `wamerican`, `file`, `libmagic1t64`, `libmagic-mgc`. The play simulates the install first and stops if anything else is new, if an installed package would change or if anything would go. The package turns its own `pam-auth-update` profile on at install time, so the install happens inside the guarded window.
+- **nullok removed:** an account with an empty password field is no longer accepted (measured: accepted before, refused after). The host's report lists no such account.
+- The numbers are not in the PAM lines. The words `nullok` and `remember` do not appear in the generated files at all.
+
+**The guard.** `cis-pam arm` copies the five `common-*` files, `/var/lib/pam`, `faillock.conf`, `pwhistory.conf`, the profile files and the `pam-auth-update` selection, and starts a systemd timer (`cis-pam-restore`, 900 seconds) that puts all of it back. If the play, the Job or the connection dies half way, the host returns to its old state by itself; a snapshot left by an interrupted run is restored first by the next `arm`. `apply` then writes the profiles and settings and runs `pam-auth-update`, whose exit code is never trusted (measured: it returns 0 for an unknown profile name, and `--remove unix` can leave no unix profile at all), so the generated files are checked line by line; a bad result restores the snapshot at once. Only when every check below passes does the play run `commit` (timer stopped, snapshot deleted).
+1. the host matches the wanted state (profiles, files, settings),
+2. fresh `ssh` logins from the Job pod as `root` and as `ansible` (no multiplexing, so they cannot ride on the persistent connection), and `sudo -n true` as `ansible`,
+3. the `scanner` account authenticates through the PAM services `vsftpd` and `other` with its real password (only if `FTP_SCANNER_PASSWORD` is set). Right password only: a wrong one would count as a failed login and, with `deny = 5`, would lock the FTP account after a few nights. On the CIS stack `auth rc=6` means a password that was not accepted and `rc=7` a locked account (measured).
+
+**Dry run.** Only the read-only part runs: the report, the comparison with the wanted state, and the apt simulation, so the plan (including the nine packages) is in the dry-run log. Nothing is installed, snapshotted or changed.
+
+**Switch, from Git.** `cis_pam_state: present|absent` in `cis.yml`. `absent` takes the profiles and settings out again and re-enables the packaged `unix` profile explicitly (it would otherwise stay off: `--package` does not re-enable a profile that is already known); the pwquality package stays installed. Measured: with the helper alone, `present` and then `absent` gives `common-*` and the two settings files byte-identical to the start. Through the play, with the package installed, `absent` ends with `pam_pwquality` still in `common-password` (the package's own profile stays enabled, measured), and `absent` again changes nothing.
+
+**What the first real run does on the host:** installs the nine packages (or fewer), rewrites the five `common-*` files, and appends a managed block to `faillock.conf` and `pwhistory.conf`. A second run changes nothing.
+
+**Tested.**
+- The play and the helper against the container described above, driven by Ansible over real SSH: dry run (nothing changed); real run; second run `changed=0`; `absent`, `absent` again, `present` again; four invalid values (state, `remember` 3, guard 10 seconds, `deny` 1) refused before any change; a wrong FTP password rolls back (the failure is in the authentication check, the snapshot comes back, the package stays); no FTP password skips only that check.
+- The locked-account cases: with `scanner` locked, a change fails in the authentication check and rolls back; after `faillock --user scanner --reset` it succeeds; in the steady state (nothing to change) a locked account does not fail the nightly run, because the authentication check runs only with a change.
+- The helper on its own: the timer firing and restoring, a leftover snapshot restored by the next `arm`, a profile that cannot be derived, a `pam-auth-update` that does nothing, one that fails loudly.
+- The generated state against the real agent: six flips, no difference to a hand-built state, nothing worse.
+- The password: it passes through the Job's environment into one command with `no_log`. An early version printed the whole result of that command, `module_args` and the password included, through an `assert`, in every run (found by searching the logs for it); the result is now reduced to plain strings before anything prints. Searched in all test logs afterwards: no hit, and the search finds a deliberately planted password.
+
+**Not verified.** The real host: whether the nine packages install there without a complaint (the dry run shows apt's plan first), the first real run, a reboot, the PVE web login with the new stack (the `other` service is checked with the scanner account, not through the web UI), the real `vsftpd` daemon (the check goes through its PAM service, not through an FTP connection), and the host's account list beyond the report (no empty password fields, `root` and `scanner` with a password). A failure of the `commit` step itself is covered only by the timer. The Wazuh verdicts on the host will show after the next scan.
+
 ### Accepted exceptions (decided 2026-10-11)
 A failed SCA check is listed here only when someone looked at it, decided to leave it, and wrote down why.
 
@@ -229,7 +278,7 @@ A failed SCA check is listed here only when someone looked at it, decided to lea
 - **6.3.1, 6.3.2** (AIDE installed, integrity check scheduled): wave 2, configuration paths only. `/etc/pve` is a FUSE mount (pmxcfs) with virtual, changing content and `/rpool/k8s-rwx` is the NFS-exported data of the cluster, so both have to stay out of it. The role's `defaults/main.yml` records four of eight HPC workers killed for memory by a daily AIDE run over a network filesystem.
 - **7.2.1**: fails for a reason not yet known (see TODOs).
 - Level 2 controls: evaluated, not yet decided one by one.
-- Wave 3, PAM part (`faillock`, `pwquality`, `pwhistory`): not written.
+- PAM checks that are not pursued: 5.3.2.3, 5.3.3.2.1 to 5.3.3.2.7 and 5.3.3.3.1 to 5.3.3.3.3 (reasons under Wave 3: PAM).
 
 ### Quirks of the Wazuh policy
 The checks follow the policy's literal rules, which differ from the CIS text in places, so a "correct" configuration can still score failed. Wave 1 mirrors these on purpose, except the ones that no sensible configuration satisfies (5.4.2.4, 5.4.1.4 and the audit checks at the end of the list). Each audit entry below was confirmed with the real agent 4.14.8, not only by reading the policy:
