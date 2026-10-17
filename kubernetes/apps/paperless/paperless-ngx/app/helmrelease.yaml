@@ -131,6 +131,14 @@ spec:
               # Europe/Berlin); match that instead of inventing a shared var.
               PAPERLESS_TIME_ZONE: Europe/Berlin
               PAPERLESS_TRUSTED_PROXIES: 10.96.0.0/16,10.69.0.0/16,192.168.0.0/16
+              # allauth's rate limits key on X-Forwarded-For[-COUNT], and COUNT
+              # defaults to len(PAPERLESS_TRUSTED_PROXIES) = 3. Envoy hands
+              # Paperless exactly one entry (httproute.yaml overwrites XFF), so
+              # 3 made allauth raise ImproperlyConfigured, or key on a value a
+              # LAN client chose whenever it sent two extra entries itself
+              # (both checked in the pod 2026-10-17). 1 = the address Envoy
+              # resolved. Docs: docs/apps/envoy-gateway.md (Client IP).
+              PAPERLESS_ALLAUTH_TRUSTED_PROXY_COUNT: 1
               PAPERLESS_URL: https://paperless.${SECRET_DOMAIN}
               USERMAP_UID: 3000
               USERMAP_GID: 3000

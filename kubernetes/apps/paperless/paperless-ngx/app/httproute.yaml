@@ -21,6 +21,21 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      # Envoy, not the client, decides the client IP Paperless sees.
+      # django-auditlog records the LEFTMOST X-Forwarded-For entry as an audit
+      # entry's remote_addr, so any LAN client chose it. Set to the address
+      # Envoy resolved via the ClientTrafficPolicy (trustedCIDRs 10.42.0.0/16
+      # in network/envoy-gateway/app/envoy.yaml). allauth reads the same
+      # header, see PAPERLESS_ALLAUTH_TRUSTED_PROXY_COUNT in helmrelease.yaml.
+      # Docs: docs/apps/envoy-gateway.md (Client IP).
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+              - name: X-Real-IP
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
       backendRefs:
         - group: ""
           kind: Service
