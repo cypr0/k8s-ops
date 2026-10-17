@@ -75,7 +75,7 @@ Baseline before any wave, scan of 2026-10-11 03:16 UTC: **91 passed, 102 failed,
 | Wave | Content | Status |
 | --- | --- | --- |
 | 1 | Cron permissions (2.4.1.2-2.4.1.7), `opasswd`/`opasswd.old` (7.1.10), telnet client removal (2.2.4), sudo `logfile` and `timestamp_timeout` (5.2.3, 5.2.6), `su` restricted via `pam_wheel` (5.2.7), no `/etc/motd` and a clean `/etc/issue.net` (1.6.1, 1.6.3), chrony user (2.3.3.2), sshd `DisableForwarding` (5.1.8, in `hardening.yml`). Touches none of authentication, SSH access, PAM or the network. Expected to flip 15 checks. | **applied 2026-10-11** (PR #173): dry run, one real run and a verification run, all `failed=0`; the second run changed only the three tasks that always report `changed` (the two PVE firewall files, the FTP password). A fresh SSH connection after the `sshd` restart worked. **SCA result confirmed 2026-10-17**: all 15 expected checks `passed` (see the measurement above). |
-| 2 | AppArmor utilities (1.3.1.1) and auditd (`audispd-plugins`, the CIS rules 6.2.3.x, explicit log rotation). Still to be written for this wave: AIDE restricted to configuration paths. | **1.3.1.1 applied 2026-10-11** (PR #177): dry run, one real run and a second run, all `failed=0`. See [Wave 2](#wave-2-apparmor-utilities-1311). **1.3.1.1 confirmed `passed` on 2026-10-17.** **auditd written and tested in containers, not applied yet**, see [Wave 2: auditd](#wave-2-auditd). |
+| 2 | AppArmor utilities (1.3.1.1), auditd (`audispd-plugins`, the CIS rules 6.2.3.x, explicit log rotation) and the time servers of chrony. Still to be written for this wave: AIDE restricted to configuration paths. | **1.3.1.1 applied 2026-10-11** (PR #177): dry run, one real run and a second run, all `failed=0`. See [Wave 2](#wave-2-apparmor-utilities-1311). **1.3.1.1 confirmed `passed` on 2026-10-17.** **auditd applied 2026-10-17** (PR #179): dry run, one real run and a verification run, all `failed=0`, see [Wave 2: auditd](#wave-2-auditd). **Time servers written and tested in containers, not applied yet**, see [Wave 2: time servers](#wave-2-time-servers). |
 | 3 | SSH `AllowUsers`, PAM (`faillock`, `pwquality`, `pwhistory`), password aging for new accounts | not written |
 
 **Rule for every wave:** read the SCA result of the previous one first; run the dry run (see Common operations), then one manual real run, then let the nightly schedule have it.
@@ -142,7 +142,38 @@ Expected effect: 1.3.1.1 flips to passed. 1.3.1.2 and 1.4.1 stay failed (accepte
 - *Playbook:* the real `cis.yml`, wave 2 only, in a Debian 13 container for `linux/amd64` with `--privileged --pid=host --net=host`, so that rules go into the kernel of the throw-away Docker Desktop VM (aarch64; the x86_64 syscall rules load there, whether they fire on the real host was not tested). Three runs: `failed=0`, the second and third `changed=0`. Dry run changes nothing; `absent` removes the CIS keys and leaves the Wazuh ones; `absent` again changes nothing; a bad state value stops with nothing changed; rules unloaded by hand are loaded again; a key that never loads fails loudly with the Wazuh rules untouched.
 - *Wazuh verdicts:* the real agent 4.14.8 with the manager's `cis_debian13.yml` (same checksum), in an arm64 container, fed the rule files and `auditd.conf` from the run above and the `auditctl -l` output that run recorded. It is not enrolled anywhere. In that test setup 68 checks passed before and 81 after; those totals say nothing about the host's score, only which checks change. **13 flip to passed**: 6.2.1.1, 6.2.3.1, 6.2.3.3, 6.2.3.4, 6.2.3.5, 6.2.3.7 to 6.2.3.13, 6.2.3.19. Nothing got worse. The agent hung after four checks under amd64 emulation (`findmnt` runs fine alone in both images); the cause was not found, which is why the verdicts come from the arm64 replay.
 
-**Not verified.** Anything on the real host: the first dry run will show apt's plan and `augenrules`' result in the Job log, the first night shows the volume. The SCA result of the host is pending.
+**Verified on the real host (2026-10-17).** After the first real run `auditctl -l` held the 12 CIS keys next to the five Wazuh keys, and the Wazuh rules were not affected. A verification run changed only the three tasks that always report a change.
+
+**Not verified.** That the x86_64 syscall rules fire as intended on the host, the volume of events over a night, and the SCA verdicts of the 13 expected flips: the scan of 2026-10-17 03:16 UTC predates the run, the next scan will show them.
+
+### Wave 2: time servers
+`cis_wave2_time.yml` (after auditd in `cis.yml`). Decided 2026-10-17: the host takes its time from the same two servers as the Talos nodes (`162.159.200.1` and `162.159.200.123`, `talos/patches/global/machine-time.yaml` and `ntp_servers` in `cluster.toml`) instead of the Debian pool that chrony ships with. **The Wazuh policy has no check for the servers**, only for chrony's user (2.3.3.2, wave 1) and for the service being enabled and active (2.3.3.3), so this changes no score. Both stay `passed`: the file keeps `user _chrony` and the service is running at the end.
+
+**Order, because a host without a time source is worse than one with the wrong source.**
+1. The servers go into `/etc/chrony/sources.d/10-cloudflare.sources` and `chronyc reload sources` loads them without a restart; the pool keeps working.
+2. The run waits (default 12 times 5 seconds) until every new server has answered at least once (`reach` not zero in `chronyc -c sources`).
+3. Only then the `pool` and `server` lines in `chrony.conf` are commented out (marker `# disabled by proxmox-ansible: `) and chrony is restarted.
+4. The run waits until `chronyc -c tracking` reports `Normal` again.
+
+If step 2 fails, the new file is removed and nothing else was touched. If step 4 fails, the commented lines are put back, the new file is removed, chrony is restarted and the run fails. Both end in a failed Job, loudly. Steps 2 and 4 happen only in the run that retires the pool: on every later night there is no active pool line, the new servers are the only sources, and a short outage at the far end must not trigger a rollback that would leave chrony with no source at all.
+
+The run stops before changing anything if the state value is unknown, the server list is empty or has duplicates, `chrony.conf` is missing, or it has no active `sourcedir /etc/chrony/sources.d` line (Debian's default; without it the new file would be ignored).
+
+**Not touched:** `sourcedir /run/chrony-dhcp` (servers a DHCP lease hands out, if any) and the files in `conf.d`. The run prints `chrony.conf`'s active lines, `chronyc sources` and the leap status before and after, so the Job log shows what chrony really uses; the live `chrony.conf` was not read before this was written, the design follows Debian's stock file.
+
+**Switch, from Git.** `cis_time_state: present|absent` in `cis.yml`; `absent` removes the file, restores the commented lines and restarts chrony. `cis_time_servers` is the list.
+
+**Tested.** Debian 13 container (arm64) with systemd, chrony 4.6.1 and ansible-core 2.19, the real task file with the variables read from `cis.yml`; chrony ran with `-x`, so the shared kernel clock was not touched. A second container acted as the NTP server.
+- Dry run: shows the new file and the `chrony.conf` diff, changes nothing on disk.
+- Real run: pool replaced by the server, leap status `Normal`, service enabled and active, chronyd runs as `_chrony`, `user _chrony` still in `chrony.conf` and `conf.d`. Second run `changed=0`.
+- Pool already retired and the server paused: `changed=0`, no rollback, the file stays.
+- `absent`: `chrony.conf` byte-identical to the state before, file gone, pool sources back.
+- Servers unreachable: the run fails after the wait, the file is removed, `chrony.conf` is identical to before, chrony is running.
+- Synchronisation fails after the restart (simulated with a `chronyc` wrapper that reports `Not synchronised`): rolled back to a `chrony.conf` identical to before, file removed, chrony running, run failed.
+- Empty list, duplicate list, unknown state: stop with nothing changed. No `sourcedir` line: stops with nothing changed.
+- With the two Cloudflare servers: both became the only sources and the leap status was `Normal`. That container's network could reach them, and the stock pool line there had already resolved to both among its sources, so this says little about the host.
+
+**Not verified.** The real host: its `chrony.conf`, whether UDP 123 to the two servers is open from there (the pool's servers are reachable, which makes it likely, nothing more), the time it takes to synchronise, and behaviour with the real clock being stepped. The first dry run shows the plan.
 
 ### Accepted exceptions (decided 2026-10-11)
 A failed SCA check is listed here only when someone looked at it, decided to leave it, and wrote down why.
