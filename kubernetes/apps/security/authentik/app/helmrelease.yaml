@@ -20,6 +20,11 @@ spec:
         kind: HelmRepository
         name: authentik
   maxHistory: 2
+  # Helm's default is 5m. The worker Deployment rolls its two replicas one
+  # after the other, and on 2026-10-17 a 2026.8.4 worker container took up
+  # to 3 min to turn Ready on a node that still had to pull the image, so
+  # two such pods would not fit and Helm would roll back a healthy release.
+  timeout: 10m
   install:
     remediation:
       retries: 3
@@ -30,6 +35,54 @@ spec:
       strategy: rollback
   uninstall:
     keepHistory: false
+  # Keep the geoip sidecar from ever failing the pod. The image's entrypoint
+  # (/usr/bin/entry.sh) runs under `set -e`, so a single failed download --
+  # MaxMind's "Daily GeoIP database download limit reached" 429, a 401, a
+  # network blip -- exits the container. It then crash-loops, and since a Pod
+  # is only Ready when every container is, the server/worker pod never turns
+  # Ready even though authentik itself is fine: Helm's upgrade AND its
+  # rollback time out, and each retry starts new pods whose sidecars burn
+  # more of the quota (2026-08-16, 2026-10-11, 2026-10-17). The chart has no
+  # command or probe override for this container, hence the patch: the stock
+  # entrypoint still does the work, but when it exits the failure is logged
+  # and retried an hour later while the container keeps running.
+  # Trade-off: authentik only opens the database if it exists when the
+  # process starts (GeoIPContextProcessor.city() returns early while no
+  # reader is open), so a pod that starts while MaxMind refuses runs without
+  # geo data until its next restart. Acceptable here -- GeoIP only enriches
+  # events, no GeoIP policy exists (checked 2026-10-17).
+  # A JSON patch by index rather than a strategic merge by name: kustomize's
+  # strategic merge moves the patched container to the front of the list,
+  # which would make geoip the default for `kubectl logs/exec`. The `test`
+  # op fails the render (and so the upgrade) if the chart ever reorders the
+  # containers, instead of patching the wrong one.
+  # $$ escapes keep these as shell variables (Flux must not substitute them).
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: authentik-(server|worker)
+            patch: |
+              - op: test
+                path: /spec/template/spec/containers/1/name
+                value: geoip
+              - op: add
+                path: /spec/template/spec/containers/1/command
+                value:
+                  - /bin/sh
+                  - -c
+                  - |
+                    trap 'kill "$$pid" 2>/dev/null; wait "$$pid"; exit 0' TERM
+                    while true; do
+                      /usr/bin/entry.sh &
+                      pid=$$!
+                      wait "$$pid"
+                      echo "# STATE: geoipupdate exited ($$?), retrying in 1 hour"
+                      sleep 3600 &
+                      pid=$$!
+                      wait "$$pid"
+                    done
   values:
     global:
       deploymentAnnotations:
@@ -156,9 +209,10 @@ spec:
           # template restarts the pods, each new pod's geoip sidecar downloads
           # from MaxMind, and that day's quota was already used up (429), so
           # the new pods never became Ready and Helm's upgrade AND its rollback
-          # both timed out. Re-apply only after `kubectl logs <authentik pod>
-          # -c geoip` shows no 429. See
+          # both timed out. See
           # docs/incidents/2026-10-11-wazuh-pushover-quota-exhaustion.md.
+          # Since the geoip wrapper (postRenderers above, 2026-10-17) a 429
+          # no longer keeps a pod NotReady, so 200m can be re-applied.
           cpu: 50m
           memory: 512Mi
         limits:
@@ -183,10 +237,14 @@ spec:
       # which took authentik-server's Service to 0 endpoints -- a full
       # cluster-wide SSO outage, not just missing geo-enrichment. See
       # docs/incidents/2026-08-16-authentik-geoip-sidecar-sso-outage.md.
-      # Re-enabled 2026-09-27 -- MaxMind's daily quota has long since reset
-      # (resets at UTC midnight, free tier) and no further authentik-server/
-      # worker restart storms have occurred since. If this crash-loops again,
-      # disable and re-check the same incident doc before assuming it's new.
+      # Re-enabled 2026-09-27. Since 2026-10-17 the container can no longer
+      # crash-loop (see postRenderers at the top), so a 429 now only means
+      # missing geo data, and disabling geoip is no longer the fix. The quota
+      # does NOT reset at UTC midnight as earlier notes said: on 2026-10-17 it
+      # answered 429 at 14:55:58Z and served a download at 15:01:03Z, which
+      # looks like a rolling 24h window. Every new pod downloads both
+      # editions (the database sits in a per-pod emptyDir), so restarts and
+      # HPA scale-ups are what use it up.
       enabled: true
       editionIds: "GeoLite2-City GeoLite2-ASN"
       updateInterval: 48
