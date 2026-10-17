@@ -33,6 +33,28 @@ None. No `externalsecret*.yaml` exists under this app's directory. The only secr
 - **`ClientTrafficPolicy`**: TLS floor `1.2`, ALPN `h2`/`http/1.1`, HTTP/3 enabled (explains the UDP `10443` CNP rule above), trusts `X-Forwarded-For` only from the pod CIDR.
 - **`BackendTrafficPolicy`**: response compression (Zstd/Brotli/Gzip), 2 retries on connection reset, and **`requestTimeout: 0s` — no request timeout at all**, applied cluster-wide to every route through either Gateway.
 
+### Client IP (X-Forwarded-For)
+Envoy itself resolves the client IP correctly (the `ClientTrafficPolicy` trusts XFF only from `10.42.0.0/16`, so it takes the rightmost entry no pod added). But it forwards XFF as received and only appends the peer. It also passes `X-Real-IP`, `Forwarded`, `True-Client-IP` and `X-Client-IP` through untouched. Here is what a backend receives (measured 2026-10-17 against the `echo` app):
+- **Cloudflare path** (`*.${SECRET_DOMAIN}` → cloudflared → `envoy-external`): XFF is `<client-supplied…>,<real IP>,<cloudflared pod IP>`, because Cloudflare keeps a client-supplied XFF and appends. Cloudflare rejects a client-sent `CF-Connecting-IP` with a 403. On this path a client-sent `X-Real-IP` gets stripped, and `Forwarded` passes through.
+- **LAN/VPN path** (split DNS → LB `192.168.10.101`/`.103`): XFF is `<client-supplied…>,<node IP>`, and every other header passes through verbatim. The appended address is the **node IP**, not the client's own: the Services are `externalTrafficPolicy: Cluster` and LB traffic is SNATed. A request from the WireGuard VPN arrived as `192.168.10.23` (`k8s-wrk-3`).
+
+An app that takes the **leftmost** XFF entry, or `X-Real-IP`, or that trusts `192.168.0.0/16` as proxies, therefore logs or rate-limits by an IP the client chose. Routes for those apps carry a rule-level `RequestHeaderModifier` that sets `X-Forwarded-For` (and `X-Real-IP`) to `%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%`. That is the address Envoy resolved, and Envoy Gateway passes the `%…%` command operator through verbatim. Per app (audited 2026-10-17 against the running versions):
+
+| App | How it picks the IP | Spoofable before | Route overwrite |
+| --- | --- | --- | --- |
+| authentik 2026.8.4 | leftmost XFF from a trusted peer; reads no `X-Real-IP` | yes, Internet + LAN | yes, XFF (`security/authentik/app/httproute.yaml`, cypr0/k8s-ops#203) |
+| Grafana 13.2.4 | `X-Real-IP`, else leftmost XFF, no trust check | yes, LAN (internal only); verified live | yes, XFF + X-Real-IP |
+| Open WebUI 0.12.3 | uvicorn `--forwarded-allow-ips '*'` → leftmost XFF | yes, LAN (internal only) | yes |
+| hermes-agent 2026.8.16.2 | dashboard auth `_client_ip` = raw leftmost XFF | yes, LAN (internal only) | yes |
+| Paperless-ngx 3.3.2 | django-auditlog: leftmost XFF; allauth rate limits: `XFF[-PAPERLESS_ALLAUTH_TRUSTED_PROXY_COUNT]` | yes, LAN (internal only); checked in-pod | yes, plus `PAPERLESS_ALLAUTH_TRUSTED_PROXY_COUNT: 1` |
+| Immich 3.3.3 | Express `trust proxy` loopback+linklocal+uniquelocal → skips the 192.168 node IP | yes, LAN only | yes |
+| Nextcloud 35.0.2 | rightmost entry not in `trusted_proxies` (`10.0.0.0/8`), XFF only | no; checked in-pod with the live config | no, the full chain is fine |
+| Collabora 26.04 | only IP rule in use is `post_allow` for `convert-to` (admin console disabled). Older coolwsd required *every* XFF hop to be allowed; not re-checked at 26.04 (source lives on Gerrit) | probably no; forging only adds hops | no |
+| Mailu front (cloudflared → front directly, not via Envoy) | nginx `real_ip_header X-Forwarded-For` without `set_real_ip_from` → TCP peer, passed on as `X-Real-IP` | no. But every Internet user shares the cloudflared pod's /24 rate-limit bucket | n/a |
+| whiteboard, Gatus, flux webhook, Wazuh dashboard | no client-IP logic | no | no |
+
+A residual risk remains: any pod in `10.42.0.0/16` can still forge XFF through Envoy, because those addresses are trusted.
+
 ## Storage
 No PVCs — the controller and proxy pods are stateless; all Gateway API config is reconciled live from the `Gateway`/`HTTPRoute`/`EnvoyProxy` CRs via xDS. `HTTPRoute` and `CiliumNetworkPolicy` CRDs (cluster-wide, not scoped to this app) are included as resource types in every Velero schedule.
 

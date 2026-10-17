@@ -30,6 +30,22 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      # Envoy, not the client, decides the client IP the dashboard sees. Its
+      # auth code (dashboard_auth _client_ip) takes the raw LEFTMOST
+      # X-Forwarded-For entry with no trust check, so any LAN client chose
+      # the IP in auth audit logs and the per-IP limits on password login and
+      # pending native sign-ins. Set to the address Envoy resolved via the
+      # ClientTrafficPolicy (trustedCIDRs 10.42.0.0/16 in
+      # network/envoy-gateway/app/envoy.yaml).
+      # Docs: docs/apps/envoy-gateway.md (Client IP).
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+              - name: X-Real-IP
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
       backendRefs:
         - group: ""
           kind: Service

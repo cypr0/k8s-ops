@@ -5,7 +5,8 @@ kind: HTTPRoute
 metadata:
   name: grafana
 spec:
-  hostnames: ["grafana.${SECRET_DOMAIN}"]
+  hostnames:
+    - "grafana.${SECRET_DOMAIN}"
   parentRefs:
     # Internal-only access via Split-DNS (VPN users reach via k8s-gateway → envoy-internal)
     # Not exposed via Cloudflare Tunnel - requires VPN connection
@@ -17,3 +18,19 @@ spec:
         - name: grafana
           namespace: monitoring
           port: 80
+      # Envoy, not the client, decides the client IP Grafana sees. Grafana
+      # takes X-Real-IP, else the LEFTMOST X-Forwarded-For entry, with no
+      # trusted-proxy check (pkg/web/context.go RemoteAddr), and Envoy passes
+      # both headers through from a LAN client -- so any LAN client chose the
+      # IP in session tokens (user_auth_token.client_ip) and request logs.
+      # Both are set to the address Envoy resolved via the ClientTrafficPolicy
+      # (trustedCIDRs 10.42.0.0/16 in network/envoy-gateway/app/envoy.yaml).
+      # Docs: docs/apps/envoy-gateway.md (Client IP).
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+              - name: X-Real-IP
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"

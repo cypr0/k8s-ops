@@ -25,6 +25,21 @@ spec:
       timeouts:
         request: "15m"
         backendRequest: "15m"
+      # Envoy, not the client, decides the client IP Open WebUI sees. The
+      # image starts uvicorn with --forwarded-allow-ips '*', which takes the
+      # LEFTMOST X-Forwarded-For entry, so any LAN client chose the IP used
+      # by the per-IP MFA limiter, audit source_ip and MFA security events.
+      # Set to the address Envoy resolved via the ClientTrafficPolicy
+      # (trustedCIDRs 10.42.0.0/16 in network/envoy-gateway/app/envoy.yaml).
+      # Docs: docs/apps/envoy-gateway.md (Client IP).
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+              - name: X-Real-IP
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
       backendRefs:
         - group: ""
           kind: Service

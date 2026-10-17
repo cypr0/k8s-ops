@@ -28,6 +28,22 @@ spec:
       timeouts:
         request: "1h"
         backendRequest: "1h"
+      # Envoy, not the client, decides the client IP Immich sees. Immich
+      # trusts loopback + linklocal + uniquelocal (10/8, 172.16/12,
+      # 192.168/16) as proxies, so on the LAN path it skips the 192.168.10.x
+      # address Envoy appended and returns whatever the client put in
+      # X-Forwarded-For. Set to the address Envoy resolved via the
+      # ClientTrafficPolicy (trustedCIDRs 10.42.0.0/16 in
+      # network/envoy-gateway/app/envoy.yaml).
+      # Docs: docs/apps/envoy-gateway.md (Client IP).
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+              - name: X-Real-IP
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
       backendRefs:
         - group: ""
           kind: Service
