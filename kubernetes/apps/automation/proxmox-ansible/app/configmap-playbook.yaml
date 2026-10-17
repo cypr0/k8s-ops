@@ -942,7 +942,8 @@ data:
     #      - touches none of authentication, SSH, PAM or the network
     #   2  AppArmor utilities (1.3.1.1); auditd: audispd-plugins, the CIS rules,
     #      explicit log rotation; time servers (chrony, same as the Talos nodes)
-    #      AIDE limited to config paths still to come
+    #      AIDE on the paths that matter, nightly and bounded (6.3.1, 6.3.2);
+    #      it runs last of all, after the PAM change
     #   3  SSH AllowUsers (5.1.4); PAM: faillock, pwhistory, no nullok,
     #      libpam-pwquality (5.3.1.3, 5.3.2.2, 5.3.2.4, 5.3.3.4.1, 5.3.3.4.4)
     #
@@ -1057,6 +1058,31 @@ data:
           - libpwquality-common
           - libpwquality1
           - wamerican
+
+        # AIDE (Wazuh SCA 6.3.1, 6.3.2): the packaged nightly check on a short list
+        # of paths (aide-cis.conf), niced, with idle IO, a memory ceiling and a
+        # time limit. `present` installs, configures and builds the baseline,
+        # `absent` takes the timer, the drop-ins and the configuration out again
+        # (the packages stay). The reasons for every choice are in
+        # cis_wave2_aide.yml.
+        cis_aide_state: present
+        cis_aide_packages:
+          - aide
+          - aide-common
+        # What apt adds for these in a clean Debian 13 container without
+        # recommends (measured 2026-10-17, apt-get --simulate); on this host only
+        # the first two. Anything outside this list stops the run.
+        cis_aide_pkg_allowed:
+          - aide
+          - aide-common
+          - libext2fs2t64
+          - liblockfile-bin
+          - liblockfile1
+        cis_aide_timer_time: "02:30:00"
+        cis_aide_timer_delay: 900
+        cis_aide_memory_high: 256M
+        cis_aide_memory_max: 512M
+        cis_aide_timeout: 3600
 
         # RPC/NFS ports (rpcbind 111, nfsd 2049, mountd 20048, statd 20049,
         # 20050) and the SPICE proxy (3128) reachable from the internal
@@ -1199,6 +1225,12 @@ data:
         - name: Wave 3 — PAM
           ansible.builtin.include_tasks: cis_wave3_pam.yml
           when: 3 in cis_waves
+
+        # Last of all: the baseline is taken after the other waves have written
+        # their files.
+        - name: Wave 2 — AIDE
+          ansible.builtin.include_tasks: cis_wave2_aide.yml
+          when: 2 in cis_waves
 
       handlers:
         # The handlers of hardening.yml belong to its own play and are not
@@ -2145,6 +2177,899 @@ data:
       ansible.builtin.debug:
         msg: "{{ cis_time_after.stdout_lines }}"
 
+  cis_wave2_aide.yml: |-
+    ---
+    # Wave 2, AIDE. Numbers are those of the Wazuh SCA policy cis_debian13.
+    #   6.3.1  aide and aide-common installed
+    #   6.3.2  dailyaidecheck.timer active, dailyaidecheck.service enabled or static
+    #
+    # What the package alone would do, and why it is not left alone: the packaged
+    # configuration walks the whole file system with 239 snippets for services this
+    # host does not run, and the packaged unit has no resource limits. On this host
+    # that means the kernel module trees (69000 files, 5 GB), the Proxmox storage
+    # under /rpool (NFS exports, guest disks), and /etc/pve (a FUSE mount whose files
+    # change all the time). Here the check reads the configuration, the boot chain,
+    # the executables and libraries, the Proxmox login code, the login material of
+    # root and the human accounts, and nothing else (aide-cis.conf lists it, with the
+    # reasons). It runs once a night, niced, with idle IO priority, a memory ceiling
+    # and a time limit.
+    #
+    # Logs, and why none can fill the disk:
+    # - aide.log is written and rotated by the packaged script itself (savelog, seven
+    #   generations, gzip; measured: 7.7 KB for eleven runs), so there is no logrotate
+    #   file to add. aideinit.log and aideinit.errors are overwritten at every init.
+    # - The journal gets exactly one line per run (cis-aide summary, ExecStopPost).
+    # - The database is one file (about 100 KB) and the new one written by every
+    #   check, nothing accumulates. COPYNEWDB stays no: the baseline only changes
+    #   when somebody looks and runs  cis-aide accept --yes  . The same differences
+    #   are therefore reported every night until then (still one line in the journal
+    #   and a rotated, bounded report); this is deliberate, because a baseline that
+    #   follows the file system silently would forgive the very change it is for.
+    # - No mail (SILENTREPORTS=yes): the host has a mail transport, but the report is
+    #   not meant to leave it.
+    #
+    # Order: this wave runs last in cis.yml, so that the baseline is taken after the
+    # other waves have written their files. The check never starts from here; the
+    # baseline is built here (cis-aide init), the nightly run is the packaged timer.
+    #
+    # Dry run: the read-only part runs (report, package plan); nothing is installed,
+    # written or built.
+    #
+    # No dollar signs in this file: Flux substitutes them in the ConfigMap.
+    - name: AIDE | the requested state and the numbers must be sane
+      ansible.builtin.assert:
+        that:
+          - cis_aide_state in ['present', 'absent']
+          - cis_aide_timer_time | string is match('[0-2][0-9]:[0-5][0-9]:[0-5][0-9]\Z')
+          - cis_aide_timer_delay | int in range(0, 7201)
+          - cis_aide_timeout | int >= 600
+          - cis_aide_memory_max | string is match('[0-9]+[KMG]\Z')
+          - cis_aide_memory_high | string is match('[0-9]+[KMG]\Z')
+        fail_msg: >-
+          cis_aide_state is '{{ cis_aide_state }}' (present or absent expected), or a
+          value is out of range: the time as HH:MM:SS, a random delay of 0 to 7200
+          seconds, a time limit of at least 600 seconds, memory as a number and K, M
+          or G. Nothing was changed on the host.
+
+    # The helper is read from /scripts for everything read only, so a dry run works
+    # before it is installed. The installed copy (below, after the package guard, so
+    # that a refused run changes nothing at all) is what the unit calls after a run.
+    - name: AIDE | Report the state before (read only)
+      ansible.builtin.script:
+        cmd: /scripts/cis_aide.py status
+      register: cis_aide_before
+      changed_when: false
+      failed_when: cis_aide_before.rc not in [0, 3]
+      check_mode: false
+
+    - name: AIDE | Before
+      ansible.builtin.debug:
+        msg: "{{ cis_aide_before.stdout_lines }}"
+
+    # dpkg-query -s prints "Status: install ok installed" for an installed package and
+    # exits non-zero for an unknown one; no format string needed.
+    - name: AIDE | are the packages installed?
+      ansible.builtin.command: dpkg-query -s {{ item }}
+      loop: "{{ cis_aide_packages }}"
+      register: cis_aide_pkg
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: AIDE | which of them are missing
+      ansible.builtin.set_fact:
+        cis_aide_missing: >-
+          {{ cis_aide_pkg.results | rejectattr('stdout', 'search', 'install ok installed')
+             | map(attribute='item') | list }}
+
+    # /etc/aide and /etc/default/aide exist only once the package is in. In a dry run
+    # nothing is installed, so the file tasks wait for the real run.
+    - name: AIDE | can the files be written now?
+      ansible.builtin.set_fact:
+        cis_aide_can_write: "{{ (not ansible_check_mode) or (cis_aide_missing | length == 0) }}"
+
+    # Fail closed, like the other installs: apt-get --simulate changes nothing, so
+    # the plan is in the dry-run log, and anything that is not one of the expected
+    # new packages, any installed package that would change and anything removed
+    # stops the run. The list is what apt chose in a clean Debian 13 container
+    # without recommends; a package of it that the host already has simply does not
+    # show up as new. The recommends are off on purpose: with them apt would add a
+    # mail server, cron and perl (measured).
+    - name: AIDE | what apt would do
+      ansible.builtin.command: apt-get --simulate -o APT::Install-Recommends=no install {{ cis_aide_missing | join(' ') }}
+      register: cis_aide_sim
+      changed_when: false
+      check_mode: false
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_missing | length > 0
+
+    - name: AIDE | refuse unless it only adds the expected packages
+      ansible.builtin.assert:
+        that:
+          - cis_aide_missing | difference(cis_aide_new) | length == 0
+          - cis_aide_new | difference(cis_aide_pkg_allowed) | length == 0
+          - cis_aide_changed | length == 0
+          - cis_aide_gone | length == 0
+        fail_msg: >-
+          apt's plan for {{ cis_aide_missing | join(' ') }} is not just the expected new
+          packages. New: {{ cis_aide_new | join(', ') | default('(none parsed)', true) }}.
+          Unexpected among them: {{ cis_aide_new | difference(cis_aide_pkg_allowed) | join(', ') | default('none', true) }}.
+          Would change an installed package: {{ cis_aide_changed | join(', ') | default('none', true) }}.
+          Would remove: {{ cis_aide_gone | join(', ') | default('none', true) }}.
+          Nothing was installed or changed; decide by hand.
+        success_msg: "apt would add only: {{ cis_aide_new | join(', ') }}"
+      vars:
+        # Single backslashes and [^ ]+, never \S. "Inst name (" is a new package,
+        # "Inst name [" an installed one that would change version.
+        cis_aide_new: >-
+          {{ cis_aide_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \(') | unique | list }}
+        cis_aide_changed: >-
+          {{ cis_aide_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \[') | unique | list }}
+        cis_aide_gone: >-
+          {{ cis_aide_sim.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^ ]+)') | unique | list }}
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_missing | length > 0
+
+    # The package enables its own timer at install time (first run 01:50 plus up to
+    # two hours) and starts nothing else. It writes no log and no mail (measured).
+    # Not in a dry run: the apt module needs python3-apt there, and the plan above
+    # is already the dry run's answer.
+    - name: AIDE | install the packages (no recommends)
+      ansible.builtin.apt:
+        name: "{{ cis_aide_missing }}"
+        state: present
+        install_recommends: false
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_missing | length > 0
+        - not ansible_check_mode
+
+    # ── present ──────────────────────────────────────────────────────────────────
+    # Mode 0755, not 0750: the packaged service runs as _aide and so does its
+    # ExecStopPost (cis-aide summary); with 0750 the unit failed every night with
+    # status 203/EXEC although AIDE itself had run (found by starting the service in
+    # a test, not by the play). The script holds nothing secret, and what needs root
+    # (init, accept, check) tests for it.
+    - name: AIDE | install the helper script
+      ansible.builtin.copy:
+        src: /scripts/cis_aide.py
+        dest: /usr/local/sbin/cis-aide
+        owner: root
+        group: root
+        mode: "0755"
+      diff: false
+      when: cis_aide_state == 'present'
+
+    - name: AIDE | the configuration, only the paths that matter
+      ansible.builtin.copy:
+        src: /scripts/aide-cis.conf
+        dest: /etc/aide/aide-cis.conf
+        owner: root
+        group: root
+        mode: "0644"
+        # aide parses the new file before it replaces the old one
+        validate: aide --config=%s --config-check
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_can_write | bool
+
+    # /etc/default/aide is read by the packaged scripts, and the last assignment wins,
+    # so the block goes at the end of the packaged file.
+    - name: AIDE | settings of the packaged scripts
+      ansible.builtin.blockinfile:
+        path: /etc/default/aide
+        marker: "# {mark} cis-aide"
+        block: |
+          # Managed by Ansible (proxmox-ansible, CIS wave 2: AIDE). The last assignment wins.
+          CONFIG="/etc/aide/aide-cis.conf"
+          COMMAND=update
+          COPYNEWDB=no
+          SILENTREPORTS=yes
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_can_write | bool
+
+    - name: AIDE | systemd drop-in directories
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item }}.d"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - dailyaidecheck.service
+        - dailyaidecheck.timer
+      when: cis_aide_state == 'present'
+
+    # RuntimeMaxSec has no effect on a oneshot unit (systemd says so in the journal);
+    # TimeoutStartSec is the limit that does. The packaged unit has no limit at all,
+    # and four of eight workers of a cluster once died of memory because of a daily
+    # AIDE run over a network file system.
+    - name: AIDE | the check runs niced, with idle IO, bounded memory and a time limit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dailyaidecheck.service.d/10-cis.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible (proxmox-ansible, CIS wave 2: AIDE).
+          [Service]
+          Nice=19
+          IOSchedulingClass=idle
+          CPUWeight=10
+          MemoryHigh={{ cis_aide_memory_high }}
+          MemoryMax={{ cis_aide_memory_max }}
+          TasksMax=64
+          TimeoutStartSec={{ cis_aide_timeout }}
+          ExecStopPost=/usr/local/sbin/cis-aide summary
+      register: cis_aide_svc_dropin
+      when: cis_aide_state == 'present'
+
+    - name: AIDE | the check runs once a night, at a fixed time
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dailyaidecheck.timer.d/10-cis.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible (proxmox-ansible, CIS wave 2: AIDE).
+          [Timer]
+          OnCalendar=
+          OnCalendar=*-*-* {{ cis_aide_timer_time }}
+          RandomizedDelaySec={{ cis_aide_timer_delay }}
+      register: cis_aide_timer_dropin
+      when: cis_aide_state == 'present'
+
+    - name: AIDE | systemd reads the drop-ins
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_svc_dropin is changed or cis_aide_timer_dropin is changed
+
+    - name: AIDE | the timer is enabled and running (6.3.2)
+      ansible.builtin.systemd:
+        name: dailyaidecheck.timer
+        enabled: true
+        state: started
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_can_write | bool
+
+    - name: AIDE | the timer takes over the new schedule
+      ansible.builtin.systemd:
+        name: dailyaidecheck.timer
+        state: restarted
+      when:
+        - cis_aide_state == 'present'
+        - cis_aide_timer_dropin is changed
+        - not ansible_check_mode
+
+    # The baseline is built from the configuration that is on the host now, under the
+    # same limits as the nightly run, and stamped with the configuration's checksum:
+    # a changed configuration (Git) rebuilds it, nothing else does. status exits 3
+    # when there is something to build.
+    - name: AIDE | does the baseline match the configuration?
+      ansible.builtin.script:
+        cmd: /scripts/cis_aide.py status
+      register: cis_aide_status
+      changed_when: false
+      failed_when: cis_aide_status.rc not in [0, 3]
+      check_mode: false
+      when: cis_aide_state == 'present'
+
+    - name: AIDE | build the baseline
+      ansible.builtin.command: /usr/local/sbin/cis-aide init --memory-high {{ cis_aide_memory_high }} --memory-max {{ cis_aide_memory_max }} --runtime-max {{ cis_aide_timeout }}
+      register: cis_aide_init
+      changed_when: cis_aide_init.rc == 0
+      # 6: a check is running right now; the next run of this play builds it
+      failed_when: cis_aide_init.rc not in [0, 6]
+      when:
+        - cis_aide_state == 'present'
+        - not ansible_check_mode
+        - cis_aide_status.rc == 3
+
+    # Once, right after a new baseline, the whole nightly path is run for real: the
+    # packaged service as _aide with our limits, then ExecStopPost and its journal
+    # line. `cis-aide check` fails when systemd reports the service as failed, so a
+    # unit that cannot run (a permission, a limit, a wrong path) stops this play
+    # instead of failing silently at 02:30. A few differences in this first report
+    # are possible (a daemon may rewrite a watched file within seconds of the
+    # baseline); they are shown, they do not fail the play.
+    - name: AIDE | one check right away, the way the timer will run it
+      ansible.builtin.command: /usr/local/sbin/cis-aide check --max 15
+      register: cis_aide_first
+      changed_when: false
+      when:
+        - cis_aide_state == 'present'
+        - not ansible_check_mode
+        - cis_aide_init is changed
+
+    - name: AIDE | First check
+      ansible.builtin.debug:
+        msg: "{{ cis_aide_first.stdout_lines }}"
+      when: cis_aide_first is not skipped
+
+    - name: AIDE | Baseline
+      ansible.builtin.debug:
+        msg: "{{ cis_aide_init.stdout_lines }}"
+      when: cis_aide_init is changed
+
+    # The two commands the policy runs for 6.3.2, run the same way.
+    - name: AIDE | what the policy will see
+      ansible.builtin.command: "{{ item }}"
+      loop:
+        - systemctl is-enabled dailyaidecheck.service
+        - systemctl is-active dailyaidecheck.timer
+      register: cis_aide_verify
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      when:
+        - cis_aide_state == 'present'
+        - not ansible_check_mode
+
+    - name: AIDE | the policy's checks must pass
+      ansible.builtin.assert:
+        that:
+          - cis_aide_verify.results[0].stdout in ['static', 'enabled']
+          - cis_aide_verify.results[1].stdout == 'active'
+        fail_msg: >-
+          After the changes the policy would not pass 6.3.2: the service reports
+          '{{ cis_aide_verify.results[0].stdout }}' (static or enabled expected), the
+          timer '{{ cis_aide_verify.results[1].stdout }}' (active expected).
+        quiet: true
+      when:
+        - cis_aide_state == 'present'
+        - not ansible_check_mode
+
+    # ── absent ───────────────────────────────────────────────────────────────────
+    # Takes the check out again: timer off (6.3.2 fails again), drop-ins, settings,
+    # configuration, stamp and helper removed. The packages stay (6.3.1 keeps passing)
+    # and so do the database and the logs; a later `present` rebuilds the baseline.
+    - name: AIDE | switched off from Git, take it out again
+      when: cis_aide_state == 'absent'
+      block:
+        - name: AIDE | stop and disable the timer
+          ansible.builtin.systemd:
+            name: dailyaidecheck.timer
+            enabled: false
+            state: stopped
+          when: "'aide-common' not in cis_aide_missing"
+
+        - name: AIDE | remove the drop-ins, the configuration, the stamp and the helper
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/systemd/system/dailyaidecheck.service.d/10-cis.conf
+            - /etc/systemd/system/dailyaidecheck.timer.d/10-cis.conf
+            - /etc/aide/aide-cis.conf
+            - /var/lib/aide/cis-config.sha256
+            - /usr/local/sbin/cis-aide
+
+        - name: AIDE | remove the settings block
+          ansible.builtin.blockinfile:
+            path: /etc/default/aide
+            marker: "# {mark} cis-aide"
+            state: absent
+          when: "'aide-common' not in cis_aide_missing"
+
+        - name: AIDE | systemd forgets the drop-ins
+          ansible.builtin.systemd:
+            daemon_reload: true
+          when: not ansible_check_mode
+
+    - name: AIDE | Report the state afterwards (read only)
+      ansible.builtin.script:
+        cmd: /scripts/cis_aide.py status
+      register: cis_aide_after
+      changed_when: false
+      failed_when: cis_aide_after.rc not in [0, 3]
+      check_mode: false
+
+    - name: AIDE | After
+      ansible.builtin.debug:
+        msg: "{{ cis_aide_after.stdout_lines }}"
+  cis_aide.py: |-
+    #!/usr/bin/env python3
+    """cis-aide: AIDE for CIS 6.3.1 and 6.3.2 on the Proxmox host.
+
+    The packaged dailyaidecheck.service and timer do the nightly check; this helper
+    builds the baseline under resource limits, writes one line about each check to
+    the journal, and promotes a reviewed result to the new baseline.
+
+      status    read only: packages, configuration, baseline, units, last check
+                exit 0 when a baseline built from the current configuration exists,
+                3 when it has to be (re)built
+      init      (re)build the baseline: systemd-run with CPU, IO and memory limits
+      last      the last check: verdict, totals and the first lines of its list
+      check     run the nightly check now (clears the start limits of the packaged
+                units first) and show it
+      summary   one journal line about the last check (ExecStopPost of the service);
+                removes stale temporary directories; never fails
+      accept    promote the database the last check wrote (aide.db.new) to the
+                baseline; refuses without --yes and shows what it would accept
+
+    Exit codes: 0 ok, 2 accept without --yes, 3 status: baseline has to be (re)built,
+    4 precondition not met, 5 the work failed, 6 init skipped because a check runs.
+
+    No dollar signs anywhere in this file: Flux substitutes them in the ConfigMap.
+    """
+    import argparse
+    import hashlib
+    import os
+    import pwd
+    import re
+    import shutil
+    import subprocess
+    import sys
+    import time
+
+    CONF = "/etc/aide/aide-cis.conf"
+    DEFAULTS = "/etc/default/aide"
+    DBDIR = "/var/lib/aide"
+    DB = DBDIR + "/aide.db"
+    DBNEW = DBDIR + "/aide.db.new"
+    STAMP = DBDIR + "/cis-config.sha256"
+    LOGDIR = "/var/log/aide"
+    LOG = LOGDIR + "/aide.log"
+    INITLOG = LOGDIR + "/aideinit.log"
+    INITERR = LOGDIR + "/aideinit.errors"
+    AIDEUSER = "_aide"
+    TIMER = "dailyaidecheck.timer"
+    SERVICE = "dailyaidecheck.service"
+    KEEP_DAYS = 7
+    # one line of a list_entries report: the attribute letters, a colon, the path
+    ENTRY = re.compile(r"[A-Za-z!?][-+=.:<> A-Za-z]{10,24}: /")
+    # AIDE does not count an attribute that was ADDED to or REMOVED from a file as a
+    # difference (measured: a new file capability gives exit 0 and only this line,
+    # printed before the report), so these lines are counted here as well.
+    ATTRLINE = re.compile(r"Entry (/\S+) in databases has different attributes: (\S+)")
+
+    def out(text=""):
+        print(text, flush=True)
+
+    def run(cmd, **kw):
+        return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+    def sha256_file(path):
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def read_stamp():
+        try:
+            with open(STAMP) as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+    def effective_defaults():
+        """The last assignment of every KEY=value line in /etc/default/aide: the
+        packaged scripts source that file, so the last one wins."""
+        vals = {}
+        try:
+            with open(DEFAULTS) as f:
+                for line in f:
+                    m = re.match(r"\s*([A-Z_]+)=(.*)", line)
+                    if m:
+                        vals[m.group(1)] = m.group(2).strip().strip('"')
+        except OSError:
+            pass
+        return vals
+
+    def read_log():
+        try:
+            with open(LOG, errors="replace") as f:
+                return f.read().splitlines()
+        except OSError:
+            return []
+
+    def parse_log(lines):
+        """Verdict, totals, baseline checksum, run time and entry lines of the log
+        the packaged script writes after every check."""
+        info = {"exit": None, "entries": None, "added": None, "removed": None,
+                "changed": None, "sha": "", "seconds": None, "list": [], "attrs": []}
+        want_sha = False
+        for line in lines:
+            m = ATTRLINE.search(line)
+            if m:
+                info["attrs"].append("%s %s" % (m.group(2), m.group(1)))
+                continue
+            m = re.match(r"AIDE returned with (?:a zero exit code|exit code (\d+))", line)
+            if m:
+                info["exit"] = int(m.group(1)) if m.group(1) else 0
+            m = re.match(r"\s*(?:Total number of entries|Number of entries):\s+(\d+)", line)
+            if m and info["entries"] is None:
+                info["entries"] = int(m.group(1))
+            for key, label in (("added", "Added entries"), ("removed", "Removed entries"),
+                               ("changed", "Changed entries")):
+                m = re.match(r"\s*%s:\s+(\d+)" % label, line)
+                if m:
+                    info[key] = int(m.group(1))
+            if line.startswith("/") and "aide.db" in line and not info["sha"]:
+                want_sha = True
+                continue
+            m = re.match(r"\s*SHA256\s*:\s*(\S+)", line)
+            if m and want_sha and not info["sha"]:
+                info["sha"] = m.group(1)[:16]
+                want_sha = False
+            m = re.match(r"End of AIDE daily aide check .*run time (\d+) seconds", line)
+            if m:
+                info["seconds"] = int(m.group(1))
+            if ENTRY.match(line):
+                info["list"].append(line)
+        return info
+
+    def owner_ids():
+        pw = pwd.getpwnam(AIDEUSER)
+        return pw.pw_uid, pw.pw_gid
+
+    def cmd_status(args):
+        need = False
+        out("== packages")
+        for p in ("aide", "aide-common"):
+            r = run(["dpkg-query", "-s", p])
+            if r.returncode == 0:
+                keep = [l for l in r.stdout.splitlines() if l.startswith(("Status:", "Version:"))]
+                out("  %s: %s" % (p, "; ".join(keep)))
+            else:
+                out("  %s: not installed" % p)
+                need = True
+        out("== configuration")
+        if os.path.exists(CONF):
+            sha = sha256_file(CONF)
+            stamp = read_stamp()
+            out("  %s sha256 %s" % (CONF, sha[:16]))
+            out("  baseline built from: %s" % (stamp[:16] if stamp else "(no stamp)"))
+            if stamp != sha:
+                need = True
+        else:
+            out("  %s: absent" % CONF)
+            need = True
+        eff = effective_defaults()
+        out("  /etc/default/aide, effective: " + ", ".join(
+            "%s=%s" % (k, eff.get(k, "(unset)")) for k in ("CONFIG", "COMMAND", "COPYNEWDB", "SILENTREPORTS")))
+        out("== baseline")
+        for path in (DB, DBNEW):
+            try:
+                st = os.stat(path)
+                out("  %s: %d bytes, %s, owner %s, mode %o" % (
+                    path, st.st_size, time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime)),
+                    pwd.getpwuid(st.st_uid).pw_name, st.st_mode & 0o777))
+            except OSError:
+                out("  %s: absent" % path)
+                if path == DB:
+                    need = True
+        out("== units")
+        for unit, verb in ((TIMER, "is-enabled"), (TIMER, "is-active"), (SERVICE, "is-enabled")):
+            r = run(["systemctl", verb, unit])
+            out("  %s %s: %s" % (unit, verb, (r.stdout or r.stderr).strip() or "(no answer)"))
+        r = run(["systemctl", "show", SERVICE, "-p", "MemoryHigh", "-p", "MemoryMax", "-p", "Nice",
+                 "-p", "IOSchedulingClass", "-p", "RuntimeMaxUSec", "-p", "User"])
+        out("  service limits: " + "; ".join(r.stdout.split()))
+        r = run(["systemctl", "list-timers", TIMER, "--no-pager"])
+        for line in r.stdout.splitlines()[:2]:
+            out("  " + line.strip()[:150])
+        out("== last check")
+        info = parse_log(read_log())
+        if info["exit"] is None:
+            out("  no report yet")
+        else:
+            out("  aide exit %s, entries %s, added %s, removed %s, changed %s, %s s" % (
+                info["exit"], info["entries"], info["added"], info["removed"], info["changed"],
+                info["seconds"]))
+        if os.path.isdir(LOGDIR):
+            files = ["%s %d bytes" % (n, os.path.getsize(os.path.join(LOGDIR, n)))
+                     for n in sorted(os.listdir(LOGDIR))]
+            out("  files in %s: %s" % (LOGDIR, ", ".join(files) if files else "(none)"))
+        else:
+            out("  no log directory")
+        return 3 if need else 0
+
+    def cmd_init(args):
+        if os.geteuid() != 0:
+            out("init needs root")
+            return 4
+        if not os.path.exists(CONF) or not shutil.which("aide"):
+            out("no configuration or no aide binary: nothing to initialise")
+            return 4
+        r = run(["systemctl", "is-active", SERVICE])
+        if r.stdout.strip() in ("active", "activating"):
+            out("a check is running right now; the baseline is left alone, the next run will build it")
+            return 6
+        r = run(["aide", "--config=" + CONF, "--config-check"])
+        if r.returncode != 0:
+            out("aide does not accept the configuration:")
+            for line in (r.stdout + r.stderr).splitlines()[:20]:
+                out("  " + line)
+            return 4
+        for stale in (INITERR, INITLOG):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+        start = time.time()
+        cmd = ["systemd-run", "--quiet", "--wait", "--collect", "--pipe", "--unit=cis-aide-init",
+               "-p", "Nice=19", "-p", "IOSchedulingClass=idle",
+               "-p", "MemoryHigh=" + args.memory_high, "-p", "MemoryMax=" + args.memory_max,
+               "-p", "TasksMax=64", "-p", "RuntimeMaxSec=%d" % args.runtime_max,
+               "/usr/sbin/aideinit", "--yes", "--force", "--config", CONF]
+        r = run(cmd)
+        secs = int(time.time() - start)
+        errs = []
+        try:
+            with open(INITERR, errors="replace") as f:
+                errs = [l.rstrip() for l in f if l.strip()]
+        except OSError:
+            pass
+        if r.returncode != 0 or errs or not os.path.exists(DB) or os.path.getmtime(DB) < start - 2:
+            out("the baseline was NOT built (rc %d after %d s)" % (r.returncode, secs))
+            for line in (r.stdout + r.stderr).splitlines()[:10]:
+                out("  " + line)
+            for line in errs[:20]:
+                out("  aideinit.errors: " + line)
+            return 5
+        uid, gid = owner_ids()
+        for path in (DB, DBNEW):
+            if os.path.exists(path):
+                os.chown(path, uid, gid)
+                os.chmod(path, 0o600)
+        with open(STAMP, "w") as f:
+            f.write(sha256_file(CONF) + "\n")
+        info = parse_log(open(INITLOG, errors="replace").read().splitlines()) if os.path.exists(INITLOG) else {}
+        out("baseline built in %d s: %s entries, database sha256 %s..., size %d bytes" % (
+            secs, info.get("entries"), info.get("sha"), os.path.getsize(DB)))
+        return 0
+
+    def cmd_last(args):
+        lines = read_log()
+        if not lines:
+            out("no report in %s yet" % LOG)
+            return 0
+        info = parse_log(lines)
+        for line in lines[:12]:
+            if line.startswith(("aide run on", "AIDE returned", "AIDE produced")):
+                out(line)
+        for line in lines:
+            if line.strip().startswith(("Total number of entries", "Added entries:", "Removed entries:", "Changed entries:")):
+                out(line.rstrip())
+        shown = info["list"][:args.max]
+        for line in shown:
+            out(line)
+        if len(info["list"]) > len(shown):
+            out("... and %d more entries in %s" % (len(info["list"]) - len(shown), LOG))
+        for line in info["attrs"][:args.max]:
+            out("attribute added or removed (not counted by AIDE as a change): " + line)
+        return 0
+
+    def cmd_check(args):
+        """Run the nightly check now. The packaged units refuse a second start within
+        a minute (buildcache) and two hours (the check); reset-failed clears both."""
+        if os.geteuid() != 0:
+            out("check needs root")
+            return 4
+        if not os.path.exists(DB):
+            out("no baseline yet: run  cis-aide init  first")
+            return 4
+        run(["systemctl", "reset-failed", SERVICE, "dailyaidecheck-buildcache.service"])
+        r = run(["systemctl", "start", SERVICE])
+        if r.returncode != 0:
+            out("the check did not run: " + (r.stderr or r.stdout).strip()[:300])
+            return 5
+        # The packaged service allows ONE start per two hours (StartLimitBurst=1), so a
+        # check started by hand shortly before the timer would make systemd refuse the
+        # timer's start. Clear the counter again once this one has succeeded.
+        run(["systemctl", "reset-failed", SERVICE, "dailyaidecheck-buildcache.service"])
+        return cmd_last(args)
+
+    def cmd_summary(args):
+        result = os.environ.get("SERVICE_RESULT", "unknown")
+        try:
+            fresh = time.time() - os.path.getmtime(LOG) < 6 * 3600
+        except OSError:
+            fresh = False
+        info = parse_log(read_log()) if fresh else parse_log([])
+        if info["exit"] == 0:
+            # a clean report has no totals; say 0 rather than nothing
+            for key in ("added", "removed", "changed"):
+                if info[key] is None:
+                    info[key] = 0
+        if not fresh:
+            verdict = "no-report"
+        elif info["exit"] is None:
+            # the packaged script wrote a log but AIDE never returned (no baseline,
+            # lock, killed): that is an error, not an absence of news
+            verdict = "error"
+        elif info["exit"] == 0 and not info["attrs"]:
+            verdict = "no-differences"
+        elif info["exit"] in (0, 1, 2, 3, 4, 5, 6, 7):
+            verdict = "differences"
+        else:
+            verdict = "error"
+        if result != "success" and verdict == "no-differences":
+            verdict = "error"
+        # what the run cost, while the unit's control group still exists: peak memory
+        # and CPU time, so the load can be judged from the journal alone
+        peak_mb, cpu_s = "-", "-"
+        r = run(["systemctl", "show", SERVICE, "-p", "MemoryPeak", "-p", "CPUUsageNSec"])
+        for line in r.stdout.splitlines():
+            key, _, val = line.partition("=")
+            if val.isdigit() and key == "MemoryPeak":
+                peak_mb = "%.1f" % (int(val) / 1048576.0)
+            elif val.isdigit() and key == "CPUUsageNSec":
+                cpu_s = "%.1f" % (int(val) / 1e9)
+        out("aide-check result=%s service=%s aide_exit=%s entries=%s added=%s removed=%s changed=%s "
+            "attributes_added_or_removed=%d baseline_sha256=%s seconds=%s peak_memory_mb=%s cpu_seconds=%s "
+            "report=%s" % (
+                verdict, result, info["exit"], info["entries"], info["added"], info["removed"],
+                info["changed"], len(info["attrs"]), info["sha"] or "-", info["seconds"], peak_mb,
+                cpu_s, LOG))
+        # temporary directories an aborted run leaves behind
+        try:
+            for name in os.listdir(DBDIR):
+                path = os.path.join(DBDIR, name)
+                if (name.startswith("dailyaidecheck.old.") and os.path.isdir(path)
+                        and not os.path.islink(path)
+                        and time.time() - os.path.getmtime(path) > KEEP_DAYS * 86400):
+                    shutil.rmtree(path, ignore_errors=True)
+                    out("removed stale %s" % name)
+        except OSError:
+            pass
+        return 0
+
+    def cmd_accept(args):
+        if os.geteuid() != 0:
+            out("accept needs root")
+            return 4
+        if not (os.path.exists(DB) and os.path.exists(DBNEW)):
+            out("need both %s and %s; run the check first (systemctl start %s)" % (DB, DBNEW, SERVICE))
+            return 4
+        if os.path.getmtime(DBNEW) <= os.path.getmtime(DB):
+            out("%s is not newer than the baseline: nothing to accept" % DBNEW)
+            return 0
+        out("the last check found this, and --yes makes it the baseline:")
+        cmd_last(argparse.Namespace(max=args.max))
+        if not args.yes:
+            out("nothing changed (add --yes to accept)")
+            return 2
+        tmp = DB + ".tmp"
+        shutil.copyfile(DBNEW, tmp)
+        uid, gid = owner_ids()
+        os.chown(tmp, uid, gid)
+        os.chmod(tmp, 0o600)
+        with open(tmp, "rb") as f:
+            os.fsync(f.fileno())
+        os.replace(tmp, DB)
+        sha = sha256_file(DB)
+        run(["logger", "-t", "cis-aide", "baseline accepted by an operator, sha256 of the file %s" % sha[:16]])
+        out("baseline replaced (file sha256 %s...)" % sha[:16])
+        return 0
+
+    def main():
+        ap = argparse.ArgumentParser(prog="cis-aide")
+        sub = ap.add_subparsers(dest="cmd", required=True)
+        sub.add_parser("status")
+        p = sub.add_parser("init")
+        p.add_argument("--memory-high", default="256M")
+        p.add_argument("--memory-max", default="512M")
+        p.add_argument("--runtime-max", type=int, default=1800)
+        p = sub.add_parser("last")
+        p.add_argument("--max", type=int, default=40)
+        p = sub.add_parser("check")
+        p.add_argument("--max", type=int, default=40)
+        sub.add_parser("summary")
+        p = sub.add_parser("accept")
+        p.add_argument("--yes", action="store_true")
+        p.add_argument("--max", type=int, default=40)
+        args = ap.parse_args()
+        fn = {"status": cmd_status, "init": cmd_init, "last": cmd_last, "check": cmd_check,
+              "summary": cmd_summary, "accept": cmd_accept}[args.cmd]
+        sys.exit(fn(args))
+
+    if __name__ == "__main__":
+        main()
+  aide-cis.conf: |
+    # Managed by Ansible (proxmox-ansible, CIS wave 2: AIDE). Do not edit here.
+    #
+    # NOT the Debian default configuration: that one walks the whole file system and
+    # pulls in 239 snippets for services this host does not run. This file covers the
+    # configuration and the usual places to hide something or to tamper with the
+    # host, nothing else. The Proxmox storage trees, NFS exports, guests' disks and
+    # the kernel module trees (68911 files in ten kernel versions) are not read.
+
+    database_in=file:/var/lib/aide/aide.db
+    database_out=file:/var/lib/aide/aide.db.new
+    database_new=file:/var/lib/aide/aide.db.new
+    gzip_dbout=yes
+
+    # One worker, so a check cannot take more than one CPU. Warnings and errors only.
+    num_workers=1
+    log_level=warning
+
+    # One line per added, removed or changed entry, with the letters that say which
+    # attribute changed, plus the totals and the checksum of the database. The
+    # per-attribute details are left out on purpose (a long report is what fills
+    # the log after a package upgrade); for them run:
+    #   aide --config=/etc/aide/aide-cis.conf --check --report-level=changed_attributes
+    report_level=list_entries
+    database_attrs=sha256
+
+    # What is compared. No inode, no times, no block count, no size: packages and
+    # daemons rewrite identical files all the time (pve-daily-update rewrites
+    # /etc/apt/apt.conf.d/76pveproxy every morning), and on ZFS the size of a
+    # directory is its number of entries. The checksum covers the content of a
+    # file; mode, owner, type, link count and link target cover the rest.
+    Content   = p+ftype+u+g+n+l+sha256
+    # Executables and libraries: the same, plus file capabilities (setcap is a
+    # classic way to leave a root shell behind).
+    Binary    = Content+caps
+    # The password databases change whenever somebody changes a password (the owner
+    # did on 2026-10-17, the nightly play sets the FTP account's password): who owns
+    # them and who may read them is what matters here.
+    PermsOnly = p+ftype+u+g+n
+
+    # ---- configuration ---------------------------------------------------------
+    /etc Content
+    # /etc/pve is the pmxcfs FUSE mount: virtual, changing content (the ticket key is
+    # rewritten every day, the firewall files by every run, one file per guest).
+    # Only the files that decide who may log in and what the storage is are
+    # watched; the negative lookahead lets exactly those paths through. The
+    # unprivileged account of the check can read them (measured on the host).
+    !/etc/pve/(?!((user|domains|datacenter|storage)\.cfg|pve-root-ca\.pem|priv|priv/authorized_keys|priv/token\.cfg)\z)
+    !/etc/ld\.so\.cache\z
+    !/etc/mtab\z
+    !/etc/adjtime\z
+    # ZFS event daemon caches: rewritten when a dataset or pool property changes
+    # (every new guest disk), nothing an attacker would use.
+    !/etc/zfs/zpool\.cache\z
+    !/etc/zfs/zfs-list\.cache
+    !/etc/openvswitch/conf\.db
+    !/etc/openvswitch/\.conf\.db
+    !/etc/lvm/(archive|backup|cache)
+    /etc/(shadow|gshadow)-?\z PermsOnly
+    /etc/security/opasswd(\.old)?\z PermsOnly
+
+    # ---- boot chain ------------------------------------------------------------
+    /boot Content
+    !/boot/efi
+    !/boot/grub/grubenv\z
+
+    # ---- executables, libraries, units -----------------------------------------
+    /usr/bin Binary
+    /usr/sbin Binary
+    /usr/local Binary
+    /usr/libexec Binary
+    /usr/lib/x86_64-linux-gnu Binary
+    /usr/lib/openssh Binary
+    /usr/lib/zfs-linux Binary
+    /usr/lib/dbus-1\.0 Binary
+    /usr/lib/systemd Content
+    /usr/lib/udev Content
+    /usr/lib/(modprobe|sysctl|tmpfiles|sysusers|binfmt)\.d Content
+    /usr/share/keyrings Content
+    =/(bin|sbin|lib|lib64)\z Content
+
+    # ---- Proxmox: the web interface, the API and the login code ----------------
+    /usr/share/perl5/PVE Content
+    /usr/share/perl5/Proxmox Content
+    /usr/share/pve-manager Content
+    /usr/share/javascript/proxmox-widget-toolkit Content
+
+    # ---- login material of root and the human accounts -------------------------
+    =/root\z PermsOnly
+    /root/\.ssh Content
+    /root/\.(bashrc|profile|bash_profile|bash_logout|forward)\z Content
+    =/home\z PermsOnly
+    =/home/[^/]+\z PermsOnly
+    /home/[^/]+/\.ssh Content
+    /home/[^/]+/\.(bashrc|profile|bash_profile|bash_logout|forward)\z Content
+    /var/spool/cron Content
   cis_wave3_ssh.yml: |-
     ---
     # Wave 3, SSH access list. Wazuh SCA 5.1.4 reads `sshd -T` and wants an
