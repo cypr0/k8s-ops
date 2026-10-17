@@ -3538,10 +3538,13 @@ data:
             path = SEC + "/" + f
             lines = active_lines(path) if os.path.exists(path) else ["(absent)"]
             out("  %s: %s" % (f, "; ".join(lines) if lines else "(no active lines)"))
-        r = run(["dpkg-query", "-W", "-f=" + "{" + "Package}" + " " + "{" + "Version}" + " " + "{" + "db:Status-Abbrev}",
-                 "libpam-pwquality"])
+        r = run(["dpkg-query", "-s", "libpam-pwquality"])
         out("== libpam-pwquality")
-        out("  " + ((r.stdout or r.stderr).strip().splitlines() or ["(no answer)"])[0])
+        if r.returncode == 0:
+            keep = [l for l in r.stdout.splitlines() if l.startswith(("Status:", "Version:"))]
+            out("  " + "; ".join(keep))
+        else:
+            out("  not installed")
         names, empty = [], []
         try:
             with open("/etc/shadow") as f:
