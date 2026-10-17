@@ -522,6 +522,12 @@ data:
 
               AcceptEnv LANG LC_*
               Subsystem sftp /usr/lib/openssh/sftp-server
+
+              # CIS wave 3 (cis_wave3_ssh.yml) keeps the AllowUsers list in this
+              # one file. Named by its full path on purpose, not a glob: no file
+              # that merely lands in the directory is ever picked up. sshd and
+              # sshd -t accept an Include of a file that does not exist.
+              Include /etc/ssh/sshd_config.d/10-cis-allowusers.conf
           notify: Restart sshd
 
         - name: Deploy SSH warning banner (CIS 5.2.17)
@@ -937,7 +943,7 @@ data:
     #   2  AppArmor utilities (1.3.1.1); auditd: audispd-plugins, the CIS rules,
     #      explicit log rotation; time servers (chrony, same as the Talos nodes)
     #      AIDE limited to config paths still to come
-    #   3  SSH AllowUsers, PAM, password policy               (not written yet)
+    #   3  SSH AllowUsers (5.1.4); PAM, password policy       (PAM not written yet)
     #
     # Control numbers in comments are those of the Wazuh policy. The CIS numbers
     # in the ansible-debian-cis role differ in places (e.g. PermitRootLogin).
@@ -947,7 +953,7 @@ data:
       gather_facts: yes
 
       vars:
-        cis_waves: [1, 2]
+        cis_waves: [1, 2, 3]
 
         # The account the nightly run connects as. The new CIS audit rules that
         # log file access, deletions, permission changes and mounts leave its
@@ -1012,6 +1018,17 @@ data:
         cis_time_probe_retries: 12
         cis_time_sync_retries: 12
         cis_time_probe_delay: 5
+
+        # SSH access list (Wazuh SCA 5.1.4 wants an AllowUsers line in sshd -T).
+        # root and ansible must be on it: the nightly run connects as both,
+        # and the play refuses any list without them. The admin account joins
+        # when it is created at all. The scanner account is FTP only and stays
+        # off. `present` writes the drop-in, `absent` removes it (access is
+        # then restricted by nothing but the keys). The order of steps, the
+        # probe and the rollback are in cis_wave3_ssh.yml.
+        cis_ssh_access_state: present
+        cis_ssh_allow_users: "{{ ['root', 'ansible'] + ([cis_admin_user] if cis_admin_ssh_pubkeys | length > 0 else []) }}"
+        cis_ssh_dropin: /etc/ssh/sshd_config.d/10-cis-allowusers.conf
 
         # RPC/NFS ports (rpcbind 111, nfsd 2049, mountd 20048, statd 20049,
         # 20050) and the SPICE proxy (3128) reachable from the internal
@@ -1146,6 +1163,10 @@ data:
         - name: Wave 2 — time servers
           ansible.builtin.include_tasks: cis_wave2_time.yml
           when: 2 in cis_waves
+
+        - name: Wave 3 — SSH access list
+          ansible.builtin.include_tasks: cis_wave3_ssh.yml
+          when: 3 in cis_waves
 
       handlers:
         # The handlers of hardening.yml belong to its own play and are not
@@ -2091,6 +2112,600 @@ data:
     - name: time | After
       ansible.builtin.debug:
         msg: "{{ cis_time_after.stdout_lines }}"
+
+  cis_wave3_ssh.yml: |-
+    ---
+    # Wave 3, SSH access list. Wazuh SCA 5.1.4 reads `sshd -T` and wants an
+    # AllowUsers (or AllowGroups, DenyUsers, DenyGroups) line. Decided
+    # 2026-10-17: AllowUsers root ansible and the admin account. The nightly run
+    # connects as root (bootstrap play) and as ansible (everything else), the
+    # admin account is the human; the scanner account is FTP only.
+    #
+    # The list lives in a drop-in, /etc/ssh/sshd_config.d/10-cis-allowusers.conf,
+    # which the sshd_config of hardening.yml includes by that one fixed path (no
+    # glob, so no unknown file is ever picked up). The include of a file that does
+    # not exist is harmless (sshd -t and sshd accept it, measured with OpenSSH
+    # 10.0p1); that is the state until this wave has written the file.
+    #
+    # A wrong list locks people out, and the Job connects over SSH, so the change
+    # is made in this order and nothing else:
+    #   1. Only in a run that changes the list: PROBE. A second sshd on 127.0.0.1
+    #      with a copy of the real sshd_config and the new list; every listed user
+    #      must get in with a throwaway key, and a control with a list naming only
+    #      a bogus account must refuse the first one. The real sshd is not touched.
+    #      The probe is run from /scripts, it is not left on the host.
+    #   2. Write the drop-in, `sshd -t`, restart sshd (the commands of the
+    #      Restart sshd handler in hardening.yml).
+    #   3. FRESH logins from the Job pod as root and as ansible, each one a new
+    #      ssh process with ControlPath=none. The check cannot use Ansible's own
+    #      connection: it is persistent, survives the restart, and would say "all
+    #      is well" even if no new login worked.
+    #   4. If anything in 2 or 3 fails: put the previous state back (previous
+    #      content, or no file) and restart sshd, through that very persistent
+    #      connection, which is still open because a restart keeps established
+    #      sessions (the unit has KillMode=process). Then the run fails, loudly.
+    # A night on which the list is already right does none of this: no probe, no
+    # restart, no login.
+    #
+    # fail2ban here bans an address after 4 failures in 10 minutes (jail sshd,
+    # 2 hours); its whitelist is loopback and allowed_ip, and whether the Job's
+    # source address is allowed_ip was not checked, so it is assumed NOT to be. A
+    # login refused by AllowUsers counts once (measured with the shipped filter in
+    # a container), so step 3 makes one attempt per account, at most two failures,
+    # and the probe, which runs on loopback, is not seen from outside.
+    #
+    # What the probe leaves in auth.log: PAM writes "session opened/closed for
+    # user NAME" for each probe login to syslog directly (sshd's own lines stay on
+    # the probe's stderr). Wazuh rules 5501/5502 (level 3) alert on those lines.
+    # One burst, only in the run that changes the list, and the reason it is not
+    # run every night. No wtmp entry is written.
+    #
+    # Not verified here: that the admin account's real key works (the probe uses
+    # its own key to test the AllowUsers decision, not the account's
+    # authorized_keys; that file is untouched by this wave), and what the running
+    # daemon does with a user that is NOT listed (the probe's control covers a
+    # second daemon with the same configuration).
+    #
+    # No dollar signs in this file: Flux substitutes them in the ConfigMap.
+    - name: ssh access | the requested state and list must make sense
+      ansible.builtin.assert:
+        that:
+          - cis_ssh_access_state in ['present', 'absent']
+          - "'root' in cis_ssh_allow_users"
+          - "'ansible' in cis_ssh_allow_users"
+          - ansible_user | default('ansible') in cis_ssh_allow_users or cis_ssh_access_state == 'absent'
+          - cis_ssh_allow_users | unique | length == cis_ssh_allow_users | length
+          - cis_ssh_allow_users | reject('match', '[a-z_]') | list | length == 0
+          - cis_ssh_allow_users | select('search', '[^a-z0-9_-]') | list | length == 0
+        fail_msg: >-
+          cis_ssh_access_state is '{{ cis_ssh_access_state }}' (present or absent
+          expected), or cis_ssh_allow_users ({{ cis_ssh_allow_users | join(' ') }})
+          lacks root or ansible (the nightly run connects as both), has
+          duplicates, or holds something that is not a plain account name.
+          Nothing was changed on the host.
+
+    - name: ssh access | every listed account must exist
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ item }}"
+      loop: "{{ cis_ssh_allow_users }}"
+      when: cis_ssh_access_state == 'present'
+
+    - name: ssh access | sshd_config must include the drop-in
+      ansible.builtin.command: grep -c -x -F 'Include {{ cis_ssh_dropin }}' /etc/ssh/sshd_config
+      register: cis_ssh_inc
+      changed_when: false
+      failed_when: cis_ssh_inc.rc > 1
+      check_mode: false
+
+    # In a dry run the Include line may not be there yet: hardening.yml adds it
+    # in the same run and, being a dry run, has not.
+    - name: ssh access | sshd_config must include the drop-in (result)
+      ansible.builtin.assert:
+        that: cis_ssh_inc.rc == 0
+        fail_msg: >-
+          /etc/ssh/sshd_config has no line "Include {{ cis_ssh_dropin }}"; the
+          sshd_config deployed by hardening.yml carries it. Without it a drop-in
+          would be ignored. Nothing was changed.
+      when:
+        - cis_ssh_access_state == 'present'
+        - not ansible_check_mode
+
+    - name: ssh access | Read the current state (read only)
+      ansible.builtin.shell:
+        cmd: |
+          echo "== include lines in sshd_config"
+          grep -n -i '^include' /etc/ssh/sshd_config
+          echo "== sshd_config.d"
+          ls -l /etc/ssh/sshd_config.d 2>&1
+          echo "== effective, from sshd -T"
+          /usr/sbin/sshd -T 2>&1 | grep -i -E '^(allowusers|allowgroups|denyusers|denygroups|permitrootlogin|authenticationmethods|usepam) ' || true
+        executable: /bin/bash
+      register: cis_ssh_before
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: ssh access | Before
+      ansible.builtin.debug:
+        msg: "{{ cis_ssh_before.stdout_lines }}"
+
+    - name: ssh access | what the drop-in says now
+      ansible.builtin.slurp:
+        src: "{{ cis_ssh_dropin }}"
+      register: cis_ssh_cur
+      failed_when: false
+
+    - name: ssh access | what it should say, and whether that is a change
+      ansible.builtin.set_fact:
+        cis_ssh_have: "{{ (cis_ssh_cur.content | b64decode) if cis_ssh_cur.content is defined else '' }}"
+        cis_ssh_exists: "{{ cis_ssh_cur.content is defined }}"
+        cis_ssh_want: |
+          # Managed by proxmox-ansible (CIS wave 3, SSH access list). Do not edit.
+          # Wazuh SCA 5.1.4 reads sshd -T. root and ansible must stay on the list:
+          # the nightly run connects as both.
+          AllowUsers {{ cis_ssh_allow_users | join(' ') }}
+
+    - name: ssh access | is the drop-in to change?
+      ansible.builtin.set_fact:
+        cis_ssh_need: "{{ (cis_ssh_have != cis_ssh_want) if cis_ssh_access_state == 'present' else cis_ssh_exists }}"
+
+    - name: ssh access | sshd_config.d exists
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: cis_ssh_access_state == 'present'
+
+    # ── present ──────────────────────────────────────────────────────────────
+    - name: ssh access | (dry run) what would be written
+      ansible.builtin.copy:
+        dest: "{{ cis_ssh_dropin }}"
+        content: "{{ cis_ssh_want }}"
+        owner: root
+        group: root
+        mode: "0644"
+      when:
+        - cis_ssh_access_state == 'present'
+        - ansible_check_mode
+
+    - name: ssh access | change the list, check, and roll back on failure
+      when:
+        - cis_ssh_access_state == 'present'
+        - cis_ssh_need | bool
+        - not ansible_check_mode
+      block:
+        - name: ssh access | probe the new list on a second sshd (loopback, nothing real is touched)
+          ansible.builtin.script:
+            cmd: /scripts/cis_ssh_probe.py --config /etc/ssh/sshd_config --allow {{ cis_ssh_allow_users | join(' ') }}
+          register: cis_ssh_probe
+          changed_when: false
+
+        - name: ssh access | Probe
+          ansible.builtin.debug:
+            msg: "{{ cis_ssh_probe.stdout_lines }}"
+
+        - name: ssh access | write the drop-in
+          ansible.builtin.copy:
+            dest: "{{ cis_ssh_dropin }}"
+            content: "{{ cis_ssh_want }}"
+            owner: root
+            group: root
+            mode: "0644"
+          register: cis_ssh_written
+
+        - name: ssh access | sshd must accept the configuration
+          ansible.builtin.command: /usr/sbin/sshd -t
+          changed_when: false
+
+        - name: ssh access | restart sshd
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              /usr/sbin/sshd -t
+              if systemctl is-active --quiet ssh.service; then
+                systemctl restart ssh.service
+              elif systemctl is-active --quiet ssh.socket; then
+                systemctl restart ssh.socket
+              else
+                systemctl start ssh.service
+              fi
+            executable: /bin/bash
+          register: cis_ssh_restart
+          changed_when: true
+
+        # A fresh ssh process each time: ControlPath=none, no multiplexing. One
+        # attempt per account, so a refusal counts once for fail2ban.
+        - name: ssh access | a fresh login still works, as root and as ansible
+          ansible.builtin.command:
+            argv:
+              - ssh
+              - -F
+              - /dev/null
+              - -i
+              - "{{ item.key }}"
+              - -o
+              - IdentitiesOnly=yes
+              - -o
+              - BatchMode=yes
+              - -o
+              - ControlMaster=no
+              - -o
+              - ControlPath=none
+              - -o
+              - StrictHostKeyChecking=no
+              - -o
+              - UserKnownHostsFile=/dev/null
+              - -o
+              - ConnectTimeout=20
+              - -o
+              - ConnectionAttempts=1
+              - -l
+              - "{{ item.user }}"
+              - "{{ hostvars[inventory_hostname]['ansible_host'] }}"
+              - echo cis-login-ok
+          loop:
+            - user: root
+              key: "{{ hostvars[groups['proxmox_root'][0]]['ansible_ssh_private_key_file'] }}"
+            - user: ansible
+              key: "{{ hostvars[inventory_hostname]['ansible_ssh_private_key_file'] }}"
+          loop_control:
+            label: "{{ item.user }}"
+          delegate_to: localhost
+          become: false
+          register: cis_ssh_fresh
+          changed_when: false
+          failed_when: cis_ssh_fresh.rc != 0 or 'cis-login-ok' not in cis_ssh_fresh.stdout
+
+        - name: ssh access | the new list as sshd reports it
+          ansible.builtin.command: /usr/sbin/sshd -T
+          register: cis_ssh_effective
+          changed_when: false
+          failed_when: >-
+            cis_ssh_effective.stdout_lines
+            | select('match', '(?i)allowusers ')
+            | map('regex_replace', '(?i)^allowusers ', '')
+            | sort | list != cis_ssh_allow_users | sort | list
+      rescue:
+        - name: ssh access | roll back, put the previous content back
+          ansible.builtin.copy:
+            dest: "{{ cis_ssh_dropin }}"
+            content: "{{ cis_ssh_have }}"
+            owner: root
+            group: root
+            mode: "0644"
+          when:
+            - cis_ssh_written is defined
+            - cis_ssh_written is changed
+            - cis_ssh_exists | bool
+
+        - name: ssh access | roll back, there was no drop-in before
+          ansible.builtin.file:
+            path: "{{ cis_ssh_dropin }}"
+            state: absent
+          when:
+            - cis_ssh_written is defined
+            - cis_ssh_written is changed
+            - not (cis_ssh_exists | bool)
+
+        - name: ssh access | roll back, restart sshd with what was there before
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              /usr/sbin/sshd -t
+              if systemctl is-active --quiet ssh.service; then
+                systemctl restart ssh.service
+              elif systemctl is-active --quiet ssh.socket; then
+                systemctl restart ssh.socket
+              else
+                systemctl start ssh.service
+              fi
+            executable: /bin/bash
+          changed_when: true
+          when:
+            - cis_ssh_written is defined
+            - cis_ssh_written is changed
+            - cis_ssh_restart is defined
+
+        - name: ssh access | stop here
+          ansible.builtin.fail:
+            msg: >-
+              Changing the SSH access list failed (the output above shows at which
+              step: probe, write, sshd -t, restart, a fresh login as root or
+              ansible, or the effective list). If the drop-in had been written, it
+              was put back as it was before (or removed, if there was none) and
+              sshd was restarted through the connection of this run. Nothing else
+              was changed.
+
+    # ── absent: widen access again ───────────────────────────────────────────
+    - name: ssh access | take the access list out again
+      when: cis_ssh_access_state == 'absent'
+      block:
+        - name: ssh access | remove the drop-in
+          ansible.builtin.file:
+            path: "{{ cis_ssh_dropin }}"
+            state: absent
+          register: cis_ssh_removed
+
+        - name: ssh access | restart sshd (only if the drop-in was there)
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              /usr/sbin/sshd -t
+              if systemctl is-active --quiet ssh.service; then
+                systemctl restart ssh.service
+              elif systemctl is-active --quiet ssh.socket; then
+                systemctl restart ssh.socket
+              else
+                systemctl start ssh.service
+              fi
+            executable: /bin/bash
+          changed_when: true
+          when: cis_ssh_removed is changed
+
+    - name: ssh access | Read the state afterwards (read only)
+      ansible.builtin.shell:
+        cmd: |
+          echo "== effective, from sshd -T"
+          /usr/sbin/sshd -T 2>&1 | grep -i -E '^(allowusers|allowgroups|denyusers|denygroups) ' || echo "(no access list)"
+          echo "== sshd active"
+          systemctl is-active ssh.service ssh.socket 2>&1
+        executable: /bin/bash
+      register: cis_ssh_after
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: ssh access | After
+      ansible.builtin.debug:
+        msg: "{{ cis_ssh_after.stdout_lines }}"
+
+  cis_ssh_probe.py: |-
+    #!/usr/bin/env python3
+    """Would sshd, with this AllowUsers list, still let the people in who need it?
+
+    Starts a SECOND sshd on 127.0.0.1 (random port, own host key, its own log on
+    stderr instead of syslog) from a copy of the real sshd_config, with the
+    candidate AllowUsers list, and logs in to it as every listed user with a
+    throwaway key. Then a control: the same daemon with an AllowUsers list that
+    names only an account that does not exist must REFUSE the first user, and say
+    so ("not listed in AllowUsers"). Without the control, "everyone got in" could
+    just mean that AllowUsers was ignored.
+
+    The real sshd, its configuration and its port are never touched.
+
+    What the probe DOES leave behind (measured in a Debian 13 container with
+    rsyslog): sshd's own lines about the probe daemon go to its stderr (-e), not
+    to syslog, so "Accepted publickey" never reaches auth.log. PAM, however,
+    writes to syslog directly, so each successful probe login leaves two lines in
+    auth.log, "sshd-session: pam_unix(sshd:session): session opened/closed for
+    user NAME(uid=N) by NAME(uid=0)", without a PID. The Wazuh rules 5501 and
+    5502 (level 3) alert on exactly those lines. The login attempts use -N: they
+    authenticate and hang up, no session is opened and wtmp is not written
+    (measured with a control login that has a PTY). The caller should therefore
+    run the probe only when the list is about to change, not every night.
+
+    Directives the probe sets itself (listen address, port, host key, pid file,
+    authorized keys, StrictModes, Banner) and AllowUsers are dropped from the
+    copy; everything else (AuthenticationMethods, PermitRootLogin, UsePAM, ...)
+    is what the real daemon runs with. A Match block, AllowGroups, DenyUsers or
+    DenyGroups is not modelled: if the file has one, the probe refuses to run.
+
+    usage: cis-ssh-probe --config /etc/ssh/sshd_config --allow USER [USER ...]
+    Exit 0 and "result: ok" if every check holds; anything else is a failure.
+    """
+    import argparse
+    import os
+    import re
+    import select
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    import tempfile
+    import time
+
+    SSHD = "/usr/sbin/sshd"
+    SSH = "/usr/bin/ssh"
+    KEYGEN = "/usr/bin/ssh-keygen"
+    BOGUS_USER = "cis-probe-nobody"
+
+    # Set by the probe itself or replaced by the candidate list.
+    DROPPED = {
+        "port", "listenaddress", "addressfamily", "hostkey", "pidfile",
+        "authorizedkeysfile", "strictmodes", "banner", "include", "allowusers",
+    }
+
+    # Other access lists would change what AllowUsers means (all of them must
+    # agree). The probe does not model them; dropping them would make it say "ok"
+    # where the real daemon says no, so it refuses instead.
+    REFUSED = {"allowgroups", "denyusers", "denygroups"}
+
+    def fail(msg):
+        print("result: FAILED - " + msg)
+        sys.exit(1)
+
+    def free_port():
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        return port
+
+    def probe_config(real_text, port, workdir, allow):
+        kept = []
+        for line in real_text.splitlines():
+            s = line.strip()
+            if s and not s.startswith("#"):
+                word = re.split(r"[\s=]+", s, maxsplit=1)[0].lower()
+                if word == "match":
+                    fail("sshd_config has a Match block, which this probe does not "
+                         "model; nothing was changed")
+                if word in REFUSED:
+                    fail("sshd_config has a %s line, which this probe does not model; "
+                         "nothing was changed" % word)
+                if word in DROPPED:
+                    continue
+            kept.append(line)
+        head = [
+            "Port %d" % port,
+            "ListenAddress 127.0.0.1",
+            "AddressFamily inet",
+            "HostKey %s/hostkey" % workdir,
+            "PidFile %s/sshd.pid" % workdir,
+            "AuthorizedKeysFile %s/authorized_keys" % workdir,
+            "StrictModes no",
+            "Banner none",
+        ]
+        tail = ["AllowUsers " + " ".join(allow)]
+        return "\n".join(head + kept + tail) + "\n"
+
+    def start_daemon(workdir, name, text, port):
+        cfg = os.path.join(workdir, name + ".conf")
+        with open(cfg, "w") as f:
+            f.write(text)
+        # sshd -t first: a config that does not parse says why, instead of an
+        # opaque timeout waiting for the port.
+        t = subprocess.run([SSHD, "-t", "-f", cfg], capture_output=True, text=True)
+        if t.returncode != 0:
+            fail("sshd -t on the probe configuration failed: " + t.stderr.strip()[-300:])
+        log = open(os.path.join(workdir, name + ".log"), "w")
+        proc = subprocess.Popen([SSHD, "-D", "-e", "-f", cfg], stdin=subprocess.DEVNULL,
+                                stdout=log, stderr=log)
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                fail("the probe sshd exited at once: " + read_tail(workdir, name))
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=1).close()
+                return proc
+            except OSError:
+                time.sleep(0.2)
+        proc.kill()
+        fail("the probe sshd did not open its port in time")
+
+    def read_tail(workdir, name, n=400):
+        try:
+            with open(os.path.join(workdir, name + ".log")) as f:
+                return f.read()[-n:].strip()
+        except OSError:
+            return "(no log)"
+
+    def stop_daemon(proc):
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+    def try_login(port, key, user):
+        """True if sshd authenticated this user. -N: hang up straight after."""
+        cmd = [
+            SSH, "-F", "/dev/null", "-v", "-N", "-i", key,
+            "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "ControlMaster=no", "-o", "ControlPath=none",
+            "-o", "ConnectTimeout=10", "-p", str(port), "-l", user, "127.0.0.1",
+        ]
+        p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.PIPE)
+        fd = p.stderr.fileno()
+        seen = b""
+        ok = False
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            r, _, _ = select.select([fd], [], [], 0.5)
+            if r:
+                chunk = os.read(fd, 4096)
+                if not chunk:
+                    break
+                seen += chunk
+                if b"Authenticated to" in seen or b"Authentication succeeded" in seen:
+                    ok = True
+                    break
+            elif p.poll() is not None:
+                break
+        p.kill()
+        p.wait()
+        last = seen.decode(errors="replace").strip().splitlines()[-1:] or [""]
+        return ok, last[0][:160]
+
+    def main():
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--config", default="/etc/ssh/sshd_config")
+        ap.add_argument("--allow", nargs="+", required=True)
+        args = ap.parse_args()
+
+        for u in args.allow:
+            if not re.fullmatch(r"[a-z_][a-z0-9_-]*", u):
+                fail("user name %r is not a plain account name" % u)
+        if os.geteuid() != 0:
+            fail("must run as root")
+        for tool in (SSHD, SSH, KEYGEN):
+            if not os.access(tool, os.X_OK):
+                fail(tool + " is missing")
+        real = open(args.config).read()
+
+        # sshd's privilege-separation directory; it is normally there while the
+        # real sshd runs, and sshd refuses to start without it.
+        os.makedirs("/run/sshd", mode=0o755, exist_ok=True)
+
+        workdir = tempfile.mkdtemp(prefix="cis-ssh-probe-", dir="/run")
+        # The probe sshd reads authorized_keys as the user it authenticates, so
+        # the directory must be traversable. Only public material is readable.
+        os.chmod(workdir, 0o755)
+        daemons = []
+        try:
+            for kind in ("hostkey", "client"):
+                subprocess.run([KEYGEN, "-q", "-t", "ed25519", "-N", "", "-C", "cis-ssh-probe",
+                                "-f", os.path.join(workdir, kind)], check=True)
+            shutil.copy(os.path.join(workdir, "client.pub"),
+                        os.path.join(workdir, "authorized_keys"))
+            os.chmod(os.path.join(workdir, "authorized_keys"), 0o644)
+            key = os.path.join(workdir, "client")
+
+            port = free_port()
+            print("probe: candidate AllowUsers %s on 127.0.0.1:%d" % (" ".join(args.allow), port))
+            d = start_daemon(workdir, "candidate",
+                             probe_config(real, port, workdir, args.allow), port)
+            daemons.append(d)
+            bad = []
+            for user in args.allow:
+                ok, last = try_login(port, key, user)
+                print("probe: login %-16s %s" % (user, "ok" if ok else "REFUSED (" + last + ")"))
+                if not ok:
+                    bad.append(user)
+            stop_daemon(d)
+            if bad:
+                fail("these users could not log in with the candidate configuration: "
+                     + ", ".join(bad) + ". Daemon log: " + read_tail(workdir, "candidate"))
+
+            port2 = free_port()
+            d2 = start_daemon(workdir, "control",
+                              probe_config(real, port2, workdir, [BOGUS_USER]), port2)
+            daemons.append(d2)
+            first = args.allow[0]
+            ok, last = try_login(port2, key, first)
+            stop_daemon(d2)
+            said = "not listed in AllowUsers" in read_tail(workdir, "control", 4000)
+            print("probe: control, AllowUsers names only %s: %s %s; log says 'not listed in "
+                  "AllowUsers': %s" % (BOGUS_USER, first, "got in" if ok else "refused",
+                                       "yes" if said else "no"))
+            if ok or not said:
+                fail("the control did not behave: AllowUsers does not seem to be enforced by "
+                     "this sshd, so the logins above prove nothing")
+            print("result: ok")
+        finally:
+            for d in daemons:
+                stop_daemon(d)
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    if __name__ == "__main__":
+        main()
 
   cis_rpc_lockdown.yml: |-
     ---
