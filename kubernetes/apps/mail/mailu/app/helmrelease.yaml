@@ -139,6 +139,30 @@ spec:
       enabled: false
       existingSecret: mailu-tls
       tlsFlavorOverride: mail
+      # Real client IP for front's HTTP side (webmail, admin, /sso/login,
+      # /webdav). front hands admin $remote_addr as X-Real-IP, and admin
+      # buckets AUTH_RATELIMIT_IP (60/hour per /24) on it. Internet requests
+      # reach front from the cloudflared pod (webmail.${SECRET_DOMAIN} routes
+      # straight to mailu-front, see cloudflare-tunnel's helmrelease.yaml).
+      # With the chart defaults (header X-Forwarded-For, empty realIpFrom)
+      # nginx's realip stayed inactive, so every Internet client shared
+      # cloudflared's bucket, and 60 failed logins an hour from anyone
+      # locked every Internet user out of SSO (confirmed live 2026-10-17).
+      #
+      # CF-Connecting-IP because Cloudflare sets it from the TCP peer and
+      # answers 403 when a client sends its own. Never True-Client-IP:
+      # Cloudflare forwards a client-sent one verbatim. Both verified live
+      # 2026-10-17. 10.42.0.0/16 is the pod CIDR. LAN clients
+      # (service-front-webmail-lan.yaml, externalTrafficPolicy Local) arrive
+      # from 192.168.x / 10.10.0.2, outside it, and keep their own address.
+      # The mail ports are untouched: front applies realIpFrom there only
+      # together with PROXY protocol, which is off.
+      #
+      # Keep the two keys together. realIpFrom with an empty realIpHeader
+      # makes nginx trust X-Real-IP, which any pod that can reach front:443
+      # can set.
+      realIpHeader: CF-Connecting-IP
+      realIpFrom: "10.42.0.0/16"
 
     front:
       # DaemonSet (one front pod per worker node), not the chart's default
@@ -157,6 +181,12 @@ spec:
       # is stateless nginx, and RWX storage (persistence.storageClass:
       # zfs-nfs, see below) already lets multiple pods mount the same volume.
       kind: DaemonSet
+      # Bump whenever a value front reads from the mailu-envvars ConfigMap
+      # changes (e.g. ingress.realIpHeader/realIpFrom above). The chart
+      # doesn't checksum that ConfigMap into the pod template, and front
+      # renders nginx.conf from its environment only at container start.
+      podAnnotations:
+        k8s-ops/front-config-revision: "1"
       hostPort:
         enabled: false
       externalService:
