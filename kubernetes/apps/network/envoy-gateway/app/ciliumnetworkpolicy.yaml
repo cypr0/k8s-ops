@@ -187,6 +187,16 @@ spec:
         - ports:
             - port: "10443"
               protocol: TCP
+    # hermes-agent: desktop backend's OIDC discovery/token exchange/JWKS with
+    # Authentik (id.cisotop.de)
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
     # Collabora: WOPI CheckFileInfo callback to cloud.cisotop.de (envoy-internal)
     - fromEndpoints:
         - matchLabels:
@@ -304,6 +314,17 @@ spec:
       toPorts:
         - ports:
             - port: "2283"
+              protocol: TCP
+    # Backend: hermes-agent namespace (desktop backend :9119, served via
+    # envoy-internal as hermes.cisotop.de). Only the agent's own pods: the
+    # MCP servers and Firecrawl in the same namespace are not published.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "9119"
               protocol: TCP
     # Backend: wazuh namespace (wazuh-dashboard :5601, served via
     # envoy-internal). Plain HTTP on purpose -- the dashboard runs with

@@ -1,8 +1,7 @@
 ---
-# hermes-agent: WhatsApp-first AI agent, now also reachable in-cluster on
-# the webhook platform's port (service.yaml) -- see the ingress rule below.
-# Still no HTTPRoute/Ingress: nothing outside the cluster can reach this
-# agent.
+# hermes-agent: WhatsApp-first AI agent, reachable in-cluster on the webhook
+# platform's port (service.yaml), and from the LAN on the desktop backend's
+# port 9119 -- only through envoy-internal (httproute.yaml), never directly.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -41,7 +40,19 @@ spec:
         - ports:
             - port: "8644"
               protocol: TCP
-    # Gatus health check
+    # Hermes Desktop backend (config.yaml's dashboard: block), only via the
+    # Envoy proxies -- the one path that terminates TLS for
+    # hermes.${SECRET_DOMAIN}. The app's OIDC gate is the authentication;
+    # this rule just keeps any other pod from talking to 9119 directly.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "9119"
+              protocol: TCP
+    # Gatus health check (webhook TCP connect, desktop backend /api/status)
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
@@ -49,6 +60,8 @@ spec:
       toPorts:
         - ports:
             - port: "8644"
+              protocol: TCP
+            - port: "9119"
               protocol: TCP
   egress:
     # DNS resolution
@@ -79,6 +92,18 @@ spec:
     # tool): read-only Kubernetes API access (RBAC-gated, see rbac.yaml)
     - toEntities:
         - kube-apiserver
+    # Desktop backend's OIDC calls to Authentik (discovery, token exchange,
+    # JWKS). CoreDNS's hosts plugin resolves id.${SECRET_DOMAIN} to
+    # envoy-internal's ClusterIP, so this lands on an Envoy pod, not on
+    # `world` -- and post-DNAT, so it's the container port 10443, not 443.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "10443"
+              protocol: TCP
     # paperless-mcp/nextcloud-mcp: standalone MCP servers this agent
     # connects to as a remote HTTP MCP client (see config.yaml's
     # mcp_servers section and kubernetes/apps/hermes-agent/{paperless-mcp,

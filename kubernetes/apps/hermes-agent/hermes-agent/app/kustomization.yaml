@@ -10,6 +10,7 @@ resources:
   - ./job-portfolio-schema.yaml
   - ./deployment.yaml
   - ./service.yaml
+  - ./httproute.yaml
   - ./rbac.yaml
   - ./ciliumnetworkpolicy.yaml
 

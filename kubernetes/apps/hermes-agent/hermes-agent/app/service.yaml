@@ -1,10 +1,11 @@
 ---
-# ClusterIP only, deliberately no HTTPRoute/Ingress: the webhook platform
-# (config.yaml's platforms.webhook) is for IN-CLUSTER callers only -- right
-# now just paperless-ngx's Workflow "Webhook" action notifying this agent
-# about newly-consumed documents (see paperless's own webhook workflow +
-# this app's ciliumnetworkpolicy.yaml for the matching CNP rule). No
-# external exposure was requested or is needed.
+# Two ports, two audiences:
+# - webhook (8644): IN-CLUSTER callers only (paperless-ngx's Workflow
+#   "Webhook" action, Open WebUI's hermes_agent Tool). No HTTPRoute points
+#   at it; ciliumnetworkpolicy.yaml limits who can connect.
+# - dashboard (9119): the Hermes Desktop backend (config.yaml's dashboard:
+#   block), published through httproute.yaml on envoy-internal only, behind
+#   Authentik OIDC.
 apiVersion: v1
 kind: Service
 metadata:
@@ -18,4 +19,8 @@ spec:
     - name: webhook
       port: 8644
       targetPort: 8644
+      protocol: TCP
+    - name: dashboard
+      port: 9119
+      targetPort: 9119
       protocol: TCP

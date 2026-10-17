@@ -9,7 +9,7 @@ SSO/OIDC broker for every user-facing app in the cluster (Grafana, Paperless, Op
 
 ## Architecture at a glance
 - **Depends on:** CNPG postgres (`postgres-rw.database.svc.cluster.local`, database `authentik`), Dragonfly (`dragonfly.database.svc.cluster.local`, redis DB 1), 1Password (`ClusterSecretStore/onepassword`) for `authentik-secret` and 7 per-client OIDC secrets. MaxMind GeoLite2 via the `geoip` sidecar is *not* currently a live dependency — `geoip.enabled: false` since commit `aff638d` and unchanged since (see Known quirks).
-- **Depended on by:** Grafana, Proxmox, Paperless, Open WebUI, Nextcloud, Immich, Wazuh (OIDC clients — numbered blueprints in `kubernetes/apps/security/authentik/app/blueprints/`; `07` added for Immich in commit `214b2a6`, `09` for Wazuh; `02` was OpenSearch and was removed with it on 2026-09-20, leaving a gap in the numbering), plus 7 numbered `00N-cisotop-*` blueprints for password/MFA/enrollment/Turnstile/passwordless/notification flows.
+- **Depended on by:** Grafana, Proxmox, Paperless, Open WebUI, Nextcloud, Immich, Wazuh, hermes-agent's desktop backend (`10`, public client — no secret) (OIDC clients — numbered blueprints in `kubernetes/apps/security/authentik/app/blueprints/`; `07` added for Immich in commit `214b2a6`, `09` for Wazuh; `02` was OpenSearch and was removed with it on 2026-09-20, leaving a gap in the numbering), plus 7 numbered `00N-cisotop-*` blueprints for password/MFA/enrollment/Turnstile/passwordless/notification flows.
 
 ## Repo layout
 | File | Purpose |
