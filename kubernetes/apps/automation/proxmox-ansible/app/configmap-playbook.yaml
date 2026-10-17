@@ -934,8 +934,9 @@ data:
     # Waves (remove a number from cis_waves to switch that wave off):
     #   1  file permissions, banners, telnet removal, sudo logging, su restriction
     #      - touches none of authentication, SSH, PAM or the network
-    #   2  so far only the AppArmor utilities (1.3.1.1)
-    #      auditd rules and AIDE limited to config paths still to come
+    #   2  AppArmor utilities (1.3.1.1); auditd: audispd-plugins, the CIS rules,
+    #      explicit log rotation
+    #      AIDE limited to config paths still to come
     #   3  SSH AllowUsers, PAM, password policy               (not written yet)
     #
     # Control numbers in comments are those of the Wazuh policy. The CIS numbers
@@ -947,6 +948,37 @@ data:
 
       vars:
         cis_waves: [1, 2]
+
+        # The account the nightly run connects as. The new CIS audit rules that
+        # log file access, deletions, permission changes and mounts leave its
+        # sessions out (decided 2026-10-11): a play that touches hundreds of
+        # files every night would otherwise drown them. What it runs is still
+        # logged: the execve rule in hardening.yml (key audit-wazuh-c) has no
+        # such exception, and that is what stands in for sudo NOPASSWD.
+        cis_automation_user: ansible
+
+        # The new CIS audit rules (/etc/audit/rules.d/70-cis.rules and
+        # 71-cis.+.rules): `present` writes and loads them, `absent` removes
+        # both files and reloads. The
+        # volume they cause on this host has not been measured; the report at
+        # the end of cis_wave2_audit.yml prints events per key after each run.
+        # If it is too much, `absent` here, merge, and the next run (nightly or a
+        # manual Job) takes them out again without anyone touching the host.
+        # 60-wazuh.rules (hardening.yml) is not affected either way.
+        cis_audit_rules_state: present
+        cis_audit_keys:
+          - scope
+          - sudo_log_file
+          - time-change
+          - system-locale
+          - access
+          - identity
+          - perm_mod
+          - mounts
+          - session
+          - logins
+          - delete
+          - kernel_modules
 
         # A dedicated human admin next to root (bootstrap only) and ansible
         # (automation): key-only SSH, member of the sudo group. Nothing happens
@@ -1090,6 +1122,21 @@ data:
         - name: Wave 2 — AppArmor utilities
           ansible.builtin.include_tasks: cis_wave2.yml
           when: 2 in cis_waves
+
+        - name: Wave 2 — auditd
+          ansible.builtin.include_tasks: cis_wave2_audit.yml
+          when: 2 in cis_waves
+
+      handlers:
+        # The handlers of hardening.yml belong to its own play and are not
+        # visible here. Same commands: augenrules merges rules.d/ and loads it
+        # (restarting auditd through systemd is refused), SIGHUP makes auditd
+        # re-read auditd.conf in place.
+        - name: Load audit rules
+          ansible.builtin.command: augenrules --load
+
+        - name: Reload auditd config
+          ansible.builtin.command: auditctl --signal reload
 
   cis_wave1.yml: |-
     ---
@@ -1395,6 +1442,351 @@ data:
             name: apparmor-utils
             state: present
             install_recommends: no
+
+  cis_wave2_audit.yml: |-
+    ---
+    # Wave 2, auditd. Numbers are those of the Wazuh SCA policy cis_debian13.
+    #
+    # Decided 2026-10-11: the new rules leave the automation account out where a
+    # rule can say so (a play that touches hundreds of files every night would
+    # drown them); log rotation is explicit and bounded; the checks that would
+    # halt or single-user the host when the audit disk fills (6.2.2.3, 6.2.2.4),
+    # keep every log forever (6.2.2.2), immutable rules (6.2.3.20) and the boot
+    # parameter 6.2.1.4 stay exceptions.
+    #
+    # Why the file is called 70-cis.rules: the kernel logs only the key of the
+    # FIRST rule that matches an event (measured 2026-10-11 with two watches on
+    # one path: the one loaded first is the only key in the log). 60-wazuh.rules
+    # already watches sudoers, sudoers.d, passwd, shadow and group under the
+    # key audit-wazuh-w; if a CIS rule for the same path loaded before it, Wazuh
+    # would silently stop seeing those events. augenrules loads files in name
+    # order, so 70 comes after 60.
+    #
+    # augenrules --load runs auditctl -R, which stops at the first line it
+    # cannot load (measured): everything before it stays loaded, everything
+    # after it is not. Rules that Wazuh depends on are therefore loaded first,
+    # and a rules file that failed to load once is not silently skipped on the
+    # next run: the keys are checked against `auditctl -l` every time and the
+    # rules are loaded again if one is missing.
+
+    # ── 6.2.1.1  audispd-plugins ─────────────────────────────────────────
+    # The rule is two dpkg calls: auditd and audispd-plugins installed. The
+    # package ships the remote-forwarding plugins switched off (active = no,
+    # checked in a Debian 13 container) and its maintainer scripts only move
+    # conffiles; nothing is started or restarted. It depends on auditd of the
+    # same version, so an auditd upgrade would show up as a changed installed
+    # package in the simulation and stop the run.
+    - name: CIS 6.2.1.1 | Gather package facts
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: CIS 6.2.1.1 | auditd itself must already be installed
+      ansible.builtin.assert:
+        that:
+          - "'auditd' in ansible_facts.packages"
+        fail_msg: >-
+          auditd is not installed, which hardening.yml should have done. Not
+          installing anything here.
+
+    - name: CIS 6.2.1.1 | Install audispd-plugins
+      when: "'audispd-plugins' not in ansible_facts.packages"
+      block:
+        - name: CIS 6.2.1.1 | Package index no older than an hour
+          ansible.builtin.apt:
+            update_cache: yes
+            cache_valid_time: 3600
+
+        - name: CIS 6.2.1.1 | Simulate the installation
+          ansible.builtin.command:
+            argv: [apt-get, --simulate, --no-install-recommends, install, audispd-plugins]
+          environment:
+            LC_ALL: C
+          register: cis_ap_sim
+          changed_when: false
+          check_mode: false
+
+        # Fail closed: audispd-plugins itself plus libraries it links against
+        # (libldap2, libsasl2 on a plain Debian) are fine; a removal, a version
+        # change of an installed package or any other new package is not.
+        - name: CIS 6.2.1.1 | Refuse unless it only adds the plugin and libraries
+          ansible.builtin.assert:
+            that:
+              - "'audispd-plugins' in cis_ap_new"
+              - cis_ap_gone | length == 0
+              - cis_ap_changed | length == 0
+              - cis_ap_new | reject('match', '^(audispd-plugins|lib[a-z0-9.+-]+)') | list | length == 0
+            fail_msg: >-
+              apt's plan for audispd-plugins is more than the plugin and
+              libraries. New: {{ cis_ap_new | join(', ') | default('(none parsed)', true) }}.
+              Would change an installed package: {{ cis_ap_changed | join(', ') | default('none', true) }}.
+              Would remove: {{ cis_ap_gone | join(', ') | default('none', true) }}.
+              Not installing anything; decide by hand.
+            success_msg: "apt would add only: {{ cis_ap_new | join(', ') }}"
+          vars:
+            cis_ap_new: >-
+              {{ cis_ap_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \(') | unique | list }}
+            cis_ap_changed: >-
+              {{ cis_ap_sim.stdout | regex_findall('(?m)^Inst ([^ ]+) \[') | unique | list }}
+            cis_ap_gone: >-
+              {{ cis_ap_sim.stdout | regex_findall('(?m)^(?:Remv|Purg) ([^ ]+)') | unique | list }}
+
+        - name: CIS 6.2.1.1 | Install audispd-plugins
+          ansible.builtin.apt:
+            name: audispd-plugins
+            state: present
+            install_recommends: no
+
+    # ── log rotation (decision B) ──────────────────────────────────────────────
+    # Debian's defaults already rotate (8 MB, 5 files). This makes it explicit
+    # and bounded: at most 8 x 16 MB = 128 MB, oldest file replaced. The
+    # numbers are a choice, not derived from the size of this host's disk; the
+    # report at the end prints the space left so that they can be judged.
+    # What happens when the disk fills anyway stays at Debian's values (warn
+    # in syslog, then suspend logging) - the halt/single settings of 6.2.2.3
+    # and 6.2.2.4 are an exception on purpose, they would stop the hypervisor.
+    - name: auditd | Rotate the log at 16 MB
+      ansible.builtin.lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^max_log_file\s*='
+        line: "max_log_file = 16"
+      notify: Reload auditd config
+
+    - name: auditd | Keep 8 rotated files
+      ansible.builtin.lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^num_logs\s*='
+        line: "num_logs = 8"
+      notify: Reload auditd config
+
+    - name: auditd | Rotate (not keep forever) when the size is reached
+      ansible.builtin.lineinfile:
+        path: /etc/audit/auditd.conf
+        regexp: '^max_log_file_action\s*='
+        line: "max_log_file_action = ROTATE"
+      notify: Reload auditd config
+
+    # ── 6.2.3.x  rules ────────────────────────────────────────────────────────
+    - name: CIS 6.2.3 | The requested state must be one we know
+      ansible.builtin.assert:
+        that:
+          - cis_audit_rules_state in ['present', 'absent']
+        fail_msg: >-
+          cis_audit_rules_state is '{{ cis_audit_rules_state }}', expected
+          present or absent. Nothing was changed on the host.
+
+    - name: CIS 6.2.3 | Take the CIS audit rules out again
+      when: cis_audit_rules_state == 'absent'
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/audit/rules.d/70-cis.rules
+        - "/etc/audit/rules.d/71-cis.+.rules"
+      notify: Load audit rules
+
+    - name: CIS 6.2.3 | Look up the automation account
+      when: cis_audit_rules_state == 'present'
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ cis_automation_user }}"
+
+    - name: CIS 6.2.3 | Its UID must be a number
+      when: cis_audit_rules_state == 'present'
+      ansible.builtin.assert:
+        that:
+          - cis_automation_uid is match('^[0-9]+')
+        fail_msg: "Could not read the UID of {{ cis_automation_user }}; not writing audit rules."
+      vars:
+        cis_automation_uid: "{{ ansible_facts.getent_passwd[cis_automation_user][1] }}"
+
+    - name: CIS 6.2.3 | Deploy the CIS audit rules
+      when: cis_audit_rules_state == 'present'
+      ansible.builtin.copy:
+        dest: /etc/audit/rules.d/70-cis.rules
+        owner: root
+        group: root
+        mode: "0640"
+        content: |
+          ## Managed by k8s-ops (proxmox-ansible), CIS wave 2. Do not edit by hand.
+          ## Loaded AFTER 60-wazuh.rules on purpose (see cis_wave2_audit.yml).
+          ##
+          ## auid>=1000 leaves out root's own sessions (auid 0) and daemons (unset),
+          ## and auid!={{ cis_automation_uid }} leaves out the account the nightly
+          ## run connects as ({{ cis_automation_user }}).
+
+          ## 6.2.3.1 changes to sudoers (60-wazuh.rules watches the same paths
+          ## under another key and, loading first, keeps the log entry)
+          -w /etc/sudoers -p wa -k scope
+          -w /etc/sudoers.d -p wa -k scope
+
+          ## 6.2.3.3 the sudo log file
+          -w /var/log/sudo.log -p wa -k sudo_log_file
+
+          ## 6.2.3.4 time. Exactly as the benchmark has it: chronyd calls adjtimex
+          ## too, so this key may be the noisy one; read it from the report.
+          -a always,exit -F arch=b64 -S adjtimex,settimeofday,clock_settime -k time-change
+          -a always,exit -F arch=b32 -S adjtimex,settimeofday,clock_settime -k time-change
+          -w /etc/localtime -p wa -k time-change
+
+          ## (6.2.3.5 network environment and 6.2.3.19 kernel modules are in
+          ## 71-cis.+.rules, see cis_wave2_audit.yml for why)
+
+          ## 6.2.3.7 failed file access
+          -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k access
+          -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k access
+          -a always,exit -F arch=b32 -S creat,open,openat,truncate,ftruncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k access
+          -a always,exit -F arch=b32 -S creat,open,openat,truncate,ftruncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k access
+
+          ## 6.2.3.8 user and group information (passwd, shadow, group are in
+          ## 60-wazuh.rules)
+          -w /etc/nsswitch.conf -p wa -k identity
+          -w /etc/pam.conf -p wa -k identity
+          -w /etc/pam.d -p wa -k identity
+          -w /etc/gshadow -p wa -k identity
+          -w /etc/security/opasswd -p wa -k identity
+
+          ## 6.2.3.9 permission and ownership changes
+          -a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k perm_mod
+          -a always,exit -F arch=b64 -S chown,fchown,lchown,fchownat -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k perm_mod
+          -a always,exit -F arch=b64 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k perm_mod
+          -a always,exit -F arch=b32 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k perm_mod
+          -a always,exit -F arch=b32 -S chown,fchown,lchown,fchownat -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k perm_mod
+          -a always,exit -F arch=b32 -S setxattr,lsetxattr,fsetxattr,removexattr,lremovexattr,fremovexattr -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k perm_mod
+
+          ## 6.2.3.10 mounts
+          -a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k mounts
+          -a always,exit -F arch=b32 -S mount -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k mounts
+
+          ## 6.2.3.11 and 6.2.3.12 sessions and logins
+          -w /var/run/utmp -p wa -k session
+          -w /var/log/wtmp -p wa -k session
+          -w /var/log/btmp -p wa -k session
+          -w /var/log/faillog -p wa -k logins
+          -w /var/log/lastlog -p wa -k logins
+
+          ## 6.2.3.13 deletions and renames
+          -a always,exit -F arch=b64 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k delete
+          -a always,exit -F arch=b32 -S unlink,unlinkat,rename,renameat -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k delete
+      vars:
+        cis_automation_uid: "{{ ansible_facts.getent_passwd[cis_automation_user][1] }}"
+      notify: Load audit rules
+
+    # The file name is deliberate. The Wazuh policy's directory rule for 6.2.3.5
+    # and 6.2.3.19 is `d:/etc/audit/rules.d -> r:.+\.rules$`. In the regex
+    # dialect the agent uses, `.` is a literal dot and `\.` is "any character",
+    # so the rule needs a file name that contains the two characters ".+"
+    # followed by one more character and "rules" at the end (6.2.3.1 and the
+    # others write it the other way round and match 70-cis.rules). Measured
+    # 2026-10-12 with the real agent 4.14.8: with a file called 71-cis.+.rules
+    # both checks pass, with 71-cis..rules or without the file they fail. These
+    # two groups of rules live only here and not also in 70-cis.rules, so that
+    # no rule is loaded twice; what auditctl does with a duplicate was not
+    # tested. augenrules takes every *.rules file, so the odd name is fine for
+    # it; that the rules really get loaded is checked below by the keys.
+    - name: CIS 6.2.3.5 / 6.2.3.19 | Deploy the second rules file
+      when: cis_audit_rules_state == 'present'
+      ansible.builtin.copy:
+        dest: "/etc/audit/rules.d/71-cis.+.rules"
+        owner: root
+        group: root
+        mode: "0640"
+        content: |
+          ## Managed by k8s-ops (proxmox-ansible), CIS wave 2. Do not edit by hand.
+          ## The odd file name is on purpose, see cis_wave2_audit.yml.
+
+          ## 6.2.3.5 network environment
+          -a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
+          -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
+          -w /etc/networks -p wa -k system-locale
+          -w /etc/netplan -p wa -k system-locale
+
+          ## 6.2.3.19 kernel modules
+          -a always,exit -F arch=b64 -S init_module,delete_module,finit_module -k kernel_modules
+          -a always,exit -F arch=b32 -S init_module,delete_module,finit_module -k kernel_modules
+          -a always,exit -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=unset -F auid!={{ cis_automation_uid }} -k kernel_modules
+      vars:
+        cis_automation_uid: "{{ ansible_facts.getent_passwd[cis_automation_user][1] }}"
+      notify: Load audit rules
+
+    # Run the handlers now, so that what is checked below is what was loaded.
+    - name: CIS 6.2.3 | Apply what was queued
+      ansible.builtin.meta: flush_handlers
+
+    # A rules file that is on disk is not the same as rules that are loaded:
+    # a failed load leaves the file as it is, the next run sees no change and
+    # loads nothing. So compare the loaded rules with the keys we expect, every
+    # run, and load again if one is missing.
+    - name: CIS 6.2.3 | Read the loaded rules
+      ansible.builtin.command: auditctl -l
+      register: cis_audit_loaded
+      changed_when: false
+      check_mode: false
+
+    - name: CIS 6.2.3 | Load the rules again if one of our keys is missing
+      ansible.builtin.command: augenrules --load
+      when:
+        - cis_audit_rules_state == 'present'
+        - not ansible_check_mode
+        - cis_audit_missing | length > 0
+      vars:
+        cis_audit_missing: >-
+          {%- set out = [] -%}
+          {%- for k in cis_audit_keys -%}
+            {%- if cis_audit_loaded.stdout is not search('(-k |key=)' ~ k ~ '(\s|\Z)') -%}
+              {%- set _ = out.append(k) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    - name: CIS 6.2.3 | Read the loaded rules again
+      ansible.builtin.command: auditctl -l
+      register: cis_audit_loaded2
+      changed_when: false
+      check_mode: false
+
+    - name: CIS 6.2.3 | All of our keys are loaded
+      when: cis_audit_rules_state == 'present'
+      ansible.builtin.assert:
+        that:
+          - ansible_check_mode or cis_audit_missing2 | length == 0
+        fail_msg: >-
+          These audit keys are still not loaded after augenrules --load:
+          {{ cis_audit_missing2 | join(', ') }}. 60-wazuh.rules is loaded before
+          this file, so the Wazuh rules are not affected. Look at the output of
+          `augenrules --load` on the host; if auditd is in immutable mode
+          (enabled 2) a reboot is needed.
+      vars:
+        cis_audit_missing2: >-
+          {%- set out = [] -%}
+          {%- for k in cis_audit_keys -%}
+            {%- if cis_audit_loaded2.stdout is not search('(-k |key=)' ~ k ~ '(\s|\Z)') -%}
+              {%- set _ = out.append(k) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
+
+    # ── report (read only) ────────────────────────────────────────────────────────
+    # How many events per key today, and how much room the log has. Counts and
+    # key names only. It exists so that the volume the new rules cause is read
+    # from the host after the first night instead of guessed.
+    - name: auditd | Report events per key today and the space left (read only)
+      ansible.builtin.shell:
+        cmd: |
+          echo "== events per key since midnight"
+          aureport --key --summary -ts today 2>&1 | head -30
+          echo "== audit log files"
+          stat -c '%s bytes  %n' /var/log/audit/* 2>&1
+          echo "== space left where the log lives (KiB available, use%)"
+          df --output=avail,pcent /var/log/audit 2>&1 | tail -1
+        executable: /bin/bash
+      register: cis_audit_report
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: auditd | Report
+      ansible.builtin.debug:
+        msg: "{{ cis_audit_report.stdout_lines }}"
 
   cis_rpc_lockdown.yml: |-
     ---
