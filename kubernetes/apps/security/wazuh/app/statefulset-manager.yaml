@@ -32,7 +32,7 @@ spec:
         # of Git and out of the ConfigMap. Same image as the manager purely to
         # avoid another pull; it only needs sh and sed.
         - name: render-config
-          image: wazuh/wazuh-manager:4.14.8
+          image: wazuh/wazuh-manager:4.14.9
           command:
             - "/bin/sh"
             - "-c"
@@ -107,7 +107,7 @@ spec:
               readOnly: true
       containers:
         - name: wazuh-manager
-          image: wazuh/wazuh-manager:4.14.8
+          image: wazuh/wazuh-manager:4.14.9
           securityContext:
             # Capabilities are not dropped wholesale here, unlike the indexer.
             # The manager's entrypoint runs as root and fixes ownership across
