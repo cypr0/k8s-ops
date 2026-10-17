@@ -3,7 +3,7 @@
 - **Date:** 2026-10-17
 - **Component:** `security/authentik` (HelmRelease, `geoip` sidecar in `authentik-server` and `authentik-worker`)
 - **Severity:** SEV2 — `authentik-server` had no Ready pod for ~3h20m and the HelmRelease ended up `Stalled`; logins kept working almost throughout, most likely only because Envoy routes to unhealthy endpoints when none are healthy (not by design)
-- **Duration of impact:** 0 Ready `authentik-server` pods 11:27–13:34 and 13:50–15:02 UTC; HelmRelease not Ready from ~10:42 UTC until the fix in this PR is applied
+- **Duration of impact:** 0 Ready `authentik-server` pods 11:27–13:34 and 13:50–15:02 UTC; HelmRelease not Ready ~10:42–19:16 UTC
 - **Data loss:** None
 
 ## TL;DR
@@ -55,6 +55,9 @@ All UTC.
 - **15:01:03** — `geoip` in `js5fr` downloads successfully; **15:01:55** server Ready again (still 2026.8.3).
 - **18:04, 18:28, 18:35** — HPA scale-ups create server pods that stay NotReady (429) until the HPA scales back.
 - **~18:40** — noticed in passing by another session.
+- **19:12** — fix merged (#200, `a0dea39`); Flux applies HelmRelease generation 33, Helm upgrade to 2026.8.4 starts at 19:13:34 (rev 104).
+- **19:13–19:16** — all four new pods' `geoip` sidecars get the 429 again, log `retrying in 1 hour` and keep running; every new pod turns 2/2 Ready with 0 restarts. At least one Ready `authentik-server` endpoint throughout the rollout.
+- **19:16:21** — HelmRelease `Ready` (`UpgradeSucceeded`, chart 2026.8.4); Flux Kustomization `authentik` Ready; `https://id.${SECRET_DOMAIN}` answers 200.
 
 ## Diagnosis process
 
@@ -71,9 +74,10 @@ All UTC.
 ## Fix applied
 
 ### Live remediation
-None by hand. Between failures the cluster was stable on 2026.8.3 (one Ready server pod, two Ready workers), and the stalled HelmRelease no longer created pods. A new HelmRelease generation resets Flux's failure counters, so merging the fix retries the 2026.8.4 upgrade with it.
+None by hand. Between failures the cluster was stable on 2026.8.3 (one Ready server pod, two Ready workers), and the stalled HelmRelease no longer created pods. A new HelmRelease generation resets Flux's failure counters, so merging the fix (#200) retried the 2026.8.4 upgrade with it; it succeeded on the first attempt in ~3 min (see Timeline), with MaxMind still answering 429.
 
 ### Preventive change committed
+Merged as #200 (`a0dea39`).
 - `kubernetes/apps/security/authentik/app/helmrelease.yaml`:
   - `postRenderers`: a JSON patch on `authentik-(server|worker)` sets the `geoip` container's `command` to a `/bin/sh` loop around the stock `/usr/bin/entry.sh`. When entry.sh exits, the loop logs `# STATE: geoipupdate exited (<rc>), retrying in 1 hour`, sleeps an hour and runs it again; a `TERM` trap keeps shutdown immediate. A `test` op asserts that container index 1 is `geoip`, so a reordered chart fails the render instead of patching `server`/`worker`. A JSON patch rather than a strategic merge because kustomize's strategic merge moved `geoip` to the front of the list (verified), which would make it the default container for `kubectl logs/exec`.
   - `timeout: 10m` (Helm default 5 m): two worker replicas roll one after the other, and a worker took up to 3 min to turn Ready on a node that still had to pull the image.
@@ -96,10 +100,11 @@ None by hand. Between failures the cluster was stable on 2026.8.3 (one Ready ser
 ## Action items
 - [x] Sidecar can no longer fail the pod; Helm timeout raised (this PR)
 - [x] Postmortem written (this file)
-- [ ] After merge: HelmRelease Ready on 2026.8.4, `geoip` restarts stay 0, both Deployments fully available
-- [ ] Stop the `authentik-server` HPA flapping (since 2026-10-09, ~22 new pods a day): find what spikes CPU, then e.g. a longer `behavior.scaleDown` stabilization window or a request that matches the spikes. This is what burns the MaxMind quota.
+- [x] After merge: HelmRelease Ready on 2026.8.4 (rev 104), `geoip` restarts 0, both Deployments 2/2 available (19:16 UTC)
+- [ ] The four pods started at 19:13–19:15 got 429 and run without geo data until their next restart (see Trade-off); nothing to do unless geo data is wanted before then
+- [ ] Stop the `authentik-server` HPA flapping (since 2026-10-09, ~22 new pods a day): find what spikes CPU, then e.g. a longer `behavior.scaleDown` stabilization window or a request that matches the spikes. This is what burns the MaxMind quota. Fix merged as #201 (`3df8af7`, 5-minute scale-up window); tick once the daily count of new server pods has actually dropped.
 - [ ] Re-apply the worker CPU request of ~200m (deferred 2026-10-11 only because of this sidecar; now unblocked)
-- [ ] 2026.8.4 changes client-IP extraction to the **leftmost** `X-Forwarded-For` entry when the peer is a trusted proxy (goauthentik/authentik#26353). Behind Cloudflare, which appends to a client-supplied `X-Forwarded-For`, that entry may be client-controlled; check what authentik now logs as client IP and whether the reputation policy can be gamed
+- [x] 2026.8.4 changes client-IP extraction to the **leftmost** `X-Forwarded-For` entry when the peer is a trusted proxy (goauthentik/authentik#26353). Behind Cloudflare, which appends to a client-supplied `X-Forwarded-For`, that entry may be client-controlled; check what authentik now logs as client IP and whether the reputation policy can be gamed. It could be gamed (verified live). Fixed by #203 (`e5bddcb`), where Envoy overwrites `X-Forwarded-For`. Re-probed 2026-10-17 ~20:10 UTC: a request via a Cloudflare edge carrying `X-Forwarded-For: 192.0.2.1` was logged with the real public IP, and LAN/VPN requests with `10.10.0.2` (after #205).
 - [ ] Upstream: authentik never loads a GeoIP database that appears after process start
 
 ---
