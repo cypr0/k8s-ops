@@ -37,6 +37,17 @@ entries:
           - default-provider-invalidation-flow
       client_type: public
       client_id: hermes
+      # Must be set explicitly, same trap as 09-wazuh-oidc.yaml: a provider
+      # newly created from a blueprint gets an EMPTY grant_types list (only
+      # the pre-existing providers were backfilled by the migration), and
+      # Authentik then bounces every authorize request back to
+      # /auth/callback with "invalid_request: The request is otherwise
+      # malformed" (server log: "Invalid grant_type for provider").
+      # authorization_code for the login, refresh_token for the desktop's
+      # /auth/native/refresh rotation; nothing else.
+      grant_types:
+        - authorization_code
+        - refresh_token
       redirect_uris:
         - matching_mode: strict
           url: https://hermes.${SECRET_DOMAIN}/auth/callback
