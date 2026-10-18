@@ -252,8 +252,11 @@ data:
             mode: "0644"
             content: |
               [DEFAULT]
-              # Whitelist localhost and the admin IP
-              ignoreip = 127.0.0.1/8 ::1 {{ allowed_ip }}
+              # Never ban: localhost, the admin IP, and the OPNsense peer on
+              # vmbr0 (192.168.100.1, the DNAT target below). This playbook's
+              # Job logs in over SSH from that peer, so banning it after a few
+              # failed logins would lock the Job out.
+              ignoreip = 127.0.0.1/8 ::1 {{ allowed_ip }} 192.168.100.1
               bantime  = 3600
               findtime = 600
               maxretry = 5
@@ -266,11 +269,18 @@ data:
               maxretry = 4
               bantime  = 7200
 
+              # Reads the journal, not /var/log/daemon.log: Debian 13's stock
+              # rsyslog.conf has no daemon.* rule, so that file stays empty and
+              # a jail reading it never sees a failure. Only the unit that logs
+              # the login failures is read. PVE writes the client as an
+              # IPv4-mapped IPv6 address (::ffff:a.b.c.d); fail2ban turns it
+              # into a.b.c.d. The ban covers port 8006 only, SSH is untouched.
               [proxmox]
               enabled  = true
               port     = 8006
               filter   = proxmox
-              logpath  = /var/log/daemon.log
+              backend  = systemd
+              journalmatch = _SYSTEMD_UNIT=pvedaemon.service
               maxretry = 3
               bantime  = 86400
 
@@ -3105,8 +3115,10 @@ data:
     # restart, no login.
     #
     # fail2ban here bans an address after 4 failures in 10 minutes (jail sshd,
-    # 2 hours); its whitelist is loopback and allowed_ip, and whether the Job's
-    # source address is allowed_ip was not checked, so it is assumed NOT to be. A
+    # 2 hours); its whitelist is loopback, allowed_ip and the OPNsense peer
+    # 192.168.100.1, which is where the Job's logins come from (all accepted
+    # logins of a week came from it). Before the peer was whitelisted the Job was
+    # assumed NOT to be exempt, and the steps below still keep failures few. A
     # login refused by AllowUsers counts once (measured with the shipped filter in
     # a container), so step 3 makes one attempt per account, at most two failures,
     # and the probe, which runs on loopback, is not seen from outside.
