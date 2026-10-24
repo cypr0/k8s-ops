@@ -281,7 +281,7 @@ spec:
       # start.py only copies /overrides into rspamd's local.d at container
       # start, so a config-only change would otherwise never take effect.
       podAnnotations:
-        k8s-ops/rspamd-config-revision: "1"
+        k8s-ops/rspamd-config-revision: "2"
       # rspamd resolves through its own unbound sidecar (initContainers
       # below), not cluster DNS. Two independent reasons, both confirmed
       # live 2026-10-17:
@@ -390,11 +390,136 @@ spec:
         # for a literal `$` (end-of-hostname anchor).
         cloud_vm_rdns.map: |
           /\.bc\.googleusercontent\.com$$/i
+        # The DHDL rule is the campaign above. The next four target the
+        # predatory-publishing ("call for papers") spam: Scopus/UGC-CARE
+        # paper mills from throwaway Gmail accounts, fake IEEE conferences
+        # via Amazon SES (ICECER/ICECET/ICECCME/ACDSA), and "Dear <Last>,
+        # <First> <Middle>:" invitations via Alibaba DirectMail with
+        # Cyrillic/Greek look-alike letters. All pass SPF/DKIM/DMARC from
+        # clean IPs and Bayes rated them ham, so they arrived at ~0.
+        # Checked on 2026-10-24 against both mailboxes (24,605
+        # messages): every atom below fired on spam only, mostly the 43
+        # campaign messages. Legit mail had at most 2 mixed-script spots
+        # (the spam has 100-240), and "scopus" appeared nowhere else.
         regexp.conf: |
           DHDL_DIET_CAMPAIGN {
             re = "Subject=/H(?:ö|oe)hle der L(?:ö|oe)wen|\\bDHDL\\b|\\bL(?:ö|oe)wen\\b|\\bWEGO ?6\\b/i{header} | From=/H(?:ö|oe)hle der L(?:ö|oe)wen|\\bDHDL\\b|\\bL(?:ö|oe)wen\\b|\\bWEGO ?6\\b/i{header}";
             score = 3.0;
             description = "Fake 'Die Hoehle der Loewen' diet-pill advertising";
+          }
+          PREDATORY_PUBLISHING {
+            re = "(Subject=/\\bscopus\\b|\\bugc[- ]?care\\b|\\bpublication chance\\b|\\bback[- ]?dated\\s+(?:papers?|articles?|issues?)\\b/i{header} | /\\bscopus\\b|\\bugc[- ]?care\\b|\\bpublication chance\\b|\\bback[- ]?dated\\s+(?:papers?|articles?|issues?)\\b/i{mime}) & (Subject=/\\b(?:journals?|manuscripts?|call for papers?|peer[- ]reviewed?|indexed|conferences?|editorial board)\\b/i{header} | /\\b(?:journals?|manuscripts?|call for papers?|peer[- ]reviewed?|indexed|conferences?|editorial board)\\b/i{mime})";
+            score = 7.0;
+            description = "Predatory journal/conference solicitation (Scopus, UGC-CARE, backdated papers)";
+          }
+          # Score 0: only the composites in composites.conf give it weight,
+          # so a legitimate call for papers from a real conference or
+          # university stays untouched.
+          JOURNAL_SOLICITATION {
+            re = "Subject=/\\b(?:manuscripts?|call for papers?|scopus|submit(?:ting)? (?:your |an? )?(?:manuscripts?|papers?|articles?|research))\\b/i{header} | From=/\\bjournal\\b/i{header} | /\\b(?:submit(?:ting)? (?:your |an? )?(?:manuscripts?|papers?|articles?|research)|accepting manuscripts|call for papers?)\\b|\\bISSN(?: NO)?\\s*:?\\s*\\d{4}-\\d{3}[\\dX]\\b/i{mime}";
+            score = 0.0;
+            description = "Solicits journal or conference submissions";
+          }
+          # "Dear <Last>, <First> <Middle>:" -- the name as scraped from a
+          # publication database, used as the subject line.
+          ACADEMIC_NAME_SALUTATION {
+            re = "Subject=/^Dear [A-Z][^\\s,:]*, [A-Z][^\\s,:]*(?: [A-Z][^\\s,:]*)?:/{header}";
+            score = 4.0;
+            description = "Subject addresses the recipient as 'Dear Last, First Middle:'";
+          }
+          # Latin letters glued to Cyrillic/Greek/Armenian look-alikes
+          # ("Cοn fеrе nсе", "unsuЬscrіЬe"): 3+ spots in the subject or 5+
+          # in the body.
+          HOMOGLYPH_OBFUSCATION {
+            re = "Subject=/(?:[A-Za-z][\\p{Cyrillic}\\p{Greek}\\p{Armenian}]|[\\p{Cyrillic}\\p{Greek}\\p{Armenian}][A-Za-z])(?:.*(?:[A-Za-z][\\p{Cyrillic}\\p{Greek}\\p{Armenian}]|[\\p{Cyrillic}\\p{Greek}\\p{Armenian}][A-Za-z])){2}/u{header} | /(?:[A-Za-z][\\p{Cyrillic}\\p{Greek}\\p{Armenian}]|[\\p{Cyrillic}\\p{Greek}\\p{Armenian}][A-Za-z])(?:.*(?:[A-Za-z][\\p{Cyrillic}\\p{Greek}\\p{Armenian}]|[\\p{Cyrillic}\\p{Greek}\\p{Armenian}][A-Za-z])){4}/us{mime}";
+            score = 4.0;
+            description = "Words mixing Latin with Cyrillic/Greek look-alike letters";
+          }
+          # Phishing: a bank, tax-office or payment brand in the From
+          # display name, sent from a domain that isn't the brand's
+          # ("Elster Anwender <calma1@galenpharm.com>"). 24 hits in all
+          # 35,580 stored messages of both mailboxes (ELSTER, Volksbank,
+          # Postbank, N26, Santander, Deutsche Bank, Consorsbank, Telekom,
+          # Netflix), all phishing or spam. f-i.de (the Sparkassen's IT
+          # provider), ipsos-cx.com (a Commerzbank survey) and xoom.com
+          # (PayPal) are legitimate senders found in the mailboxes. Amazon
+          # and Apple are left out: their real mail also comes from
+          # primevideo.com/medallia.com.
+          BRAND_NAME_SPOOF {
+            re = "From=/^[^<@]*\\b(?:elster|finanzamt|bundeszentralamt|postbank|sparkasse|volksbank(?:en)?|raiffeisenbank|commerzbank|deutsche bank|dkb|n26|comdirect|consorsbank|santander|targobank|hypovereinsbank|ing-diba|paypal|klarna|telekom|netflix)\\b[^<]*</i{header} & !From=/@(?:[\\w-]+\\.)*(?:elster|finanzamt|bzst|postbank|sparkasse|volksbank|vrbank|voba|raiffeisen|atruvia|commerzbank|deutsche-bank|db|dkb|n26|comdirect|consorsbank|santander|targobank|hypovereinsbank|hvb|ing|paypal|xoom|klarna|telekom|t-online|netflix|f-i|ipsos-cx)[\\w-]*\\.[a-z.]+>?\\s*$$/i{header}";
+            score = 8.0;
+            description = "Bank/authority/payment brand in the From name, foreign sender domain";
+          }
+          # Throwaway product-spam domains, mostly arriving through the UniBw
+          # forward (coust-wels.baby, beauty-room.bond, doitnow.lat). None
+          # of these TLDs sent anything legitimate to either mailbox; .shop
+          # and .pro did, so they're not listed. 5 points because these
+          # forwards otherwise score only ~1-2 without Bayes.
+          SPAMMY_TLD_FROM {
+            re = "From=/@[^>\\s]+\\.(?:baby|bond|lat|cfd|sbs|icu|buzz|cyou|rest|click|top|xyz|quest|monster|beauty|hair|skin|makeup|boats|yachts|autos|lol|mom)>?\\s*$$/i{header}";
+            score = 5.0;
+            description = "From domain under a TLD used only by spam here";
+          }
+          # An upstream filter (UniBw's Proxmox gateway, formerly netcup)
+          # already tagged the subject. All 21 such messages were spam.
+          UPSTREAM_SPAM_TAG {
+            re = "Subject=/^\\s*(?:\\[SPAM\\]|\\*{3}\\s*SPAM\\s*\\*{3})/i{header}";
+            score = 6.0;
+            description = "Subject tagged as spam by an upstream filter";
+          }
+        # Mail forwarded from the owner's UniBw address arrives from UniBw's
+        # MXes (mx1-3.mail.rz.unibw-muenchen.de). Their gateway prepends
+        # "[EXTERNAL]" to the subject, which breaks every DKIM signature,
+        # and the hop breaks SPF, so legitimate senders with a strict DMARC
+        # policy scored like spam (a Dropbox terms-of-service mail: 7).
+        # Copied into local.d by start.py (Mailu has no settings.conf).
+        settings.conf: |
+          unibw_forward {
+            priority = high;
+            ip = ["137.193.2.51", "137.193.2.52", "137.193.2.53"];
+            apply {
+              groups_disabled = ["policies"];
+            }
+          }
+        # Merged into Mailu's composites.conf (included, not copied).
+        composites.conf: |
+          FREEMAIL_JOURNAL_SOLICITATION {
+            expression = "(PREDATORY_PUBLISHING | JOURNAL_SOLICITATION) & (FREEMAIL_FROM | FREEMAIL_ENVFROM | FREEMAIL_REPLYTO)";
+            policy = "leave";
+            score = 4.0;
+            description = "Journal/conference solicitation from a freemail account";
+          }
+          ACADEMIC_SALUTATION_SOLICITATION {
+            expression = "ACADEMIC_NAME_SALUTATION & JOURNAL_SOLICITATION";
+            policy = "leave";
+            score = 3.0;
+            description = "'Dear Last, First:' subject on a journal/conference solicitation";
+          }
+        # Mailu's own metrics.conf redefines the "fuzzy" group with only its
+        # LOCAL_FUZZY_* symbols, which drops the stock weights of the
+        # rspamd.com feed's symbols. FUZZY_DENIED fired on 6 of the 43
+        # paper-mill mails and on nothing but spam in the 2026-10-21..24
+        # history, yet scored 0.00 and was missing from the controller's
+        # /symbols list. These are rspamd's defaults
+        # (scores.d/fuzzy_group.conf); the group's max_score stays at 12.
+        metrics.conf: |
+          group "fuzzy" {
+            symbol "FUZZY_DENIED" {
+              weight = 12.0;
+              description = "Denied fuzzy hash, bl.rspamd.com";
+            }
+            symbol "FUZZY_PROB" {
+              weight = 5.0;
+              description = "Probable fuzzy hash, bl.rspamd.com";
+            }
+            symbol "FUZZY_WHITE" {
+              weight = -2.1;
+              description = "Whitelisted fuzzy hash, bl.rspamd.com";
+            }
+            symbol "FUZZY_UNKNOWN" {
+              weight = 5.0;
+              description = "Generic fuzzy hash match, bl.rspamd.com";
+            }
           }
 
     clamav:
