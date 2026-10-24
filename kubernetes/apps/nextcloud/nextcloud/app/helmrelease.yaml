@@ -48,7 +48,10 @@ spec:
       registry: docker.io
       repository: library/nextcloud
       flavor: fpm-alpine
-      tag: 35.0.2-fpm-alpine
+      # Digest-pinned: the tag was rebuilt in place on 2026-10-23 with PHP
+      # 8.5.12 (PHP2Shell, CVE-2026-109618/-109619); IfNotPresent would
+      # otherwise keep the cached PHP 8.5.11 image.
+      tag: 35.0.2-fpm-alpine@sha256:ee5b5612f24984941cdfaeeccb073e048370fd1e44104719149820eae3e28419
     phpClientHttpsFix:
       enabled: true
     nextcloud:
