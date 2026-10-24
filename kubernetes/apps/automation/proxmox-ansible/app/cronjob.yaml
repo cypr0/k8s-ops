@@ -34,7 +34,7 @@ spec:
               # 3.14 but built differently, so Ansible's stdlib extensions
               # failed to relocate ("_PyType_AllocNoTrack: symbol not found")
               # and the playbook never started. One interpreter, no collision.
-              image: alpine:3.24.2
+              image: alpine:3.24.3
               command:
                 - "/bin/sh"
                 - "/scripts/run.sh"
