@@ -23,8 +23,10 @@ check here before assuming a gap means "not interesting."
 | Cloudflare Tunnel | network | [cloudflare-tunnel.md](cloudflare-tunnel.md) |
 | CloudNativePG | database | [cloudnative-pg.md](cloudnative-pg.md) |
 | Collabora | nextcloud | [collabora.md](collabora.md) |
+| collector | isms | [collector.md](collector.md) |
 | CoreDNS | kube-system | [coredns.md](coredns.md) |
 | csi-driver-nfs | kube-system | [csi-driver-nfs.md](csi-driver-nfs.md) |
+| DMARC Exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
 | Dragonfly | database | [dragonfly.md](dragonfly.md) |
 | Echo | echo | [echo.md](echo.md) |
 | Elasticsearch (Nextcloud) | nextcloud | [elasticsearch.md](elasticsearch.md) |
@@ -47,7 +49,6 @@ check here before assuming a gap means "not interesting."
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
 | Kyverno | kyverno | [kyverno.md](kyverno.md) |
 | Loki | monitoring | [loki.md](loki.md) |
-| DMARC Exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
 | Mailu | mail | [mailu.md](mailu.md) |
 | mailu-mcp | hermes-agent | [mailu-mcp.md](mailu-mcp.md) |
 | Metrics Server | kube-system | [metrics-server.md](metrics-server.md) |
