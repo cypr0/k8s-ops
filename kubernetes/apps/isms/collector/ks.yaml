@@ -13,10 +13,12 @@ spec:
     provider: sops
   interval: 1h
   path: ./kubernetes/apps/isms/collector/app
-  postBuild:
-    substituteFrom:
-      - name: cluster-secrets
-        kind: Secret
+  # Kein postBuild: nichts hier braucht eine ${SECRET_*}-Substitution, und
+  # Flux' envsubst laeuft im Strict-Modus ueber die gesamten Manifeste. Es
+  # hat deshalb das ${GIT_TOKEN} im Shell-Skript des CronJobs fuer eine
+  # Flux-Variable gehalten und die Reconciliation abgebrochen. Wird hier
+  # spaeter eine Substitution gebraucht, muessen Shell-Variablen als
+  # $${VAR} geschrieben werden -- so wie in proxmox-ansible und gatus.
   prune: true
   retryInterval: 2m
   sourceRef:
