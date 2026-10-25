@@ -38,7 +38,7 @@ spec:
             image:
               repository: ghcr.io/open-webui/open-webui
               # renovate: datasource=docker depName=ghcr.io/open-webui/open-webui
-              tag: v0.12.3
+              tag: v0.12.4
             env:
               # ── OpenTelemetry metrics ──────────────────────────────────
               # Open WebUI exposes no /metrics endpoint; it only PUSHES OTLP.
