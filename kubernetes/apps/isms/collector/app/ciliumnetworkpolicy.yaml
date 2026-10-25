@@ -1,0 +1,56 @@
+---
+# The collector reads the cluster and pushes one commit. Nothing talks to it.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: isms-collector
+  namespace: isms
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: isms-collector
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Reading the cluster inventory.
+    - toEntities:
+        - kube-apiserver
+    # Prometheus, for the Fluent Bit delivery metrics behind DET.3.1.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
+    # Pushing the snapshot. Ingress on the GitLab side is evaluated
+    # post-DNAT, so this is Workhorse's container port, not the Service's 80.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": gitlab
+            app.kubernetes.io/name: gitlab
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+    # api.github.com, for the open update pull requests behind KONF.8.1/8.2.
+    # The platform repository is public, so this needs no credential.
+    - toFQDNs:
+        - matchName: "api.github.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
