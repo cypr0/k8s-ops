@@ -27,6 +27,14 @@ entries:
       client_type: confidential
       client_id: !Env GITLAB_CLIENT_ID
       client_secret: !Env GITLAB_CLIENT_SECRET
+      # Must be set explicitly, same trap as 09-wazuh-oidc.yaml and
+      # 10-hermes-oidc.yaml: a provider newly created from a blueprint gets an
+      # EMPTY grant_types list, and Authentik answers the authorize request
+      # with "invalid_request: The request is otherwise malformed" (server
+      # log: "Invalid grant_type for provider"). GitLab only needs the
+      # authorization code flow.
+      grant_types:
+        - authorization_code
       redirect_uris:
         - matching_mode: strict
           url: https://gitlab.${SECRET_DOMAIN}/users/auth/openid_connect/callback
