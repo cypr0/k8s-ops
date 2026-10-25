@@ -1,0 +1,113 @@
+---
+# Harvests evidence from this cluster into the ISMS repository as a commit.
+#
+# Why a CronJob here rather than a step in the ISMS pipeline: the GitLab
+# runner's job pods are deliberately cut off from the Kubernetes API
+# (kubernetes/apps/gitlab-runner/gitlab-runner/app/ciliumnetworkpolicy.yaml),
+# and handing CI a cluster-wide read token would concentrate privilege in the
+# place that executes arbitrary pipeline code. This job holds the read access
+# instead, writes a normalised snapshot, and the pipeline then assesses the
+# committed snapshot without touching the cluster at all. That also makes an
+# assessment reproducible months later.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: isms-collector
+spec:
+  schedule: "0 4 * * *"
+  timeZone: Europe/Berlin
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: isms-collector
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: isms-collector
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: collector
+              # Carries kubectl matching the cluster minor, plus git and
+              # python3. No ssh, which is why the push below goes over HTTP
+              # to the in-cluster Service rather than over the SSH gateway.
+              image: docker.io/alpine/k8s:1.37.1
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - "ALL"
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: PROMETHEUS_URL
+                  value: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+                - name: GIT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: isms-collector-git
+                      key: token
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                - name: tmp
+                  mountPath: /tmp
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  # Plain HTTP to the ClusterIP Service, not the public
+                  # hostname: gitlab.cisotop.de resolves to envoy-internal,
+                  # which this namespace has no route to. Same path the CI
+                  # runner uses for cloning.
+                  REPO="http://isms-collector:${GIT_TOKEN}@gitlab.gitlab.svc.cluster.local/isms/compliance-as-code.git"
+
+                  cd /work
+                  git clone --depth 1 --quiet "$REPO" repo
+                  cd repo
+                  git config user.email "isms-collector@cisotop.de"
+                  git config user.name "ISMS Collector"
+
+                  # The harvester tolerates individual sources failing and
+                  # records them as unavailable, which the assessment then
+                  # reports as `error` for the dependent check. A partial
+                  # snapshot is still worth committing; silence is not.
+                  python3 scripts/harvest.py || echo "WARNUNG: mindestens eine Quelle fehlgeschlagen"
+
+                  if git diff --quiet -- evidence/; then
+                    echo "Keine Aenderung an der Evidenz, kein Commit."
+                    exit 0
+                  fi
+
+                  git add evidence/
+                  git commit -q -m "chore(evidence): Schnappschuss $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+                  Automatisch erzeugt durch den isms-collector-CronJob im
+                  Cluster. Die Bewertung laeuft anschliessend in der Pipeline
+                  gegen genau diesen Stand."
+                  git push --quiet origin HEAD:main
+                  echo "Schnappschuss committet und gepusht."
+          volumes:
+            - name: work
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}

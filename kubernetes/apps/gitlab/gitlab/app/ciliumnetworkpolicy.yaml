@@ -28,6 +28,18 @@ spec:
         - ports:
             - port: "8181"
               protocol: TCP
+    # ISMS collector: pushes the evidence snapshot as a commit. Git over
+    # HTTP to the Service, because the collector image carries no ssh and the
+    # public hostname would route through envoy-internal, which that
+    # namespace cannot reach.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": isms
+            app.kubernetes.io/name: isms-collector
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
