@@ -244,6 +244,17 @@ data:
         alerts:
           - type: pushover
 
+      - name: GitLab
+        group: Apps
+        url: "http://gitlab.gitlab.svc.cluster.local/users/sign_in"
+        interval: 1m
+        # The /-/readiness and /-/health endpoints only answer to loopback,
+        # so this checks the sign-in page through Workhorse and Rails instead.
+        conditions:
+          - "[STATUS] == any(200, 302)"
+        alerts:
+          - type: pushover
+
       - name: Mailu (Front)
         group: Apps
         url: "tcp://mailu-front.mail.svc.cluster.local:443"

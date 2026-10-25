@@ -1,0 +1,41 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gitlab
+  labels:
+    app.kubernetes.io/name: gitlab
+    app.kubernetes.io/instance: gitlab
+spec:
+  hostnames:
+    - gitlab.${SECRET_DOMAIN}
+  # Internal only: no envoy-external attachment, nothing in cloudflare-tunnel.
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      # Envoy, not the client, decides the client IP GitLab sees (rack-attack,
+      # audit events). Same pattern as paperless, see docs/apps/envoy-gateway.md
+      # (Client IP).
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+              - name: X-Real-IP
+                value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: gitlab
+          namespace: gitlab
+          port: 80
+          weight: 1

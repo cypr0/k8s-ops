@@ -1,0 +1,18 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/postgresql.cnpg.io/database_v1.json
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: gitlab
+spec:
+  name: gitlabdb
+  owner: gitlabusr
+  cluster:
+    name: postgres
+  # The Omnibus package does not create these against an external server
+  # (docs.gitlab.com/install/requirements, "Extensions"). CNPG creates them as
+  # superuser; amcheck is not a trusted extension, so the owner role could not.
+  extensions:
+    - name: pg_trgm
+    - name: btree_gist
+    - name: amcheck

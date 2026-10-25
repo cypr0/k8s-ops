@@ -1,0 +1,88 @@
+---
+# Runner manager: polls GitLab and drives job pods through the Kubernetes API.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gitlab-runner
+  namespace: gitlab-runner
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gitlab-runner
+  # Nothing connects to the manager (metrics are off).
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Ingress on the gitlab side is evaluated post-DNAT: container port 8181,
+    # not the Service port 80.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": gitlab
+            app.kubernetes.io/name: gitlab
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+---
+# CI job pods run arbitrary pipeline code. They get DNS, the GitLab Service for
+# clone/artifacts and plain internet for images and tooling, but no route to
+# anything on the LAN or inside the cluster. Widen deliberately per use case
+# (for example a compliance job that must query the Kubernetes or Proxmox API).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: gitlab-runner-job
+  namespace: gitlab-runner
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: gitlab-runner-job
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": gitlab
+            app.kubernetes.io/name: gitlab
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+            - port: "443"
+              protocol: TCP

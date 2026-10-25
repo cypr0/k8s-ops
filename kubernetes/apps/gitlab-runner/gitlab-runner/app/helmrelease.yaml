@@ -1,0 +1,164 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab-runner
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: gitlab-runner
+      version: 0.94.1
+      sourceRef:
+        kind: HelmRepository
+        name: gitlab
+  maxHistory: 2
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    # Same registries as everything else here (restrict-image-registries):
+    # the chart defaults to registry.gitlab.com.
+    image:
+      registry: docker.io
+      repository: gitlab/gitlab-runner
+      tag: alpine-v19.5.1
+
+    # Internal Service, not the public URL: no round trip through Envoy, and
+    # the runner namespace's egress policy only needs the gitlab Service.
+    gitlabUrl: http://gitlab.gitlab.svc.cluster.local
+
+    # false: with an authentication token, unregistering on pod shutdown would
+    # delete the runner in GitLab on every restart.
+    unregisterRunners: false
+    concurrent: 3
+
+    serviceAccount:
+      create: true
+
+    rbac:
+      create: true
+      # The Kubernetes executor's documented minimum, no wildcards.
+      rules:
+        - apiGroups:
+            - ""
+          resources:
+            - "pods"
+          verbs:
+            - "get"
+            - "list"
+            - "watch"
+            - "create"
+            - "delete"
+        - apiGroups:
+            - ""
+          resources:
+            - "pods/exec"
+            - "pods/attach"
+          verbs:
+            - "get"
+            - "create"
+            - "patch"
+            - "delete"
+        - apiGroups:
+            - ""
+          resources:
+            - "pods/log"
+          verbs:
+            - "get"
+            - "list"
+        - apiGroups:
+            - ""
+          resources:
+            - "secrets"
+            - "configmaps"
+          verbs:
+            - "get"
+            - "create"
+            - "update"
+            - "delete"
+        - apiGroups:
+            - ""
+          resources:
+            - "services"
+          verbs:
+            - "get"
+            - "create"
+        - apiGroups:
+            - ""
+          resources:
+            - "serviceaccounts"
+          verbs:
+            - "get"
+        - apiGroups:
+            - ""
+          resources:
+            - "events"
+          verbs:
+            - "list"
+            - "watch"
+
+    runners:
+      secret: gitlab-runner-secret
+      config: |
+        [[runners]]
+          executor = "kubernetes"
+          # Clone through the Service as well; the public URL would resolve to
+          # envoy-internal, which job pods are not allowed to reach.
+          clone_url = "http://gitlab.gitlab.svc.cluster.local"
+          [runners.kubernetes]
+            namespace = "{{ .Release.Namespace }}"
+            image = "docker.io/library/alpine:3.22"
+            helper_image = "docker.io/gitlab/gitlab-runner-helper:x86_64-v19.5.1"
+            privileged = false
+            allow_privilege_escalation = false
+            automount_service_account_token = false
+            cpu_request = "100m"
+            memory_request = "256Mi"
+            memory_limit = "2Gi"
+            poll_timeout = 600
+            # Selector of the job pods in ciliumnetworkpolicy.yaml.
+            [runners.kubernetes.pod_labels]
+              "app.kubernetes.io/name" = "gitlab-runner-job"
+            [runners.kubernetes.build_container_security_context]
+              allow_privilege_escalation = false
+              [runners.kubernetes.build_container_security_context.capabilities]
+                drop = ["ALL"]
+            [runners.kubernetes.helper_container_security_context]
+              allow_privilege_escalation = false
+              [runners.kubernetes.helper_container_security_context.capabilities]
+                drop = ["ALL"]
+            [runners.kubernetes.service_container_security_context]
+              allow_privilege_escalation = false
+              [runners.kubernetes.service_container_security_context.capabilities]
+                drop = ["ALL"]
+
+    podLabels:
+      app.kubernetes.io/name: gitlab-runner
+
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 100
+      fsGroup: 65533
+      seccompProfile:
+        type: RuntimeDefault
+
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      runAsNonRoot: true
+      capabilities:
+        drop:
+          - ALL
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 256Mi

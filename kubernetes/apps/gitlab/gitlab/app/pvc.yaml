@@ -1,0 +1,17 @@
+---
+# One volume, two subPaths: config/ (/etc/gitlab: gitlab-secrets.json, SSH host
+# keys) and data/ (/var/opt/gitlab: Gitaly repositories, uploads, artifacts,
+# embedded Redis). gitlab-secrets.json holds the keys that encrypt CI variables,
+# runner tokens and 2FA secrets in the database -- a database restore without
+# it cannot decrypt them.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gitlab-data
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: zfs-nfs
+  resources:
+    requests:
+      storage: 30Gi

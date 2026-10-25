@@ -1,0 +1,47 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/monitoring.coreos.com/podmonitor_v1.json
+# One pod, four exporters (Omnibus runs all components in one container). The
+# per-endpoint `job` relabel keeps them apart for the Grafana dashboard
+# (kubernetes/apps/monitoring/grafana/dashboards/apps/gitlab.json). Each port
+# also has to be allowed in kube-prometheus-stack's CiliumNetworkPolicy, see the
+# maintenance note there.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: gitlab
+spec:
+  namespaceSelector:
+    matchNames:
+      - gitlab
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitlab
+  podMetricsEndpoints:
+    - port: http
+      path: /-/metrics
+      interval: 30s
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: gitlab-rails
+    - port: m-workhorse
+      path: /metrics
+      interval: 30s
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: gitlab-workhorse
+    - port: m-sidekiq
+      path: /metrics
+      interval: 30s
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: gitlab-sidekiq
+    - port: m-gitaly
+      path: /metrics
+      interval: 30s
+      relabelings:
+        - action: replace
+          targetLabel: job
+          replacement: gitlab-gitaly

@@ -86,7 +86,7 @@ spec:
   values:
     global:
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: "authentik-secret,authentik-grafana-oidc,authentik-paperless-oidc,authentik-open-webui-oidc,authentik-nextcloud-oidc,authentik-immich-oidc,authentik-pushover"
+        secret.reloader.stakater.com/reload: "authentik-secret,authentik-grafana-oidc,authentik-paperless-oidc,authentik-open-webui-oidc,authentik-nextcloud-oidc,authentik-immich-oidc,authentik-gitlab-oidc,authentik-pushover"
       deploymentStrategy:
         type: RollingUpdate
       podSecurityContext:
@@ -117,6 +117,9 @@ spec:
             name: authentik-immich-oidc
         - secretRef:
             name: authentik-wazuh-oidc
+        - secretRef:
+            name: authentik-gitlab-oidc
+            optional: true
         - secretRef:
             name: authentik-pushover
             optional: true
