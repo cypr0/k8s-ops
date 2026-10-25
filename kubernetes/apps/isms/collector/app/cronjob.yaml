@@ -29,6 +29,20 @@ spec:
         spec:
           restartPolicy: OnFailure
           serviceAccountName: isms-collector
+          # ndots:1 statt des Kubernetes-Standards 5. Ohne das haengt der
+          # Resolver bei "api.github.com" (zwei Punkte, also < ndots) zuerst
+          # die Such-Domain an und fragt
+          # "api.github.com.isms.svc.cluster.local" ab. Cilium lernt die
+          # FQDN-Zuordnung dann unter DIESEM Namen -- nachgewiesen in
+          # `cilium-dbg fqdn cache list` -- und die toFQDNs-Regel auf
+          # "api.github.com" greift nicht, die Verbindung laeuft in einen
+          # Timeout. Mit ndots:1 wird der Name direkt abgefragt.
+          # Unkritisch, weil der Sammler intern ausschliesslich
+          # vollqualifizierte Service-Namen verwendet.
+          dnsConfig:
+            options:
+              - name: ndots
+                value: "1"
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
