@@ -17,6 +17,7 @@ spec:
       - hermes-agent
       - immich
       - mail
+      - gitlab
     # See schedule-daily.yaml for why these are excluded.
     excludedResources:
       - jobs.batch

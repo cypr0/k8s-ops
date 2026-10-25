@@ -1,0 +1,167 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/fluxcd-community/flux2-schemas/main/helmrelease-helm-v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gitlab
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+  install:
+    remediation:
+      retries: -1
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    controllers:
+      main:
+        replicas: 1
+        strategy: Recreate
+        annotations:
+          reloader.stakater.com/auto: "true"
+          secret.reloader.stakater.com/reload: "gitlab-config"
+        pod:
+          # Omnibus (runit, chef, sshd) must start as root and drops to its own
+          # service users itself. Known, deliberate deviation from
+          # pod-security-restricted, see docs/apps/gitlab.md.
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            seccompProfile:
+              type: RuntimeDefault
+        containers:
+          gitlab:
+            image:
+              repository: docker.io/gitlab/gitlab-ce
+              tag: 19.5.1-ce.0
+            env:
+              TZ: Europe/Berlin
+              # Everything lives in the mounted gitlab.rb (externalsecret.yaml).
+              GITLAB_OMNIBUS_CONFIG: "from_file('/etc/gitlab-config/gitlab.rb')"
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+                add:
+                  - CHOWN
+                  - DAC_OVERRIDE
+                  - FOWNER
+                  - FSETID
+                  - KILL
+                  - SETGID
+                  - SETUID
+                  - SETPCAP
+                  - NET_BIND_SERVICE
+                  - SYS_CHROOT
+                  - AUDIT_WRITE
+            ports:
+              - name: http
+                containerPort: 8181
+              - name: ssh
+                containerPort: 22
+              - name: m-workhorse
+                containerPort: 9229
+              - name: m-sidekiq
+                containerPort: 8082
+              - name: m-gitaly
+                containerPort: 9236
+            probes:
+              # Exec on loopback: the health endpoints only answer to
+              # 127.0.0.0/8 by default, kubelet probes come from the node.
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - "curl"
+                      - "-fsS"
+                      - "-o"
+                      - "/dev/null"
+                      - "http://127.0.0.1:8181/-/readiness"
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 180
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - "curl"
+                      - "-fsS"
+                      - "-o"
+                      - "/dev/null"
+                      - "http://127.0.0.1:8181/-/liveness"
+                  periodSeconds: 30
+                  timeoutSeconds: 10
+                  failureThreshold: 5
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - "curl"
+                      - "-fsS"
+                      - "-o"
+                      - "/dev/null"
+                      - "http://127.0.0.1:8181/-/readiness"
+                  periodSeconds: 15
+                  timeoutSeconds: 10
+                  failureThreshold: 3
+            resources:
+              requests:
+                cpu: 500m
+                memory: 3Gi
+              limits:
+                memory: 6Gi
+
+    defaultPodOptions:
+      automountServiceAccountToken: false
+
+    service:
+      gitlab:
+        controller: main
+        ports:
+          http:
+            port: 80
+            targetPort: 8181
+
+    persistence:
+      config:
+        existingClaim: gitlab-data
+        advancedMounts:
+          main:
+            gitlab:
+              - path: /etc/gitlab
+                subPath: config
+              - path: /var/opt/gitlab
+                subPath: data
+      gitlab-rb:
+        type: secret
+        name: gitlab-config
+        advancedMounts:
+          main:
+            gitlab:
+              - path: /etc/gitlab-config
+                readOnly: true
+      logs:
+        type: emptyDir
+        advancedMounts:
+          main:
+            gitlab:
+              - path: /var/log/gitlab
+      shm:
+        type: emptyDir
+        medium: Memory
+        sizeLimit: 256Mi
+        advancedMounts:
+          main:
+            gitlab:
+              - path: /dev/shm

@@ -1,0 +1,24 @@
+---
+# Git over SSH from the LAN. A dedicated IP and hostname, not envoy-internal:
+# Envoy only speaks HTTP here. k8s-gateway derives the internal A record for
+# gitlab-ssh.${SECRET_DOMAIN} from the coredns.io/hostname annotation, same
+# mechanism and same dedicated-IP reasoning as
+# kubernetes/apps/mail/mailu/app/service-front-webmail-lan.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab-ssh
+  annotations:
+    lbipam.cilium.io/ips: "192.168.10.112"
+    coredns.io/hostname: "gitlab-ssh.${SECRET_DOMAIN}"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: gitlab
+    app.kubernetes.io/instance: gitlab
+  ports:
+    - name: ssh
+      port: 22
+      targetPort: 22
+      protocol: TCP

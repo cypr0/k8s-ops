@@ -1,0 +1,13 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gitlab
+resources:
+  - ./ocirepository.yaml
+  - ./externalsecret.yaml
+  - ./pvc.yaml
+  - ./helmrelease.yaml
+  - ./service-ssh.yaml
+  - ./httproute.yaml
+  - ./podmonitor.yaml
+  - ./ciliumnetworkpolicy.yaml

@@ -161,6 +161,15 @@ spec:
         inherit: true
         passwordSecret:
           name: roundcube-db-role
+      - name: gitlabusr
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        inherit: true
+        passwordSecret:
+          name: gitlab-db-role
 
   # tradingusr/tradingreadonly (Hermes trading bot, since deprovisioned -- see
   # kubernetes/apps/hermes-agent/hermes-agent/app/kustomization.yaml) were

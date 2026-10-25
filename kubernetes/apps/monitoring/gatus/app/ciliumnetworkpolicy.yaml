@@ -125,6 +125,15 @@ spec:
         - ports:
             - port: "2283"
               protocol: TCP
+    # GitLab health check (Workhorse :8181 behind Service port 80)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": gitlab
+            app.kubernetes.io/name: gitlab
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
     # Mail namespace health check (mailu-front)
     - toEndpoints:
         - matchLabels:

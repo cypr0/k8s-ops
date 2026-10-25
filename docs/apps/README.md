@@ -37,6 +37,8 @@ check here before assuming a gap means "not interesting."
 | flux-operator | flux-system | [flux-operator.md](flux-operator.md) |
 | flux-operator-mcp | flux-system | [flux-operator-mcp.md](flux-operator-mcp.md) |
 | Gatus | monitoring | [gatus.md](gatus.md) |
+| GitLab | gitlab | [gitlab.md](gitlab.md) |
+| GitLab Runner | gitlab-runner | [gitlab-runner.md](gitlab-runner.md) |
 | Gotenberg | paperless | [gotenberg.md](gotenberg.md) |
 | Grafana | monitoring | [grafana.md](grafana.md) |
 | hermes-agent | hermes-agent | [hermes-agent.md](hermes-agent.md) |

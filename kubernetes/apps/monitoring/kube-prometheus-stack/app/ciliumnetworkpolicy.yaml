@@ -143,6 +143,14 @@ spec:
               protocol: TCP
             - port: "9999" # dragonfly admin
               protocol: TCP
+            - port: "8181" # gitlab rails/puma (/-/metrics)
+              protocol: TCP
+            - port: "9229" # gitlab workhorse
+              protocol: TCP
+            - port: "8082" # gitlab sidekiq
+              protocol: TCP
+            - port: "9236" # gitlab gitaly
+              protocol: TCP
 ---
 # Alertmanager: receives alerts from Prometheus, queried by Grafana
 apiVersion: cilium.io/v2

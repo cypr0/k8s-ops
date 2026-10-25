@@ -22,3 +22,5 @@ resources:
   - ./database-mailu.yaml
   - ./externalsecret-roundcube.yaml
   - ./database-roundcube.yaml
+  - ./externalsecret-gitlab.yaml
+  - ./database-gitlab.yaml
