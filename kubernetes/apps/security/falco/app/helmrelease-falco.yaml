@@ -27,15 +27,32 @@ spec:
     driver:
       kind: modern_ebpf
 
-    # Workers only — CPs need RAM for kube-apiserver + etcd
-    tolerations: []
-    affinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: node-role.kubernetes.io/control-plane
-                  operator: DoesNotExist
+    # All seven nodes, control plane included. This reverses an earlier
+    # "workers only" decision whose stated reason was RAM headroom for
+    # kube-apiserver and etcd.
+    #
+    # Why it was reversed: the control-plane nodes run kube-apiserver, etcd
+    # and the scheduler — the components whose compromise hands over the
+    # whole cluster — and they were the only ones without runtime detection.
+    # The gap was invisible in the obvious place: with `tolerations: []` plus
+    # the nodeAffinity below, the DaemonSet reported "4 of 4 ready" and looked
+    # healthy, because the three control-plane nodes never entered either side
+    # of that ratio. Surfaced by the ISMS check `falco_running_all_nodes`
+    # (isms/compliance-as-code, control DET.3.1), which compares against the
+    # node list and the tolerations instead.
+    #
+    # Why it is affordable now: control-plane nodes have 11.6Gi allocatable
+    # and sat at 45-58% when this changed (2026-10-25). Falco requests 256Mi
+    # with a 1Gi limit, so the worst case takes the busiest node to roughly
+    # 67%. The RAM concern was real — a Kyverno rollout OOM-killed a
+    # control-plane node in 2026-07, see
+    # docs/incidents/2026-07-04-kyverno-rollout-oom-kills-control-plane-node.md
+    # — so watch memory on the CPs after this rolls out, and revert here
+    # rather than raising the limit if they come under pressure.
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
 
     collectors:
       enabled: true
