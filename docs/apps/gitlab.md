@@ -57,18 +57,27 @@ Values go into single-quoted Ruby strings: use alphanumeric values without quote
 - **First start takes 5-10 minutes** (reconfigure plus schema load). The startup probe allows 30 minutes; the Flux Kustomization timeout is 30m.
 - **Schema load needs `max_locks_per_transaction`** ≥ 64 with `max_connections` ≥ 200. The cluster has 200 connections and the default 64, which was enough on a trial; with 100 connections it failed with `out of shared memory`. Do not lower `max_connections` on the CNPG cluster without re-checking this.
 - **Redis is embedded**, with data on the NFS volume. Dragonfly is not supported by GitLab.
-- **Sign-up is not disabled declaratively.** After the first login switch it off under Admin → Settings → General → Sign-up restrictions. Authentik's group policy still gates SSO.
+- **Roles are not driven by Authentik.** Mapping OIDC groups to administrator (`admin_groups`, `required_groups`) is a Premium/Ultimate feature and the CE image ships without the `ee/` code. Every SSO login creates a regular user; admin is set once in GitLab and then persists (CE never syncs it back). Current setup: `phiros` regular user, `phiros-cmd` administrator, promoted with `gitlab-rails runner` after its first login. Authentik's `gitlab-users` group only decides who may sign in at all.
+- **Password login is off, SSO only.** `password_authentication_enabled_for_web = false` and `signup_enabled = false` are application settings stored in the database, not in `gitlab.rb`, so they are not reproduced by a redeploy against a fresh database. Set once on 2026-10-25 with `gitlab-rails runner` (see Common operations). The `root` account still exists with its initial password but can no longer use it on the web; git over HTTP with tokens is unaffected.
 - **E-mail is off** (`gitlab_email_enabled = false`); wire it to Mailu if notifications are wanted.
 - **Version policy:** Renovate will propose new `gitlab-ce` tags. GitLab does not allow skipping required upgrade stops; check the upgrade path before merging a major or minor jump, and keep the [runner](gitlab-runner.md) on the same minor.
 
 ## Common operations
-- **First deployment order:** (1) create the 1Password item `gitlab` with the fields above (generate `GITLAB_ROOT_PASSWORD` and `GITLAB_DBPASS` as random alphanumerics; client ID/secret are free to choose, they are shared with Authentik); (2) merge, Flux creates DB, Authentik provider and the app; (3) in Authentik add your user to group `gitlab-users`; (4) sign in as `root` with the initial password at `/users/sign_in?auto_sign_in=false`, change the root e-mail to your Authentik e-mail, then sign in with the "Authentik" button, which auto-links to root; (5) create the runner (see [gitlab-runner](gitlab-runner.md)).
+- **First deployment order:** (1) create the 1Password item `gitlab` with the fields above (generate `GITLAB_ROOT_PASSWORD` and `GITLAB_DBPASS` as random alphanumerics; client ID/secret are free to choose, they are shared with Authentik); (2) merge, Flux creates DB, Authentik provider and the app; (3) in Authentik add the users to group `gitlab-users`; (4) sign in once with each user through the "Authentik" button (accounts are created on first login); (5) promote the admin and switch to SSO only (next two entries); (6) create the runner (see [gitlab-runner](gitlab-runner.md)).
+- **Promote an administrator and go SSO only:**
+  ```sh
+  kubectl -n gitlab exec deploy/gitlab -- gitlab-rails runner "
+    User.find_by!(username: 'phiros-cmd').update!(admin: true)
+    ApplicationSetting.current.update!(password_authentication_enabled_for_web: false, signup_enabled: false)"
+  ```
+  The settings cache lasts about a minute. Do this only after the admin has logged in through SSO at least once, otherwise nobody can sign in.
+- **Break-glass when SSO is down:** re-enable the password form with the same runner call and `password_authentication_enabled_for_web: true`, then sign in as `root` (reset its password with `gitlab-rake "gitlab:password:reset[root]"` if needed). `root` is the only account without an Authentik identity.
 - **SSH:** add your key in GitLab, clone with `ssh://git@gitlab-ssh.${SECRET_DOMAIN}/<group>/<project>.git`.
 - **Upgrade:** edit the image tag in `helmrelease.yaml`, commit, push, or `flux reconcile helmrelease gitlab -n gitlab`.
 - **Rotate a secret:** update the 1Password item, then `kubectl annotate externalsecret <name> -n gitlab force-sync=$(date +%s)`; Reloader restarts the pod on `gitlab-config` changes. Rotating `GITLAB_DBPASS` also needs the `gitlab-db-role` ExternalSecret in `database`.
 - **Pause reconciliation:** `flux suspend kustomization gitlab -n gitlab` / `flux suspend helmrelease gitlab -n gitlab`.
 
 ## TODOs / unknowns
-- The OIDC login itself (Authentik provider, redirect, auto-link) is not covered by the trial: it ran with dummy client credentials, only the presence of the login button was checked.
+- OIDC login works in production (`phiros-cmd`, 2026-10-25); the trial instance only had dummy client credentials.
 - Not verified under real load or with the production Kyverno/Cilium policies in place (the trial namespace had none); the CNP is modelled on the existing apps.
 - Alerts (PrometheusRule) are not defined; the dashboard and the Gatus check are the only monitoring.
