@@ -106,8 +106,36 @@ spec:
         enabled: false
         grafanaAgent:
           installOperator: false
+      # ACHTUNG: monitoring.lokiCanary gibt es in Chart 7.0.0 nicht mehr --
+      # der Schalter heisst jetzt lokiCanary.enabled auf oberster
+      # values-Ebene und steht per Vorgabe auf true. Diese Zeile ist seit
+      # dem Chart-Upgrade wirkungslos, das Canary laeuft als DaemonSet auf
+      # allen Knoten. Bewusst hier belassen, bis entschieden ist, ob das
+      # Canary bleiben soll: dann wird sie entfernt, sonst durch
+      # lokiCanary.enabled: false ersetzt.
       lokiCanary:
         enabled: false
+
+    # Oberste Ebene, wie das Chart es ab 7.0.0 erwartet. Solange das Canary
+    # laeuft, braucht es ein Limit -- Istverbrauch 23-31Mi je Knoten.
+    # Gefunden durch den ISMS-Check container_memory_limits (KONF.9.1).
+    lokiCanary:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          memory: 128Mi
+
+    # loki-sc-rules: der Sidecar, der Regel-ConfigMaps in den Pod spiegelt.
+    # Istverbrauch 71Mi.
+    sidecar:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 192Mi
 
     test:
       enabled: false
