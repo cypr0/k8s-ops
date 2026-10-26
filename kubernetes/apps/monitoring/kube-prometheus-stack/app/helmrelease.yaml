@@ -128,6 +128,28 @@ spec:
                   storage: 20Gi
 
     # node-exporter
+    # Bisher nicht konfiguriert, daher liefen Operator und die von ihm
+    # erzeugten config-reloader-Sidecars ohne Speicher-Limit. Gefunden durch
+    # den ISMS-Check container_memory_limits (KONF.9.1).
+    prometheusOperator:
+      # Istverbrauch 49Mi.
+      resources:
+        requests:
+          cpu: 25m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+      # Diese Werte setzt der Operator fuer JEDEN config-reloader-Sidecar,
+      # den er erzeugt -- also bei Prometheus und bei Alertmanager
+      # gleichermassen. Istverbrauch 9-20Mi.
+      prometheusConfigReloader:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+
     nodeExporter:
       enabled: true
     prometheus-node-exporter:
