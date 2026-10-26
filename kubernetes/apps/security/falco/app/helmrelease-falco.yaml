@@ -91,10 +91,27 @@ spec:
 
     falcoctl:
       artifact:
+        # Limits je Container, weil install ein Init- und follow ein
+        # Sidecar-Container ist -- `resources` liegt im Chart unter jedem
+        # der beiden, nicht unter falcoctl. Beide laden nur Regel-Artefakte,
+        # Istverbrauch 15-31Mi. Gefunden durch den ISMS-Check
+        # container_memory_limits (KONF.9.1).
         install:
           enabled: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
         follow:
           enabled: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
 
     metrics:
       enabled: true

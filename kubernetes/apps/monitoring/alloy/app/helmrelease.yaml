@@ -25,6 +25,17 @@ spec:
       strategy: rollback
   values:
     alloy:
+      # Unter alloy.resources, nicht auf oberster values-Ebene: das Chart
+      # liest .Values.alloy.resources. Eine Ebene hoeher landeten die Werte
+      # nirgends -- der laufende Container hatte resources: {} und damit kein
+      # Limit. Gefunden durch den ISMS-Check container_memory_limits
+      # (KONF.9.1). Istverbrauch 226-389Mi je Knoten, daher 512Mi.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
       # Needed for the OTLP receiver below; the chart only opens its own
       # listenPort (12345) otherwise.
       extraPorts:
@@ -146,12 +157,16 @@ spec:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
 
-    resources:
-      requests:
-        cpu: 50m
-        memory: 192Mi
-      limits:
-        memory: 384Mi
+    # configReloader ist der Sidecar des Charts; alloy.resources gilt fuer den
+    # Hauptcontainer. Beide muessen gesetzt sein, sonst bleibt je einer ohne
+    # Limit.
+    configReloader:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 50Mi
+        limits:
+          memory: 128Mi
 
     serviceMonitor:
       enabled: true

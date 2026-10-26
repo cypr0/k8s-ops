@@ -27,6 +27,13 @@ spec:
       requests:
         cpu: 100m
         memory: 256Mi
+      limits:
+        # Istverbrauch 190-341Mi je Knoten. 768Mi laesst Luft fuer
+        # BPF-Map-Wachstum bei mehr Endpunkten, begrenzt aber den Schaden,
+        # wenn der Agent entgleist. Ohne Limit war er auf jedem der sieben
+        # Knoten unbegrenzt -- auf einem einzelnen physischen Host die
+        # kritischste Stelle, siehe Architekturbefund AB.1 im ISMS.
+        memory: 768Mi
     autoDirectNodeRoutes: true
     bpf:
       masquerade: true
@@ -95,6 +102,13 @@ spec:
     localRedirectPolicies:
       enabled: true
     operator:
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          # Istverbrauch 90Mi, eine Replica.
+          memory: 256Mi
       dashboards:
         enabled: true
       prometheus:
