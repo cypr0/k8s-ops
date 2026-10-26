@@ -18,8 +18,17 @@ spec:
       strategy: rollback
       retries: 3
   values:
-    resources:
-      requests:
-        cpu: 10m
-      limits:
-        memory: 128Mi
+    # Unter manager, nicht auf oberster values-Ebene: das Chart liest
+    # .Values.manager.resources und .Values.rbacProxy.resources. Auf der
+    # obersten Ebene landeten die Werte nirgends -- der manager-Container
+    # lief mit resources: {} und damit ohne Limit, waehrend der
+    # kube-rbac-proxy die Chart-Vorgaben bekam. Gefunden durch den
+    # ISMS-Check container_memory_limits (KONF.9.1).
+    manager:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          # Istverbrauch 43-98Mi.
+          memory: 256Mi

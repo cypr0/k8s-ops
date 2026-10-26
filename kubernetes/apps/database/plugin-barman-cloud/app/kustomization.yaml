@@ -7,3 +7,23 @@ resources:
   - https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
   - ./ciliumnetworkpolicy.yaml
   - ./externalsecret.yaml
+
+# Das Upstream-Manifest setzt kein Speicher-Limit, und als fremdes Manifest
+# gibt es keine Chart-Werte zum Nachziehen -- deshalb hier als Patch.
+# Istverbrauch 18-21Mi: das Plugin vermittelt nur WAL-Archivierung, es
+# verschiebt die Daten nicht selbst. Gefunden durch den ISMS-Check
+# container_memory_limits (KONF.9.1).
+patches:
+  - target:
+      kind: Deployment
+      name: barman-cloud
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources/requests
+        value:
+          cpu: 10m
+          memory: 64Mi
+      - op: add
+        path: /spec/template/spec/containers/0/resources/limits
+        value:
+          memory: 192Mi

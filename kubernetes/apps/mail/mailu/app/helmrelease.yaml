@@ -165,6 +165,15 @@ spec:
       realIpFrom: "10.42.0.0/16"
 
     front:
+      # Istverbrauch 104-128Mi je Replica. Die uebrigen sieben
+      # Mailu-Komponenten tragen Limits, front war die Luecke -- gefunden
+      # durch den ISMS-Check container_memory_limits (KONF.9.1).
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          memory: 384Mi
       # DaemonSet (one front pod per worker node), not the chart's default
       # single-replica Deployment. Required for externalTrafficPolicy: Local
       # (see below) to actually work: Cilium's L2-announcement leader
@@ -545,6 +554,30 @@ spec:
           memory: 128Mi
         limits:
           memory: 256Mi
+
+    # oletools und tika sind im Chart aktiviert, hier aber bisher nicht
+    # konfiguriert -- deshalb liefen sie ohne Limit. tika verarbeitet
+    # Anhaenge und ist mit 600Mi Istverbrauch der hungrigste Dienst im
+    # Namespace; oletools bleibt bei 12Mi. Gefunden durch den ISMS-Check
+    # container_memory_limits (KONF.9.1).
+    oletools:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+
+    tika:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 512Mi
+        limits:
+          # Deutlich ueber dem Istwert: eine JVM, die Dokumente parst,
+          # braucht Spitzen. Zu knapp bedeutet hier OOM beim Anhang, nicht
+          # beim Leerlauf.
+          memory: 1Gi
 
     webdav:
       # Radicale (CalDAV/CardDAV) — no separate hostname/routing needed: it's

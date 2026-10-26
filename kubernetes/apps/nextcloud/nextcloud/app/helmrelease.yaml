@@ -397,3 +397,14 @@ spec:
       enabled: false
     cronjob:
       enabled: true
+      # Als Sidecar im Hauptpod (cronjob.type ist im Chart "sidecar"),
+      # deshalb unter cronjob.sidecar und nicht unter cronjob.cronjob.
+      # Istverbrauch 5Mi: der Container ruft nur periodisch occ cron auf.
+      # Gefunden durch den ISMS-Check container_memory_limits (KONF.9.1).
+      sidecar:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 256Mi

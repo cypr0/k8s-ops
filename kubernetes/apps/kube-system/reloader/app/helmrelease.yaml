@@ -24,10 +24,19 @@ spec:
       containerSecurityContext:
         allowPrivilegeEscalation: false
         capabilities:
-          drop: ["ALL"]
-      resources:
-        requests:
-          cpu: 10m
-          memory: 32Mi
-        limits:
-          memory: 64Mi
+          drop:
+            - "ALL"
+      deployment:
+        # Unter reloader.deployment, nicht unter reloader: das Chart liest
+        # .Values.reloader.deployment.resources (templates/deployment.yaml).
+        # Eine Ebene hoeher landeten die Werte nirgends -- das laufende
+        # Deployment hatte resources: {} und damit kein Limit. Gefunden durch
+        # den ISMS-Check container_memory_limits (KONF.9.1).
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            # Istverbrauch 79Mi, also lag das alte (unwirksame) Limit von
+            # 64Mi ohnehin darunter.
+            memory: 192Mi
