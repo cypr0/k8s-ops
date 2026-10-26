@@ -36,6 +36,21 @@ rules:
     verbs:
       - "get"
       - "list"
+  # Pod-Specs, nicht Pod-Inhalte: der Nachweis zu KONF.9.1 und
+  # KONF.15.1/15.2 (Begrenzung von Speicher und Rechenleistung) braucht die
+  # tatsaechlich gesetzten resources.limits je Container. Deployments allein
+  # genuegen nicht, weil CronJobs, Jobs und von Operatoren erzeugte Pods
+  # darin nicht auftauchen. Nur get und list -- `create` auf pods waere ein
+  # Verstoss gegen die eigene ClusterPolicy restrict-rbac-least-privilege.
+  - apiGroups:
+      - ""
+    resources:
+      - "pods"
+      - "resourcequotas"
+      - "limitranges"
+    verbs:
+      - "get"
+      - "list"
   # Kyverno verdicts. There are no ClusterPolicyReports in this cluster --
   # every policy matches namespaced resources -- but both are listed so a
   # future cluster-scoped policy is picked up without an RBAC change.
