@@ -51,6 +51,17 @@ rules:
     verbs:
       - "get"
       - "list"
+  # Service types, for KONF.2.4 (disable unneeded system functions). A
+  # NodePort opens a port on every node and bypasses the gateway, so the
+  # check asserts that none exists. Only the spec is read; Services carry no
+  # payload data.
+  - apiGroups:
+      - ""
+    resources:
+      - "services"
+    verbs:
+      - "get"
+      - "list"
   # Kyverno verdicts. There are no ClusterPolicyReports in this cluster --
   # every policy matches namespaced resources -- but both are listed so a
   # future cluster-scoped policy is picked up without an RBAC change.

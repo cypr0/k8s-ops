@@ -163,12 +163,52 @@ spec:
     retryOn:
       triggers:
         - reset
+  # Local rate limiting, i.e. enforced by each Envoy pod itself with no
+  # external rate limit service and no Redis. Evidence for KONF.15.3
+  # (protection against denial of service) in isms/compliance-as-code.
+  #
+  # The threshold is measured, not guessed. Peak downstream request rate per
+  # Envoy pod over the seven days to 2026-10-27, taken from
+  # envoy_http_downstream_rq_completed with burst-sensitive one-minute
+  # windows: 6.90 req/s, i.e. about 415 per minute across all routes. 6000
+  # per minute therefore leaves roughly a factor of 14 of headroom on the
+  # aggregate, and more per route.
+  #
+  # Two properties worth knowing before tuning this:
+  #
+  # * Targeting a Gateway gives every Route its own counter. A busy
+  #   application cannot consume another one's budget, which is why a single
+  #   shared value is acceptable here.
+  # * The counter is per Envoy pod. With envoyHpa at 2-4 replicas the
+  #   effective ceiling is 12000-24000 per minute. That still bounds a flood
+  #   by orders of magnitude while staying far above real usage.
+  #
+  # Token bucket semantics absorb bursts: the bucket holds 6000 tokens and
+  # refills every minute, so a page load firing a few hundred parallel
+  # requests is not rejected.
+  rateLimit:
+    type: Local
+    local:
+      rules:
+        - limit:
+            requests: 6000
+            unit: Minute
   targetSelectors:
     - group: gateway.networking.k8s.io
       kind: Gateway
   tcpKeepalive: {}
   timeout:
     http:
+      # Deliberately disabled, and deliberately left that way. requestTimeout
+      # bounds the entire request including the response body, so any finite
+      # value would cut long-lived streams: Open-WebUI's server-sent events,
+      # large Immich uploads, slow Grafana and Loki queries.
+      #
+      # The attack this would otherwise mitigate -- a client dribbling out a
+      # request to hold a worker open, slowloris style -- is covered by
+      # requestHeadersReceivedTimeout in the ClientTrafficPolicy instead.
+      # That timer only bounds header reception and leaves bodies and
+      # responses untouched, which makes it the surgical lever here.
       requestTimeout: 0s
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
@@ -180,6 +220,19 @@ spec:
     xForwardedFor:
       trustedCIDRs:
         - "10.42.0.0/16"
+  # Concurrent connection ceiling per Envoy pod. Peak concurrent downstream
+  # requests over the seven days to 2026-10-27 was 14 per pod
+  # (envoy_http_downstream_rq_active); connections are fewer still, because
+  # HTTP/2 multiplexes many requests onto one. 1024 is therefore far above
+  # real usage and still caps connection hoarding.
+  #
+  # closeDelay holds a rejected connection briefly before closing it instead
+  # of refusing instantly, which slows down a reconnect flood rather than
+  # inviting it.
+  connection:
+    connectionLimit:
+      value: 1024
+      closeDelay: 1s
   http2:
     onInvalidMessage: TerminateStream
   http3: {}
@@ -187,6 +240,16 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
   tcpKeepalive: {}
+  timeout:
+    http:
+      # The slowloris defence. The timer starts with the first header byte and
+      # is disarmed once the last one arrives, so it bounds a client that
+      # dribbles out headers to pin a worker -- without touching request
+      # bodies or long-lived responses. Disabled by default in Envoy.
+      #
+      # 10s is generous for header transmission over the Cloudflare Tunnel and
+      # over the VPN; browsers send headers in a single segment.
+      requestHeadersReceivedTimeout: 10s
   tls:
     minVersion: "1.2"
     alpnProtocols:
