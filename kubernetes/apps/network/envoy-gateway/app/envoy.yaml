@@ -146,11 +146,26 @@ spec:
           - kind: Secret
             name: ${SECRET_DOMAIN/./-}-production-tls
 ---
+# Four policies rather than two, because Envoy Gateway attaches at most one
+# policy of a given type to a given Gateway -- a second one targeting the same
+# Gateway is rejected as Conflicted. A shared policy plus an "external only"
+# overlay is therefore not expressible, so the settings common to both
+# gateways are repeated below.
+#
+# The split exists because only envoy-external is publicly reachable:
+# cloudflared forwards *.${SECRET_DOMAIN} to it, while envoy-internal answers
+# only on the LAN and over the site-to-site VPN. Denial-of-service protection
+# belongs on the exposed surface; on the internal one it would mostly be a
+# way to rate-limit oneself during a bulk upload.
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
-  name: envoy
+  name: envoy-external
 spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-external
   compressor:
     - type: Zstd
       zstd: {}
@@ -193,9 +208,6 @@ spec:
         - limit:
             requests: 6000
             unit: Minute
-  targetSelectors:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
   tcpKeepalive: {}
   timeout:
     http:
@@ -212,10 +224,47 @@ spec:
       requestTimeout: 0s
 ---
 apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: envoy-internal
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+  compressor:
+    - type: Zstd
+      zstd: {}
+    - type: Brotli
+      brotli: {}
+    - type: Gzip
+      gzip: {}
+  retry:
+    numRetries: 2
+    retryOn:
+      triggers:
+        - reset
+  # No rateLimit here on purpose: this gateway is not publicly reachable, and
+  # the only client able to exhaust it is the operator doing something bulky.
+  tcpKeepalive: {}
+  timeout:
+    http:
+      requestTimeout: 0s
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: ClientTrafficPolicy
 metadata:
-  name: envoy
+  name: envoy-external
 spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-external
+  # Needed on both gateways, for different reasons. Here it is Cloudflare's
+  # X-Forwarded-For arriving from the cloudflared pod; on envoy-internal it
+  # stops a LAN client from choosing the IP that lands in Grafana's session
+  # tokens and request logs. See kubernetes/apps/monitoring/grafana/app/
+  # httproute.yaml and docs/apps/envoy-gateway.md (Client IP).
   clientIPDetection:
     xForwardedFor:
       trustedCIDRs:
@@ -236,9 +285,6 @@ spec:
   http2:
     onInvalidMessage: TerminateStream
   http3: {}
-  targetSelectors:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
   tcpKeepalive: {}
   timeout:
     http:
@@ -247,9 +293,41 @@ spec:
       # dribbles out headers to pin a worker -- without touching request
       # bodies or long-lived responses. Disabled by default in Envoy.
       #
-      # 10s is generous for header transmission over the Cloudflare Tunnel and
-      # over the VPN; browsers send headers in a single segment.
+      # 10s is generous for header transmission over the Cloudflare Tunnel;
+      # browsers send headers in a single segment.
       requestHeadersReceivedTimeout: 10s
+  tls:
+    minVersion: "1.2"
+    alpnProtocols:
+      - h2
+      - http/1.1
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: envoy-internal
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy-internal
+  # Not a denial-of-service measure, and therefore present here too: without
+  # it a LAN client supplies its own X-Forwarded-For and X-Real-IP, and
+  # Grafana trusts the leftmost entry with no proxy check. That let any LAN
+  # client choose the IP recorded in user_auth_token.client_ip and in the
+  # request log.
+  clientIPDetection:
+    xForwardedFor:
+      trustedCIDRs:
+        - "10.42.0.0/16"
+  # No connectionLimit and no requestHeadersReceivedTimeout: both are
+  # denial-of-service measures, and this gateway is reachable only from the
+  # LAN and the site-to-site VPN. TLS floor and HTTP/2 framing stay, because
+  # those are correctness rather than flood protection.
+  http2:
+    onInvalidMessage: TerminateStream
+  http3: {}
+  tcpKeepalive: {}
   tls:
     minVersion: "1.2"
     alpnProtocols:
