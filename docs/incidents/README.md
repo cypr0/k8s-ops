@@ -26,3 +26,4 @@ Severity scale (sized for a one-operator homelab, no on-call rotation):
 | 2026-09-20 | SEV1 | [external-dns v0.22.0 annotation-prefix rename silently drops public DNS](2026-09-20-external-dns-annotation-prefix-rename-breaks-public-dns.md) |
 | 2026-10-11 | SEV3 | [Wazuh rule 100406 burns 83% of the monthly Pushover quota in 11 days](2026-10-11-wazuh-pushover-quota-exhaustion.md) |
 | 2026-10-17 | SEV2 | [Authentik 2026.8.4 upgrade stalled by the GeoIP sidecar (third time)](2026-10-17-authentik-upgrade-stalled-geoip-quota.md) |
+| 2026-10-27 | SEV2 | [Object-store write outage fails every backup path, silently](2026-10-27-s3-write-outage-silent-backup-failure.md) |
