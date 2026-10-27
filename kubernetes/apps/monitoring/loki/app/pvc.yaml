@@ -1,0 +1,22 @@
+---
+# Der Name storage-loki-0 ist nicht frei gewaehlt: so benennt die StatefulSet
+# loki die Anspruchsvorlage storage fuer das Replikat 0. Existiert der Anspruch
+# bereits, uebernimmt die StatefulSet ihn, statt einen neuen anzulegen. Genau
+# darueber kommt das statische PV aus pv.yaml zum Einsatz, ohne dass die
+# Anspruchsvorlage im Helm-Chart angefasst werden muesste.
+#
+# Wird dieser Anspruch geloescht, legt die StatefulSet beim naechsten Start
+# wieder einen dynamischen an -- mit leerem Volume und dem alten
+# fsGroup-Problem. Loeschen also nur gemeinsam mit pv.yaml.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: storage-loki-0
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ""
+  volumeName: loki-storage
+  resources:
+    requests:
+      storage: 20Gi

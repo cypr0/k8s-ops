@@ -15,17 +15,17 @@ spec:
         name: grafana
         namespace: monitoring
   maxHistory: 2
-  # Das NFS-Volume enthaelt >185.000 Dateien. Die StorageClass zfs-nfs setzt
-  # mountPermissions 0755, womit der fsGroup-Abgleich des Kubelets an der
-  # Volume-Wurzel nie erfuellt ist (verlangt GID=fsGroup und mindestens 0770).
-  # Folge: bei jedem Pod-Start ein vollstaendiger rekursiver chown. Gemessen am
-  # 2026-10-27: rund 7.300 Dateien pro Minute, also ~26-28 Minuten pro Start.
-  # Ohne erhoehtes Timeout laeuft jeder Upgrade in Timeout -> Rollback ->
-  # Pod-Ersatz -> Endlosschleife.
+  # Rueckfallschutz, kein Dauerzustand. Mit dem statischen PV aus pv.yaml
+  # (mountPermissions 2775) gelingt der fsGroup-Abgleich des Kubelets sofort
+  # und ein Pod-Start dauert Sekunden.
   #
-  # 60m ist bewusst grosszuegig: die Dauer waechst mit dem Datenbestand mit.
-  # Der Ursachenfix verlangt Gruppenschreibrecht auf der Volume-Wurzel und
-  # damit ein neues PV, weil volumeAttributes unveraenderlich sind.
+  # Faellt das Volume je auf mountPermissions 0755 zurueck -- etwa durch eine
+  # dynamisch bereitgestellte Ersatzbeanspruchung -- laeuft der Kubelet wieder
+  # alle rund 190.000 Dateien ab. Gemessen am 2026-10-27: 37 Minuten pro
+  # Start. Mit dem Helm-Standardtimeout von 5m endet das in Timeout ->
+  # Rollback -> Pod-Ersatz -> Endlosschleife; am 2026-10-27 entstanden so neun
+  # Helm-Revisionen in Folge, und der Rollback entfernte dabei die in #233
+  # gesetzten Speicherlimits wieder. Das Timeout bricht diese Schleife.
   install:
     timeout: 60m
     remediation:
@@ -74,6 +74,16 @@ spec:
         enabled: true
         storageClass: zfs-nfs
         size: 20Gi
+        # Das Chart gibt whenDeleted und whenScaled beide auf Delete vor. Damit
+        # loescht jedes Herunterskalieren der StatefulSet den Anspruch
+        # storage-loki-0 -- und zusammen mit einem PV auf reclaimPolicy Delete
+        # waeren die Logdaten weg. Beobachtet am 2026-10-27: ein
+        # "scale --replicas=0" entfernte den Anspruch sofort mit.
+        #
+        # Der Anspruch kommt aus pvc.yaml und soll die StatefulSet ueberleben.
+        # false laesst persistentVolumeClaimRetentionPolicy ganz weg, womit die
+        # Kubernetes-Vorgabe Retain/Retain gilt.
+        enableStatefulSetAutoDeletePVC: false
       extraContainers: []
 
     # Disable microservice components

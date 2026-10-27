@@ -1,0 +1,54 @@
+---
+# Statisches PV statt dynamischer Bereitstellung ueber die StorageClass
+# zfs-nfs. Grund ist der fsGroup-Abgleich des Kubelets:
+#
+# Loki laeuft mit fsGroup 10001 und fsGroupChangePolicy OnRootMismatch. Der
+# Kubelet betrachtet die Volume-Wurzel nur dann als passend, wenn GID =
+# fsGroup ist *und* die Rechte 0770 samt setgid-Bit umfassen. Die StorageClass
+# zfs-nfs setzt mountPermissions 0755, und csi-driver-nfs schreibt diesen Wert
+# bei jedem NodePublishVolume erneut auf die Wurzel. Der Abgleich scheitert
+# damit bei jedem Pod-Start und laeuft alle rund 190.000 Dateien des Volumes
+# ab -- gemessen 37 Minuten, mit dem Datenbestand wachsend.
+#
+# mountPermissions 2775 erfuellt die Bedingung. Das setgid-Bit wird dabei
+# tatsaechlich gesetzt: csi-driver-nfs v4.13.6 rechnet den Oktalwert ueber
+# unixModeToFileMode um und erhaelt die Sonderbits. gid 10001 macht die
+# Gruppenzuordnung explizit, statt sie als Nebenwirkung eines frueheren
+# Durchlaufs vorauszusetzen; der Treiber wendet uid/gid nur auf statische PVs
+# an, dynamisch bereitgestellte setzt er bereits in CreateVolume.
+#
+# server, share und subdir zeigen bewusst auf das bestehende Verzeichnis des
+# alten PV pvc-57f0d547-57f9-460a-a3eb-da20546b36d9. Die Logdaten bleiben so
+# unberuehrt; umgestellt wird nur, wie das Volume eingebunden wird.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: loki-storage
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  # Retain, damit ein versehentliches Loeschen des PVC die Logs nicht mitnimmt.
+  persistentVolumeReclaimPolicy: Retain
+  # Leerer String, nicht weglassen: zfs-nfs ist Default-StorageClass und wuerde
+  # sonst eingesetzt werden.
+  storageClassName: ""
+  mountOptions:
+    - nfsvers=4.2
+    - hard
+    - intr
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: storage-loki-0
+    namespace: monitoring
+  csi:
+    driver: nfs.csi.k8s.io
+    volumeHandle: 192.168.10.0#rpool/k8s-rwx#pvc-57f0d547-57f9-460a-a3eb-da20546b36d9##
+    volumeAttributes:
+      server: 192.168.10.0
+      share: /rpool/k8s-rwx
+      subdir: pvc-57f0d547-57f9-460a-a3eb-da20546b36d9
+      mountPermissions: "2775"
+      gid: "10001"
