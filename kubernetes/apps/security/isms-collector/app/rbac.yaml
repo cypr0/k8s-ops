@@ -120,6 +120,28 @@ rules:
       - "cilium.io"
     resources:
       - "ciliumnetworkpolicies"
+      # Cluster-scoped counterpart. There is none in this cluster today, but
+      # KONF.7.15 asks how much of the workload is covered by policy, and a
+      # cluster-wide policy covering everything would otherwise be invisible
+      # and the answer would read worse than reality.
+      - "ciliumclusterwidenetworkpolicies"
+    verbs:
+      - "get"
+      - "list"
+  # Envoy Gateway traffic policies. These back KONF.15.3 (denial of service),
+  # KONF.2.2 (TLS floor) and KONF.12.1.10 (response headers).
+  #
+  # Added 2026-10-27 after the fact: the gateway-dos source was written and
+  # tested with an admin kubeconfig, so the missing permission did not show
+  # up until `kubectl auth can-i --as=` was run against the collector's own
+  # ServiceAccount. Without this the source fails and the dependent check
+  # reports error -- which the staleness logic would have surfaced, but only
+  # after the next collector run.
+  - apiGroups:
+      - "gateway.envoyproxy.io"
+    resources:
+      - "clienttrafficpolicies"
+      - "backendtrafficpolicies"
     verbs:
       - "get"
       - "list"
