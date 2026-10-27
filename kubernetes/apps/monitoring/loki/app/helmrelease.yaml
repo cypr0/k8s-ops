@@ -18,15 +18,20 @@ spec:
   # Das NFS-Volume enthaelt >185.000 Dateien. Die StorageClass zfs-nfs setzt
   # mountPermissions 0755, womit der fsGroup-Abgleich des Kubelets an der
   # Volume-Wurzel nie erfuellt ist (verlangt GID=fsGroup und mindestens 0770).
-  # Folge: bei jedem Pod-Start ein vollstaendiger rekursiver chown, der laenger
-  # als das Helm-Standardtimeout von 5m dauert. Ohne das erhoehte Timeout
-  # laeuft jeder Upgrade in Timeout -> Rollback -> Pod-Ersatz -> Endlosschleife.
+  # Folge: bei jedem Pod-Start ein vollstaendiger rekursiver chown. Gemessen am
+  # 2026-10-27: rund 7.300 Dateien pro Minute, also ~26-28 Minuten pro Start.
+  # Ohne erhoehtes Timeout laeuft jeder Upgrade in Timeout -> Rollback ->
+  # Pod-Ersatz -> Endlosschleife.
+  #
+  # 60m ist bewusst grosszuegig: die Dauer waechst mit dem Datenbestand mit.
+  # Der Ursachenfix verlangt Gruppenschreibrecht auf der Volume-Wurzel und
+  # damit ein neues PV, weil volumeAttributes unveraenderlich sind.
   install:
-    timeout: 30m
+    timeout: 60m
     remediation:
       retries: 3
   upgrade:
-    timeout: 30m
+    timeout: 60m
     cleanupOnFail: true
     remediation:
       retries: 3
