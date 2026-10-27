@@ -39,12 +39,12 @@ spec:
             - port: "9090"
               protocol: TCP
     # Kubelet readiness/liveness probes (host network → host entity)
-    # ISMS collector: fragt die Fluent-Bit-Auslieferungsmetriken ab, mit
-    # denen DET.3.1 belegt wird (isms/compliance-as-code, Check
-    # fluentbit_output_healthy). Nur lesende PromQL-Abfragen.
+    # ISMS collector: queries the Fluent Bit delivery metrics that back
+    # DET.3.1 (isms/compliance-as-code, check fluentbit_output_healthy).
+    # Read-only PromQL queries.
     - fromEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": isms
+            "k8s:io.kubernetes.pod.namespace": security
             app.kubernetes.io/name: isms-collector
       toPorts:
         - ports:

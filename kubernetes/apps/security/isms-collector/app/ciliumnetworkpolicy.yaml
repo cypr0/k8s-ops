@@ -4,7 +4,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: isms-collector
-  namespace: isms
+  namespace: security
 spec:
   endpointSelector:
     matchLabels:

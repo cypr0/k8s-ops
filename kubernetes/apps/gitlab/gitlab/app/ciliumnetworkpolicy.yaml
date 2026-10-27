@@ -34,7 +34,7 @@ spec:
     # namespace cannot reach.
     - fromEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": isms
+            "k8s:io.kubernetes.pod.namespace": security
             app.kubernetes.io/name: isms-collector
       toPorts:
         - ports:

@@ -36,12 +36,12 @@ rules:
     verbs:
       - "get"
       - "list"
-  # Pod-Specs, nicht Pod-Inhalte: der Nachweis zu KONF.9.1 und
-  # KONF.15.1/15.2 (Begrenzung von Speicher und Rechenleistung) braucht die
-  # tatsaechlich gesetzten resources.limits je Container. Deployments allein
-  # genuegen nicht, weil CronJobs, Jobs und von Operatoren erzeugte Pods
-  # darin nicht auftauchen. Nur get und list -- `create` auf pods waere ein
-  # Verstoss gegen die eigene ClusterPolicy restrict-rbac-least-privilege.
+  # Pod specs, not pod contents: the evidence for KONF.9.1 and KONF.15.1/15.2
+  # (limiting memory and compute) needs the resources.limits actually set per
+  # container. Deployments alone are not enough, because CronJobs, Jobs and
+  # operator-created pods do not appear in them. Only get and list -- `create`
+  # on pods would violate the cluster's own ClusterPolicy
+  # restrict-rbac-least-privilege.
   - apiGroups:
       - ""
     resources:
@@ -151,4 +151,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: isms-collector
-    namespace: isms
+    namespace: security

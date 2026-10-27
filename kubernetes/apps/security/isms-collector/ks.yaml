@@ -4,7 +4,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app isms-collector
-  namespace: &namespace isms
+  namespace: &namespace security
 spec:
   commonMetadata:
     labels:
@@ -12,13 +12,13 @@ spec:
   decryption:
     provider: sops
   interval: 1h
-  path: ./kubernetes/apps/isms/collector/app
-  # Kein postBuild: nichts hier braucht eine ${SECRET_*}-Substitution, und
-  # Flux' envsubst laeuft im Strict-Modus ueber die gesamten Manifeste. Es
-  # hat deshalb das ${GIT_TOKEN} im Shell-Skript des CronJobs fuer eine
-  # Flux-Variable gehalten und die Reconciliation abgebrochen. Wird hier
-  # spaeter eine Substitution gebraucht, muessen Shell-Variablen als
-  # $${VAR} geschrieben werden -- so wie in proxmox-ansible und gatus.
+  path: ./kubernetes/apps/security/isms-collector/app
+  # No postBuild on purpose: nothing here needs ${SECRET_*} substitution, and
+  # Flux runs envsubst in strict mode across the whole manifest set. It
+  # therefore mistook the ${GIT_TOKEN} in the CronJob's shell script for a
+  # Flux variable and aborted the reconciliation. If substitution is ever
+  # needed here, shell variables must be written as $${VAR} -- the same way
+  # proxmox-ansible and gatus do it.
   prune: true
   retryInterval: 2m
   sourceRef:
