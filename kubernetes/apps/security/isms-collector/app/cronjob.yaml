@@ -29,16 +29,16 @@ spec:
         spec:
           restartPolicy: OnFailure
           serviceAccountName: isms-collector
-          # ndots:1 statt des Kubernetes-Standards 5. Ohne das haengt der
-          # Resolver bei "api.github.com" (zwei Punkte, also < ndots) zuerst
-          # die Such-Domain an und fragt
-          # "api.github.com.isms.svc.cluster.local" ab. Cilium lernt die
-          # FQDN-Zuordnung dann unter DIESEM Namen -- nachgewiesen in
-          # `cilium-dbg fqdn cache list` -- und die toFQDNs-Regel auf
-          # "api.github.com" greift nicht, die Verbindung laeuft in einen
-          # Timeout. Mit ndots:1 wird der Name direkt abgefragt.
-          # Unkritisch, weil der Sammler intern ausschliesslich
-          # vollqualifizierte Service-Namen verwendet.
+          # ndots:1 instead of the Kubernetes default of 5. Without it the
+          # resolver appends the search domain first for "api.github.com"
+          # (two dots, so below ndots) and queries
+          # "api.github.com.security.svc.cluster.local". Cilium then learns
+          # the FQDN mapping under THAT name -- confirmed via
+          # `cilium-dbg fqdn cache list` -- so the toFQDNs rule for
+          # "api.github.com" never matches and the connection times out.
+          # With ndots:1 the name is queried directly. Harmless here, because
+          # the collector only ever uses fully qualified service names
+          # internally.
           dnsConfig:
             options:
               - name: ndots
@@ -105,21 +105,21 @@ spec:
                   # records them as unavailable, which the assessment then
                   # reports as `error` for the dependent check. A partial
                   # snapshot is still worth committing; silence is not.
-                  python3 scripts/harvest.py || echo "WARNUNG: mindestens eine Quelle fehlgeschlagen"
+                  python3 scripts/harvest.py || echo "WARNING: at least one source failed"
 
                   if git diff --quiet -- evidence/; then
-                    echo "Keine Aenderung an der Evidenz, kein Commit."
+                    echo "No change in evidence, nothing to commit."
                     exit 0
                   fi
 
                   git add evidence/
-                  git commit -q -m "chore(evidence): Schnappschuss $(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  git commit -q -m "chore(evidence): snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-                  Automatisch erzeugt durch den isms-collector-CronJob im
-                  Cluster. Die Bewertung laeuft anschliessend in der Pipeline
-                  gegen genau diesen Stand."
+                  Produced automatically by the isms-collector CronJob in the
+                  cluster. The assessment then runs in the pipeline against
+                  exactly this state."
                   git push --quiet origin HEAD:main
-                  echo "Schnappschuss committet und gepusht."
+                  echo "Snapshot committed and pushed."
           volumes:
             - name: work
               emptyDir: {}

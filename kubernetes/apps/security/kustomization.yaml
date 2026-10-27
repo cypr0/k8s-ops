@@ -17,3 +17,4 @@ resources:
   - ./kyverno/ks.yaml
   - ./oidc-rbac/ks.yaml
   - ./wazuh/ks.yaml
+  - ./isms-collector/ks.yaml
