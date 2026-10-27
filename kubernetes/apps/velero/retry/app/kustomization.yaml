@@ -1,0 +1,10 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Deliberately no `namespace:` here. Each manifest names its own, because the
+# RoleBindings span `velero` and `database`.
+resources:
+  - ./rbac.yaml
+  - ./cronjob.yaml
+  - ./ciliumnetworkpolicy.yaml

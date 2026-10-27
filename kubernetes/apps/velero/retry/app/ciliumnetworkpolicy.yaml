@@ -1,0 +1,36 @@
+---
+# The job reads the Kubernetes API and creates a Backup object. It never talks
+# to the object store itself -- that is Velero's and the barman-cloud plugin's
+# job -- so DNS and the apiserver are the whole egress surface.
+#
+# Strictly speaking this policy is not required: the existing velero policy
+# selects only pods labelled app.kubernetes.io/name=velero, and an endpoint
+# that no policy selects is unrestricted in Cilium. That is exactly why it is
+# here -- an unrestricted pod in a namespace that otherwise policies
+# everything is an accident waiting to be inherited.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: backup-retry
+  namespace: velero
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: backup-retry
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toEntities:
+        - kube-apiserver
