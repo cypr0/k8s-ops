@@ -74,6 +74,16 @@ spec:
         enabled: true
         storageClass: zfs-nfs
         size: 20Gi
+        # Das Chart gibt whenDeleted und whenScaled beide auf Delete vor. Damit
+        # loescht jedes Herunterskalieren der StatefulSet den Anspruch
+        # storage-loki-0 -- und zusammen mit einem PV auf reclaimPolicy Delete
+        # waeren die Logdaten weg. Beobachtet am 2026-10-27: ein
+        # "scale --replicas=0" entfernte den Anspruch sofort mit.
+        #
+        # Der Anspruch kommt aus pvc.yaml und soll die StatefulSet ueberleben.
+        # false laesst persistentVolumeClaimRetentionPolicy ganz weg, womit die
+        # Kubernetes-Vorgabe Retain/Retain gilt.
+        enableStatefulSetAutoDeletePVC: false
       extraContainers: []
 
     # Disable microservice components
