@@ -1,0 +1,161 @@
+---
+# Retries a scheduled backup that failed, because neither Velero nor
+# CloudNativePG does.
+#
+# Why this exists: on 2026-10-27 the object store rejected writes for about six
+# hours and the daily backup failed at 02:09Z. A Velero Schedule has no retry,
+# so the next attempt would have been 24h later -- a full day with no fresh
+# backup after a fault that had cleared by 08:00Z. The same window took the
+# CloudNativePG base backup with it.
+#
+# The pattern is not a one-off. Of the six failed Velero backups on record,
+# four failed on an S3 write (2026-08-01, 08-02, 08-09, 08-16) and one is
+# today's; the sixth was an unrelated server restart. Roughly one to two
+# transient write failures a month, each of which cost a backup cycle.
+#
+# See docs/incidents/2026-10-27-s3-write-outage-silent-backup-failure.md.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-retry
+  namespace: velero
+spec:
+  # UTC on purpose, not Europe/Berlin: the schedules being retried run at
+  # 02:00 and 02:30 UTC, and the "did it already run today" test below
+  # compares UTC dates. A local timezone would shift this job across midnight
+  # relative to that comparison twice a year.
+  schedule: "0 5,8,11,14 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup-retry
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: backup-retry
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: retry
+              # Carries kubectl matching the cluster minor, plus jq.
+              image: docker.io/alpine/k8s:1.37.1
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - "ALL"
+              env:
+                - name: HOME
+                  value: /tmp
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  TODAY="$(date -u +%Y-%m-%d)"
+                  STAMP="$(date -u +%Y%m%d-%H%M)"
+
+                  # Velero. The retry carries the same
+                  # velero.io/schedule-name label as a scheduled backup, for
+                  # two reasons: the checks below then see it as an attempt by
+                  # that schedule, and velero_backup_last_successful_timestamp
+                  # is keyed by that label -- so a successful retry also
+                  # clears the VeleroBackupStale* alert, which a differently
+                  # labelled manual backup does not.
+                  retry_velero() {
+                    local sched="$1" today_json count name
+                    today_json="$(kubectl -n velero get backups.velero.io \
+                      -l "velero.io/schedule-name=${sched}" -o json \
+                      | jq --arg d "${TODAY}" \
+                        '[.items[] | select(.metadata.creationTimestamp | startswith($d))]')"
+
+                    count="$(echo "${today_json}" | jq 'length')"
+                    if [ "${count}" -eq 0 ]; then
+                      echo "  ${sched}: no run today, nothing to retry"
+                      return
+                    fi
+                    if [ "$(echo "${today_json}" | jq '[.[] | select(.status.phase == "Completed")] | length')" -gt 0 ]; then
+                      echo "  ${sched}: a backup already completed today"
+                      return
+                    fi
+                    if [ "$(echo "${today_json}" | jq '[.[] | select(.status.phase == "InProgress" or .status.phase == "New" or .status.phase == null)] | length')" -gt 0 ]; then
+                      echo "  ${sched}: an attempt is still running, leaving it alone"
+                      return
+                    fi
+
+                    name="${sched}-retry-${STAMP}"
+                    echo "  ${sched}: last attempt failed, creating ${name}"
+                    kubectl -n velero get schedules.velero.io "${sched}" -o json \
+                      | jq --arg n "${name}" --arg s "${sched}" \
+                        '{apiVersion: "velero.io/v1", kind: "Backup",
+                          metadata: {name: $n, namespace: "velero",
+                                     labels: {"velero.io/schedule-name": $s,
+                                              "app.kubernetes.io/name": "backup-retry"}},
+                          spec: .spec.template}' \
+                      | kubectl create -f -
+                  }
+
+                  # CloudNativePG. Phases are lowercase here, and the
+                  # database namespace is in no Velero schedule -- a base
+                  # backup is the only copy, so a lost cycle matters more.
+                  retry_cnpg() {
+                    local today_json count name
+                    today_json="$(kubectl -n database get backups.postgresql.cnpg.io -o json \
+                      | jq --arg d "${TODAY}" \
+                        '[.items[] | select(.metadata.creationTimestamp | startswith($d))]')"
+
+                    count="$(echo "${today_json}" | jq 'length')"
+                    if [ "${count}" -eq 0 ]; then
+                      echo "  cnpg: no run today, nothing to retry"
+                      return
+                    fi
+                    if [ "$(echo "${today_json}" | jq '[.[] | select(.status.phase == "completed")] | length')" -gt 0 ]; then
+                      echo "  cnpg: a backup already completed today"
+                      return
+                    fi
+                    if [ "$(echo "${today_json}" | jq '[.[] | select(.status.phase == "running" or .status.phase == "started" or .status.phase == null)] | length')" -gt 0 ]; then
+                      echo "  cnpg: an attempt is still running, leaving it alone"
+                      return
+                    fi
+
+                    name="postgres-retry-${STAMP}"
+                    echo "  cnpg: last attempt failed, creating ${name}"
+                    kubectl -n database get scheduledbackups.postgresql.cnpg.io postgres-daily -o json \
+                      | jq --arg n "${name}" \
+                        '{apiVersion: "postgresql.cnpg.io/v1", kind: "Backup",
+                          metadata: {name: $n, namespace: "database"},
+                          spec: {cluster: .spec.cluster, method: .spec.method,
+                                 pluginConfiguration: .spec.pluginConfiguration}}' \
+                      | kubectl create -f -
+                  }
+
+                  echo "Checking for failed backups on ${TODAY}"
+                  for s in daily weekly monthly; do
+                    retry_velero "${s}"
+                  done
+                  retry_cnpg
+                  echo "Done."
+          volumes:
+            - name: tmp
+              emptyDir: {}
