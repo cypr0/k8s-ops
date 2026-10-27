@@ -25,6 +25,7 @@ check here before assuming a gap means "not interesting."
 | Collabora | nextcloud | [collabora.md](collabora.md) |
 | CoreDNS | kube-system | [coredns.md](coredns.md) |
 | csi-driver-nfs | kube-system | [csi-driver-nfs.md](csi-driver-nfs.md) |
+| DMARC Exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
 | Dragonfly | database | [dragonfly.md](dragonfly.md) |
 | Echo | echo | [echo.md](echo.md) |
 | Elasticsearch (Nextcloud) | nextcloud | [elasticsearch.md](elasticsearch.md) |
@@ -47,7 +48,6 @@ check here before assuming a gap means "not interesting."
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
 | Kyverno | kyverno | [kyverno.md](kyverno.md) |
 | Loki | monitoring | [loki.md](loki.md) |
-| DMARC Exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
 | Mailu | mail | [mailu.md](mailu.md) |
 | mailu-mcp | hermes-agent | [mailu-mcp.md](mailu-mcp.md) |
 | Metrics Server | kube-system | [metrics-server.md](metrics-server.md) |
@@ -63,6 +63,7 @@ check here before assuming a gap means "not interesting."
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
 | Proxmox Ansible | automation | [proxmox-ansible.md](proxmox-ansible.md) |
 | Reloader | kube-system | [reloader.md](reloader.md) |
+| retry | velero | [retry.md](retry.md) |
 | Spegel | kube-system | [spegel.md](spegel.md) |
 | Tika (open-webui) | open-webui | [open-webui-tika.md](open-webui-tika.md) |
 | Tika (Paperless) | paperless | [paperless-tika.md](paperless-tika.md) |
