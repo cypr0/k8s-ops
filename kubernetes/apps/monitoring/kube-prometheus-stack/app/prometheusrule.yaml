@@ -53,3 +53,95 @@ spec:
           for: 30m
           labels:
             severity: warning
+    # 2026-10-27 02:09Z: the daily Velero backup failed on an S3 500 from the
+    # object store, the Kopia maintenance jobs failed for roughly six hours,
+    # and the CNPG base backup failed in the same window. Nothing alerted.
+    # The failure surfaced only because the ISMS assessment reads backup
+    # phases once a day, and even that produces a report rather than a page.
+    # See docs/incidents/2026-10-27-s3-write-outage-silent-backup-failure.md.
+    - name: backup-velero
+      rules:
+        # Deliberately not velero_backup_last_status: it read 1 (success) for
+        # schedule="daily" while that very backup sat in phase Failed --
+        # measured 2026-10-27. The counter below and the timestamp further
+        # down both reported the failure correctly, so those are what the
+        # alerts use.
+        - alert: VeleroBackupFailed
+          annotations:
+            description: 'Velero schedule {{ $labels.schedule }} recorded a failed backup. Check `kubectl -n velero get backups.velero.io` and the server log; a 500 from the object store means the provider, not the cluster. A failed run is not retried -- the next attempt is the next scheduled one.'
+            summary: A Velero backup failed.
+          expr: increase(velero_backup_failure_total[2h]) > 0
+          for: 0m
+          labels:
+            severity: critical
+        # One missed daily run plus margin. Normal operation keeps this at or
+        # below 24h, because the schedule is 0 2 * * *.
+        #
+        # An on-demand catch-up backup does NOT clear this, because the metric
+        # is keyed by the schedule label and a manual Backup carries a
+        # different one. That is intentional: the question here is whether the
+        # *schedule* is producing backups.
+        - alert: VeleroBackupStaleDaily
+          annotations:
+            description: 'No successful backup from the daily Velero schedule for over 36h. Expected interval is 24h, so at least one run was lost. If a catch-up backup was taken by hand this still fires, because the alert tracks the schedule rather than the object store.'
+            summary: Daily Velero backup is overdue.
+          expr: time() - velero_backup_last_successful_timestamp{schedule="daily"} > 129600
+          for: 15m
+          labels:
+            severity: critical
+        - alert: VeleroBackupStaleWeekly
+          annotations:
+            description: 'No successful backup from the weekly Velero schedule for over 9d. Expected interval is 7d.'
+            summary: Weekly Velero backup is overdue.
+          expr: time() - velero_backup_last_successful_timestamp{schedule="weekly"} > 777600
+          for: 15m
+          labels:
+            severity: warning
+        - alert: VeleroBackupStaleMonthly
+          annotations:
+            description: 'No successful backup from the monthly Velero schedule for over 35d. Expected interval is one calendar month.'
+            summary: Monthly Velero backup is overdue.
+          expr: time() - velero_backup_last_successful_timestamp{schedule="monthly"} > 3024000
+          for: 15m
+          labels:
+            severity: warning
+    - name: backup-cnpg
+      rules:
+        # cnpg_collector_last_available_backup_timestamp cannot be used: with
+        # the barman-cloud *plugin* (spec.plugins, isWALArchiver) it stays at
+        # 0 even though base backups complete -- measured 2026-10-27, when 30
+        # Backup objects were `completed` and the metric still read 0. The
+        # cluster's status.lastSuccessfulBackup is empty for the same reason.
+        #
+        # So the failure side is watched instead, and via changes() rather
+        # than an age comparison. An age test would stay lit for a day after
+        # one failure and would not clear when the next backup succeeded,
+        # which is how an alert teaches people to ignore it. changes() fires
+        # on a *new* failure timestamp and clears an hour later.
+        - alert: CNPGBaseBackupFailed
+          annotations:
+            description: 'A CloudNativePG base backup failed in namespace {{ $labels.namespace }}. WAL archiving can keep working while this fails, and WAL without a base backup cannot be restored. Check `kubectl -n database get backups.postgresql.cnpg.io` and the barman-cloud plugin sidecar log.'
+            summary: CloudNativePG base backup failed.
+          expr: changes(cnpg_collector_last_failed_backup_timestamp[1h]) > 0
+          for: 5m
+          labels:
+            severity: critical
+        # The archiver hands WAL segments to the object store continuously.
+        # A stall means the write path is broken even if the last base backup
+        # looked fine, and it is the earlier signal of the two.
+        - alert: CNPGWALArchiveStalled
+          annotations:
+            description: 'No WAL segment archived for 30m in namespace {{ $labels.namespace }}. Point-in-time recovery loses everything after the last archived segment. Normal value is a few minutes.'
+            summary: CloudNativePG WAL archiving has stalled.
+          expr: cnpg_pg_stat_archiver_seconds_since_last_archival > 1800
+          for: 15m
+          labels:
+            severity: critical
+        - alert: CNPGWALArchiveFailing
+          annotations:
+            description: 'WAL archive attempts are failing in namespace {{ $labels.namespace }}. Postgres retries, so archiving may still be keeping up -- but the failures are a leading indicator of the object store rejecting writes.'
+            summary: CloudNativePG WAL archive attempts are failing.
+          expr: increase(cnpg_pg_stat_archiver_failed_count[1h]) > 0
+          for: 10m
+          labels:
+            severity: warning
