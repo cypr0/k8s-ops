@@ -15,10 +15,18 @@ spec:
         name: grafana
         namespace: monitoring
   maxHistory: 2
+  # Das NFS-Volume enthaelt >185.000 Dateien. Die StorageClass zfs-nfs setzt
+  # mountPermissions 0755, womit der fsGroup-Abgleich des Kubelets an der
+  # Volume-Wurzel nie erfuellt ist (verlangt GID=fsGroup und mindestens 0770).
+  # Folge: bei jedem Pod-Start ein vollstaendiger rekursiver chown, der laenger
+  # als das Helm-Standardtimeout von 5m dauert. Ohne das erhoehte Timeout
+  # laeuft jeder Upgrade in Timeout -> Rollback -> Pod-Ersatz -> Endlosschleife.
   install:
+    timeout: 30m
     remediation:
       retries: 3
   upgrade:
+    timeout: 30m
     cleanupOnFail: true
     remediation:
       retries: 3
