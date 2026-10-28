@@ -40,6 +40,12 @@ spec:
               runAsGroup: 3000
               runAsNonRoot: true
 
+    defaultPodOptions:
+      securityContext:
+        # The only hardening property this workload was missing (KONF.7.13).
+        seccompProfile:
+          type: RuntimeDefault
+
     service:
       http:
         controller: tika

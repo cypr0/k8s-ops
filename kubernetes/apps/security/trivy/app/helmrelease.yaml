@@ -52,6 +52,20 @@ spec:
           # Merges with the chart defaults (runAsUser/fsGroup 65534). Without
           # this, every restart chowns the whole vulnerability DB cache.
           fsGroupChangePolicy: OnRootMismatch
+          # KONF.7.13. The server downloads and serves the vulnerability
+          # database; it needs no syscall RuntimeDefault withholds.
+          seccompProfile:
+            type: RuntimeDefault
+        securityContext:
+          # Container level -- the chart reads trivy.server.securityContext
+          # (templates/trivy-server/statefulset.yaml) and defaults it to
+          # privileged false plus readOnlyRootFilesystem. The capability set
+          # was left at the runtime default, which the live container
+          # confirmed: no capabilities.drop at all (KONF.6.1).
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - "ALL"
 
     # Node collector needs to run on all nodes
     nodeCollector:
