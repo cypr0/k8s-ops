@@ -49,6 +49,15 @@ spec:
               runAsGroup: 3000
               runAsNonRoot: true
 
+    defaultPodOptions:
+      securityContext:
+        # The only hardening property this workload was missing (KONF.7.13).
+        # Chromium runs in a sandbox of its own, and RuntimeDefault does not
+        # block the syscalls it needs -- the JavaScript engine is disabled
+        # here anyway via --chromium-disable-javascript.
+        seccompProfile:
+          type: RuntimeDefault
+
     service:
       http:
         controller: gotenberg

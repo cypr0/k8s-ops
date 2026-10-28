@@ -57,6 +57,11 @@ spec:
         runAsNonRoot: true
         runAsUser: 65534
         runAsGroup: 65534
+        # The only hardening property this workload was missing (KONF.7.13).
+        # cloudflared opens an outbound QUIC tunnel and needs no syscall
+        # RuntimeDefault withholds.
+        seccompProfile:
+          type: RuntimeDefault
     service:
       app:
         ports:

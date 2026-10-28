@@ -57,6 +57,9 @@ spec:
               capabilities:
                 drop:
                   - ALL
+              # KONF.7.13 -- the only property this container was missing.
+              seccompProfile:
+                type: RuntimeDefault
             probes:
               liveness:
                 enabled: true

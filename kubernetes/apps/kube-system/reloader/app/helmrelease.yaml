@@ -15,23 +15,37 @@ spec:
       podMonitor:
         enabled: true
         namespace: "{{ .Release.Namespace }}"
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        runAsGroup: 65534
-        seccompProfile:
-          type: RuntimeDefault
-      containerSecurityContext:
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop:
-            - "ALL"
       deployment:
-        # Unter reloader.deployment, nicht unter reloader: das Chart liest
-        # .Values.reloader.deployment.resources (templates/deployment.yaml).
-        # Eine Ebene hoeher landeten die Werte nirgends -- das laufende
-        # Deployment hatte resources: {} und damit kein Limit. Gefunden durch
-        # den ISMS-Check container_memory_limits (KONF.9.1).
+        # Everything the chart consumes lives under reloader.deployment --
+        # resources, securityContext and containerSecurityContext alike. One
+        # level higher the values land nowhere.
+        #
+        # This bit the repository twice. First with resources: the running
+        # deployment had resources: {} and therefore no memory limit, found by
+        # the ISMS check container_memory_limits (KONF.9.1). Then again with
+        # the security context, found by container_hardening_coverage
+        # (KONF.6.1): both blocks sat under `reloader:` and were dead config.
+        # The pod-level values that were present came from the chart's own
+        # defaults, not from us, and the container had only
+        # readOnlyRootFilesystem -- which the chart sets itself from
+        # readOnlyRootFileSystem above. allowPrivilegeEscalation and the
+        # dropped capabilities never reached the pod at all.
+        #
+        # The lesson, now paid for twice: a securityContext in Git is not a
+        # securityContext on the pod. Verify with
+        #   kubectl get deploy reloader -n kube-system \
+        #     -o jsonpath='{.spec.template.spec.containers[0].securityContext}'
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          runAsGroup: 65534
+          seccompProfile:
+            type: RuntimeDefault
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - "ALL"
         resources:
           requests:
             cpu: 10m
