@@ -41,7 +41,7 @@ spec:
           gitlab:
             image:
               repository: docker.io/gitlab/gitlab-ce
-              tag: 19.5.1-ce.0
+              tag: 19.5.3-ce.0
             env:
               TZ: Europe/Berlin
               # Everything lives in the mounted gitlab.rb (externalsecret.yaml).
