@@ -48,7 +48,7 @@ spec:
           containers:
             - name: retry
               # Carries kubectl matching the cluster minor, plus jq.
-              image: docker.io/alpine/k8s:1.37.1
+              image: docker.io/alpine/k8s:1.37.2
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true

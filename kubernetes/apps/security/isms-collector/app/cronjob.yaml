@@ -55,7 +55,7 @@ spec:
               # Carries kubectl matching the cluster minor, plus git and
               # python3. No ssh, which is why the push below goes over HTTP
               # to the in-cluster Service rather than over the SSH gateway.
-              image: docker.io/alpine/k8s:1.37.1
+              image: docker.io/alpine/k8s:1.37.2
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
