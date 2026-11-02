@@ -142,10 +142,16 @@ spec:
     matchLabels:
       app.kubernetes.io/name: isms-exporter
   endpoints:
-    # Slow deliberately. The underlying file is regenerated once a day at
-    # most, after the collector commits a snapshot at 04:00 and the pipeline
-    # assesses it. A scrape is served from the exporter's cache either way, so
-    # a faster interval would buy nothing but series churn.
+    # Must stay well under Prometheus' 5m lookbackDelta. A 5m interval put
+    # the newest sample up to 296s old, so any scrape jitter aged it past the
+    # lookback window and every instant query -- which is what the dashboard's
+    # gauges and stat panels are -- returned empty. The dashboard then showed
+    # "No data" while the exporter was perfectly healthy.
+    #
+    # Scraping this often costs nothing upstream: the exporter answers from
+    # its in-memory cache and only polls GitLab every REFRESH_SECONDS, so the
+    # file is still read once every 5 minutes regardless of this interval.
+    # The body is ~38 kB of a few hundred series, measured at 1.8ms a scrape.
     - port: metrics
-      interval: 5m
+      interval: 1m
       scrapeTimeout: 30s
