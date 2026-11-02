@@ -40,6 +40,19 @@ spec:
         - ports:
             - port: "8181"
               protocol: TCP
+    # ISMS exporter: reads assessment/metrics.prom over the REST API for the
+    # Grafana dashboard. Needs its own entry because this policy selects
+    # callers by label -- an egress rule on the exporter side alone would be
+    # dropped here and the exporter would silently serve nothing but its own
+    # health metrics.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": security
+            app.kubernetes.io/name: isms-exporter
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring

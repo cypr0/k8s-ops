@@ -145,3 +145,128 @@ spec:
           for: 10m
           labels:
             severity: warning
+    # ISMS. The dashboard shows the posture; these catch the states where the
+    # dashboard would look fine while the machinery behind it has stopped.
+    #
+    # Deliberately NOT alerted on: a deviating control. There are 14 and they
+    # are tracked in the treatment plan with owners and deadlines; paging on a
+    # known, owned finding trains the operator to ignore the channel. What is
+    # alerted on is the ISMS losing the ability to tell the truth -- stale
+    # evidence, a stale assessment, a rising ratchet, an expired attestation,
+    # a deadline passing.
+    - name: isms-machinery
+      rules:
+        # The collector harvests at 04:00 daily. Past 36h a run was missed;
+        # past 7d assess.py turns every machine verdict into an error, so the
+        # assessment stops making claims rather than making stale ones.
+        - alert: ISMSEvidenceStale
+          annotations:
+            description: 'The committed ISMS evidence snapshot is over 36h old, so the collector missed at least one run. Check `kubectl -n security get cronjob isms-collector` and the last job log. Every control verdict on the ISMS dashboard describes the cluster as it was at that snapshot.'
+            summary: ISMS evidence snapshot is overdue.
+          expr: time() - isms_evidence_timestamp_seconds > 129600
+          for: 30m
+          labels:
+            severity: warning
+        - alert: ISMSEvidenceAncient
+          annotations:
+            description: 'The committed ISMS evidence snapshot is over 7d old. scripts/assess.py refuses to treat machine checks as passing beyond this age, so the assessment is now reporting errors rather than verdicts. The compliance figure on the dashboard is meaningless until the collector runs again.'
+            summary: ISMS evidence is older than the assessment will accept.
+          expr: time() - isms_evidence_timestamp_seconds > 604800
+          for: 30m
+          labels:
+            severity: critical
+        # Evidence newer than the assessment computed from it. Normal for a
+        # few minutes between the collector's commit and the pipeline run;
+        # sustained means the pipeline is broken and the dashboard is showing
+        # verdicts about an older cluster.
+        - alert: ISMSAssessmentBehindEvidence
+          annotations:
+            description: 'The committed ISMS assessment was computed from evidence {{ $value | humanizeDuration }} older than the newest committed snapshot. The pipeline in isms/compliance-as-code has not run, or failed. Until it does, every verdict on the dashboard describes an older cluster.'
+            summary: ISMS assessment is behind the available evidence.
+          expr: isms_evidence_timestamp_seconds - isms_assessment_timestamp_seconds > 7200
+          for: 1h
+          labels:
+            severity: warning
+        # The exporter serves its last good body during an outage, by design:
+        # taking the target down would turn "the assessment is getting old"
+        # into "no data", which reads as nothing being wrong. The consequence
+        # is that only this alert reveals a broken fetch.
+        - alert: ISMSExporterFetchFailing
+          annotations:
+            description: 'The isms-exporter has not read assessment/metrics.prom from GitLab for over 1h (last HTTP status {{ with query "isms_exporter_last_http_status" }}{{ . | first | value }}{{ end }}). It keeps serving the last fetched body, so the dashboard still shows numbers -- they are simply ageing. Check the exporter log and the GitLab ingress policy.'
+            summary: ISMS exporter cannot read the metrics file.
+          expr: time() - isms_exporter_last_fetch_success_timestamp_seconds > 3600
+          for: 15m
+          labels:
+            severity: warning
+        - alert: ISMSExporterNoMetrics
+          annotations:
+            description: 'The isms-exporter has never successfully read the metrics file, so every ISMS panel is empty. Most likely the project access token is missing, expired or lacks read_api, or the CiliumNetworkPolicy on either side does not permit the call. It deliberately does not emit zeroed ISMS metrics in this state.'
+            summary: ISMS exporter has no metrics at all.
+          expr: isms_exporter_has_metrics == 0
+          for: 30m
+          labels:
+            severity: warning
+    - name: isms-posture
+      rules:
+        # The one invariant the whole tailoring rests on: the untriaged
+        # remainder may fall and never rise. isms_improvement_ratchet also
+        # fails the pipeline on a rise, so this is the second line -- it
+        # catches the case where nobody looks at a failed pipeline.
+        - alert: ISMSRatchetRose
+          annotations:
+            description: 'The ISMS ratchet rose by {{ $value }} over the last day: controls that were triaged are now counted as untriaged again. This is the one thing the ratchet exists to forbid. The pipeline check isms_improvement_ratchet should have refused the commit, so a firing alert here means that check was bypassed or is broken.'
+            summary: ISMS ratchet increased.
+          expr: increase(isms_untriaged_controls[1d]) > 0
+          for: 0m
+          labels:
+            severity: critical
+        # A deviation with no treatment measure. poam.py fails the pipeline on
+        # this, so like the ratchet it should be unreachable -- which is
+        # exactly why it is worth an alert.
+        - alert: ISMSDeviationUntreated
+          annotations:
+            description: '{{ $value }} deviating control(s) have no entry in tailoring/treatment.yaml. scripts/poam.py refuses to derive a plan of action in this state and fails the pipeline, so this should not be reachable through the normal path.'
+            summary: ISMS deviation without a treatment measure.
+          expr: isms_deviations_untreated > 0
+          for: 15m
+          labels:
+            severity: critical
+        # An attestation past its review date still reports pass, because the
+        # verdict *is* the human statement. Nothing in the assessment catches
+        # it, which is why it needs an alert rather than a check.
+        - alert: ISMSAttestationOverdue
+          annotations:
+            description: 'Attestation {{ $labels.rule }} is past its review date. It still counts as satisfied in the assessment, because the verdict is the attestation itself -- so an expired one is an assurance nobody has reaffirmed. 48 of 134 profile controls rest on an attestation alone. Re-attest it in checks/registry.yaml or convert it into a machine check.'
+            summary: ISMS attestation is overdue for review.
+          expr: isms_attestation_review_due_timestamp_seconds - time() < 0
+          for: 1h
+          labels:
+            severity: warning
+        - alert: ISMSMeasureDeadlinePassed
+          annotations:
+            description: 'Treatment measure {{ $labels.measure }} is past its deadline. scripts/poam.py fails the pipeline on a deadline in the past, so either the pipeline has not run since it lapsed or the date needs moving with a reason.'
+            summary: ISMS treatment measure is overdue.
+          expr: isms_measure_deadline_timestamp_seconds - time() < 0
+          for: 1h
+          labels:
+            severity: warning
+        - alert: ISMSAcceptedRiskReviewOverdue
+          annotations:
+            description: 'Accepted risk {{ $labels.measure }} is past its review date. Acceptance of a risk above the threshold is permitted only as a temporary state -- an unreviewed acceptance is a permanent one nobody decided on.'
+            summary: ISMS accepted risk is overdue for review.
+          expr: isms_measure_review_due_timestamp_seconds - time() < 0
+          for: 1h
+          labels:
+            severity: warning
+        # A standing objective that is currently missed. The two with
+        # deadlines in the future are plans and must not page; only the ones
+        # that are supposed to hold continuously appear here.
+        - alert: ISMSStandingObjectiveMissed
+          annotations:
+            description: 'Security objective {{ $labels.objective }} ({{ $labels.title }}) is a standing requirement and is currently not met. Unlike the objectives with future deadlines, this one is supposed to hold at all times.'
+            summary: ISMS standing objective is not met.
+          expr: isms_objective_met{direction=~"halten|hoechstens"} == 0
+          for: 1h
+          labels:
+            severity: warning

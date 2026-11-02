@@ -51,6 +51,7 @@ configMapGenerator:
   - name: grafana-repo-dashboards-security
     files:
       - security/falco.json
+      - security/isms.json
       - security/kyverno.json
       - security/trivy-operator.json
   - name: grafana-repo-dashboards-observability

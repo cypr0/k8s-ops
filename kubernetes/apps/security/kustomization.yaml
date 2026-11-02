@@ -18,3 +18,4 @@ resources:
   - ./oidc-rbac/ks.yaml
   - ./wazuh/ks.yaml
   - ./isms-collector/ks.yaml
+  - ./isms-exporter/ks.yaml
