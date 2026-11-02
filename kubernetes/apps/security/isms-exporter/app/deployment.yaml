@@ -1,0 +1,145 @@
+---
+# A dedicated ServiceAccount with the token switched off. The exporter talks
+# to GitLab and to nothing else -- it has no business holding a credential for
+# the Kubernetes API. Also what the cluster's own Kyverno policies
+# restrict-default-serviceaccount and restrict-token-automount (CIS 5.1.5,
+# 5.1.6) require, and an exporter for the compliance dashboard failing the
+# cluster's compliance policies would be a poor start.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: isms-exporter
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: isms-exporter
+  labels:
+    app.kubernetes.io/name: isms-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: isms-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: isms-exporter
+    spec:
+      serviceAccountName: isms-exporter
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: exporter
+          # Stock python:*-alpine with nothing installed on top, same as
+          # paperless-exporter: the script is stdlib-only, so there is no pip
+          # step and the container can run as nobody on a read-only root.
+          # renovate: datasource=docker depName=python
+          image: python:3.15-alpine
+          command:
+            - "python3"
+            - "/scripts/exporter.py"
+          ports:
+            - name: metrics
+              containerPort: 9878
+              protocol: TCP
+          env:
+            # The in-cluster Service, not gitlab.cisotop.de. The hostname
+            # resolves to envoy-internal, so going through it would loop out
+            # to the gateway and back for a request that never needs to leave
+            # the cluster -- the collector reaches GitLab the same way.
+            - name: GITLAB_URL
+              value: "http://gitlab.gitlab.svc.cluster.local"
+            - name: GITLAB_PROJECT
+              value: "isms/compliance-as-code"
+            - name: TOKEN_FILE
+              value: /secrets/token
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: token
+              mountPath: /secrets
+              readOnly: true
+          # /healthz rather than /metrics, and on purpose: /healthz is
+          # independent of whether GitLab answers. A failing fetch must not
+          # evict the pod from the Service, because Prometheus would then
+          # report the target as down and the dashboard would show no data,
+          # when the truth is "the last known assessment, getting older". That
+          # staleness is a metric and has its own alert.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 15
+            periodSeconds: 60
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - "ALL"
+      volumes:
+        - name: scripts
+          configMap:
+            name: isms-exporter
+            defaultMode: 0555
+        - name: token
+          secret:
+            secretName: isms-exporter-git
+            defaultMode: 0400
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: isms-exporter
+  labels:
+    app.kubernetes.io/name: isms-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: isms-exporter
+  ports:
+    - name: metrics
+      port: 9878
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: isms-exporter
+  labels:
+    app.kubernetes.io/name: isms-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: isms-exporter
+  endpoints:
+    # Slow deliberately. The underlying file is regenerated once a day at
+    # most, after the collector commits a snapshot at 04:00 and the pipeline
+    # assesses it. A scrape is served from the exporter's cache either way, so
+    # a faster interval would buy nothing but series churn.
+    - port: metrics
+      interval: 5m
+      scrapeTimeout: 30s

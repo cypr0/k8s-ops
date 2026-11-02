@@ -1,0 +1,57 @@
+---
+# The exporter reads one file from GitLab and is scraped by Prometheus.
+# Nothing else, in either direction.
+#
+# Note what this policy alone does NOT achieve: GitLab's own ingress policy
+# (kubernetes/apps/gitlab/gitlab/app/ciliumnetworkpolicy.yaml) selects callers
+# by label, so an egress rule here without a matching entry there fails
+# silently -- the connection is simply dropped and the exporter serves nothing
+# but its own health metrics. That is the trap the collector's move to this
+# namespace already walked into once, so the matching ingress rule is part of
+# the same change.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: isms-exporter
+  namespace: security
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: isms-exporter
+  ingress:
+    # Prometheus scrapes /metrics. Nothing else may reach this port: the body
+    # is the full compliance posture of the platform, which is not secret but
+    # is not for general reading either.
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": monitoring
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9878"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    # Reading assessment/metrics.prom. Port 8181 is Workhorse's container
+    # port: GitLab's ingress is evaluated after DNAT, so the Service port 80
+    # the exporter actually dials does not appear in a policy.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": gitlab
+            app.kubernetes.io/name: gitlab
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP

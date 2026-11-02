@@ -1,0 +1,29 @@
+---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app isms-exporter
+  namespace: &namespace security
+spec:
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  decryption:
+    provider: sops
+  interval: 1h
+  path: ./kubernetes/apps/security/isms-exporter/app
+  # No postBuild, same reason as isms-collector: nothing here needs
+  # ${SECRET_*} substitution, and Flux runs envsubst in strict mode across the
+  # whole manifest set. The exporter script is Python rather than shell so it
+  # contains no ${VAR} to be mistaken for a Flux variable, but keeping the
+  # two ISMS components symmetrical is worth more than the flexibility.
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: *namespace
+  timeout: 5m
+  wait: true

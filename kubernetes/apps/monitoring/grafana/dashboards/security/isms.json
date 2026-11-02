@@ -1,0 +1,2199 @@
+{
+ "title": "ISMS — Compliance as Code",
+ "uid": "isms-compliance",
+ "description": "Compliance posture of the cisotop platform against BSI Grundschutz++, derived from the committed assessment in the internal GitLab repository isms/compliance-as-code. Every value comes from scripts/metrics.py in that repository; nothing here recomputes a verdict. Read the top row first: an assessment of stale evidence is not an assessment, and a compliance figure without its evidence-basis split is the most misleading number this dashboard can show.",
+ "tags": [
+  "isms",
+  "compliance",
+  "security"
+ ],
+ "timezone": "",
+ "editable": true,
+ "graphTooltip": 0,
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "5m",
+ "time": {
+  "from": "now-30d",
+  "to": "now"
+ },
+ "annotations": {
+  "list": []
+ },
+ "templating": {
+  "list": []
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "row",
+   "title": "Belastbarkeit der Zahlen",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "panels": []
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Evidenz-Alter",
+   "description": "Age of the committed evidence snapshot. The collector harvests at 04:00, so anything past 36 h means a harvest was missed. Above 7 days assess.py turns every machine verdict into an error rather than a pass -- which is why this panel sits above the compliance figure and not below it.",
+   "gridPos": {
+    "h": 4,
+    "w": 5,
+    "x": 0,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "time() - isms_evidence_timestamp_seconds",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 129600
+       },
+       {
+        "color": "red",
+        "value": 604800
+       }
+      ]
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Bewertung hinter Evidenz",
+   "description": "Gap between the newest committed evidence and the snapshot the committed assessment was actually computed from. Non-zero means the collector has delivered newer evidence that nobody has assessed yet, so the verdicts below describe an older cluster. A single 'last updated' field would hide exactly this.",
+   "gridPos": {
+    "h": 4,
+    "w": 5,
+    "x": 5,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_evidence_timestamp_seconds - isms_assessment_timestamp_seconds",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 86400
+       }
+      ]
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Exporter: letzter Abruf",
+   "description": "Age of the exporter's last successful read from GitLab. The exporter keeps serving the last good body during an outage, so this is the only thing that reveals it -- the ISMS values themselves are absolute timestamps and simply keep ageing.",
+   "gridPos": {
+    "h": 4,
+    "w": 5,
+    "x": 10,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "time() - isms_exporter_last_fetch_success_timestamp_seconds",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1800
+       },
+       {
+        "color": "red",
+        "value": 7200
+       }
+      ]
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "Evidenzquellen",
+   "description": "Evidence sources in the snapshot by harvest status. A source that failed to harvest leaves its controls unevaluated, which assess.py reports as an error rather than a pass.",
+   "gridPos": {
+    "h": 4,
+    "w": 4,
+    "x": 15,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (status) (isms_evidence_sources)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "value_and_name",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Exporter hat Daten",
+   "description": "0 means the exporter has never successfully read the metrics file, so every ISMS panel below is empty rather than reassuring. It deliberately does not emit zeroed ISMS metrics in that state: a zero deviation count nobody measured is the most dangerous number this dashboard could show.",
+   "gridPos": {
+    "h": 4,
+    "w": 5,
+    "x": 19,
+    "y": 1
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_exporter_has_metrics",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "KEINE DATEN",
+         "color": "red"
+        },
+        "1": {
+         "text": "Daten vorhanden",
+         "color": "green"
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 7,
+   "type": "row",
+   "title": "Erfüllungsgrad",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 5
+   },
+   "panels": []
+  },
+  {
+   "id": 8,
+   "type": "gauge",
+   "title": "Erfüllungsgrad",
+   "description": "Share of assessed controls the committed assessment reports as satisfied. Read it together with the panel to its right: a satisfied control may rest on a machine check or on the operator's own attestation, and this figure does not distinguish them.",
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 0,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * sum(isms_controls_by_verdict{verdict=\"pass\"}) / sum(isms_controls_assessed)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "max": 100,
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 60
+       },
+       {
+        "color": "yellow",
+        "value": 80
+       },
+       {
+        "color": "green",
+        "value": 95
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showThresholdLabels": false,
+    "showThresholdMarkers": true
+   }
+  },
+  {
+   "id": 9,
+   "type": "gauge",
+   "title": "davon maschinell belegt",
+   "description": "Share of profile controls that are satisfied AND decided by a check rather than by an attestation. This is the number that cannot be talked up: a failing check does not become a pass because the operator says so. The gap to the gauge on the left is the part of the posture that rests on one person's word, reviewed on a date.",
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 6,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * count(isms_control_verdict{verdict=\"pass\"} * on(control) group_left(basis) isms_control_evidence_basis{basis=~\"machine|mixed\"}) / scalar(isms_profile_controls)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "min": 0,
+     "max": 100,
+     "decimals": 1,
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 40
+       },
+       {
+        "color": "yellow",
+        "value": 60
+       },
+       {
+        "color": "green",
+        "value": 80
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "showThresholdLabels": false,
+    "showThresholdMarkers": true
+   }
+  },
+  {
+   "id": 10,
+   "type": "piechart",
+   "title": "Nachweisart",
+   "description": "What decides each profile control. 'attestation' means a human statement with a review date and no machine evidence; 'mixed' means both. The attestation slice is the honest limit of this ISMS, and it is large.",
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 12,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (basis) (isms_controls_by_evidence_basis)",
+     "instant": true,
+     "legendFormat": "{{basis}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "pieType": "donut",
+    "displayLabels": [
+     "value"
+    ],
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "showLegend": true,
+     "values": [
+      "value"
+     ]
+    }
+   }
+  },
+  {
+   "id": 11,
+   "type": "barchart",
+   "title": "Controls nach Urteil",
+   "description": "pass, fail, error, open. 'error' means a check could not be evaluated -- missing evidence or a broken check -- and is strictly worse than a deviation, because nothing was measured. 'open' means a control is claimed by a component but has no active check at all.",
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 18,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (verdict) (isms_controls_by_verdict)",
+     "instant": true,
+     "legendFormat": "{{verdict}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "stacking": {
+       "mode": "none"
+      },
+      "fillOpacity": 80,
+      "lineWidth": 1,
+      "axisPlacement": "auto"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "xTickLabelRotation": 0,
+    "showValue": "auto",
+    "stacking": "none",
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 12,
+   "type": "row",
+   "title": "Tailoring-Fortschritt",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 12
+   },
+   "panels": []
+  },
+  {
+   "id": 13,
+   "type": "stat",
+   "title": "Ratsche",
+   "description": "Catalogue controls that are neither in the profile nor documented as excluded: the visible debt of an unfinished tailoring. It may only fall. isms_improvement_ratchet fails the pipeline on any rise and on any value that does not match the recorded history.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_untriaged_controls",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "orange",
+        "value": 400
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "Ratsche über Zeit",
+   "description": "The improvement series. Prometheus builds this forward from the day the exporter went live -- the history before that lives in tailoring/exclusions.yaml, which the ratchet check validates against.",
+   "gridPos": {
+    "h": 5,
+    "w": 12,
+    "x": 4,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_untriaged_controls",
+     "instant": false,
+     "range": true,
+     "legendFormat": "untriagiert"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_profile_controls",
+     "instant": false,
+     "range": true,
+     "legendFormat": "im Profil"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": true,
+      "axisPlacement": "auto",
+      "pointSize": 5
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   }
+  },
+  {
+   "id": 15,
+   "type": "barchart",
+   "title": "Katalog-Aufteilung",
+   "description": "Every control of the 1000-control catalogue is in exactly one of these three states. The invariant is checked by scripts/check_tailoring.py, which refuses to build if the three do not sum to the catalogue.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 16,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_profile_controls",
+     "instant": true,
+     "legendFormat": "im Profil"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(isms_exclusions)",
+     "instant": true,
+     "legendFormat": "ausgeschlossen"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_untriaged_controls",
+     "instant": true,
+     "legendFormat": "untriagiert"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "stacking": {
+       "mode": "none"
+      },
+      "fillOpacity": 80,
+      "lineWidth": 1,
+      "axisPlacement": "auto"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "xTickLabelRotation": 0,
+    "showValue": "auto",
+    "stacking": "none",
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 16,
+   "type": "row",
+   "title": "Controls",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 18
+   },
+   "panels": []
+  },
+  {
+   "id": 17,
+   "type": "barchart",
+   "title": "Controls je Gruppe",
+   "description": "Assessed controls per catalogue group, stacked by verdict. GC is governance, STM/UMS/VRB the management system, KONF the technical configuration groups.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 19
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (group, verdict) (isms_controls_by_group)",
+     "instant": true,
+     "legendFormat": "{{group}} {{verdict}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "stacking": {
+       "mode": "normal"
+      },
+      "fillOpacity": 80,
+      "lineWidth": 1,
+      "axisPlacement": "auto"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "xTickLabelRotation": 0,
+    "showValue": "auto",
+    "stacking": "normal",
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    }
+   }
+  },
+  {
+   "id": 18,
+   "type": "table",
+   "title": "Abweichungen",
+   "description": "Every control the committed assessment does not report as satisfied. Three of them -- GC.9.1.1.1 to .3 -- are deliberate and permanent: independence, deputies and separation of duties are unachievable with one operator, and they are carried as a visible deviation rather than excluded.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 19
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_control_verdict{verdict!=\"pass\"}",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "Value": true,
+       "instance": true,
+       "job": true,
+       "namespace": true,
+       "service": true,
+       "pod": true,
+       "container": true,
+       "endpoint": true
+      },
+      "renameByName": {
+       "control": "Control",
+       "group": "Gruppe",
+       "verdict": "Urteil"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Control"
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": true
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   }
+  },
+  {
+   "id": 19,
+   "type": "row",
+   "title": "Sicherheitsziele",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 27
+   },
+   "panels": []
+  },
+  {
+   "id": 20,
+   "type": "table",
+   "title": "Ziele, Ist und Soll",
+   "description": "The five security objectives from tailoring/objectives.yaml. isms_objectives_measured computes each value from evidence and refuses an objective whose metric it cannot calculate, so a decorative objective breaks the pipeline rather than decorating this table. SZ.2 is enforced by the build rather than by a control verdict: its metric reads the assessment's own findings, and failing a control on that inside the same assessment is circular.",
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 28
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_objective_current",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_objective_target",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_objective_met",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "D",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_objective_deadline_timestamp_seconds - time()",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "joinByField",
+     "options": {
+      "byField": "objective",
+      "mode": "outer"
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Time 1": true,
+       "Time 2": true,
+       "Time 3": true,
+       "Time 4": true,
+       "__name__": true,
+       "__name__ 1": true,
+       "__name__ 2": true,
+       "__name__ 3": true,
+       "__name__ 4": true,
+       "instance": true,
+       "instance 1": true,
+       "instance 2": true,
+       "instance 3": true,
+       "instance 4": true,
+       "job": true,
+       "job 1": true,
+       "job 2": true,
+       "job 3": true,
+       "job 4": true,
+       "namespace 1": true,
+       "namespace 2": true,
+       "namespace 3": true,
+       "namespace 4": true,
+       "namespace": true,
+       "service 1": true,
+       "service 2": true,
+       "service 3": true,
+       "service 4": true,
+       "service": true,
+       "pod 1": true,
+       "pod 2": true,
+       "pod 3": true,
+       "pod 4": true,
+       "pod": true,
+       "container 1": true,
+       "container 2": true,
+       "container 3": true,
+       "container 4": true,
+       "container": true,
+       "endpoint 1": true,
+       "endpoint 2": true,
+       "endpoint 3": true,
+       "endpoint 4": true,
+       "endpoint": true,
+       "metric 2": true,
+       "metric 3": true,
+       "title 2": true,
+       "title 3": true,
+       "direction 2": true,
+       "direction 3": true,
+       "enforcement 2": true,
+       "enforcement 3": true
+      },
+      "renameByName": {
+       "objective": "Ziel",
+       "title 1": "Titel",
+       "metric 1": "Kennzahl",
+       "direction 1": "Richtung",
+       "enforcement 1": "Durchsetzung",
+       "Value #A": "Ist",
+       "Value #B": "Soll",
+       "Value #C": "erreicht",
+       "Value #D": "Frist in"
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": true
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "erreicht"
+      },
+      "properties": [
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "0": {
+            "text": "offen",
+            "color": "orange"
+           },
+           "1": {
+            "text": "ja",
+            "color": "green"
+           }
+          }
+         }
+        ]
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Frist in"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       },
+       {
+        "id": "decimals",
+        "value": 0
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 0
+          },
+          {
+           "color": "yellow",
+           "value": 1209600
+          },
+          {
+           "color": "green",
+           "value": 2592000
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   }
+  },
+  {
+   "id": 21,
+   "type": "row",
+   "title": "Risikobehandlung",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 35
+   },
+   "panels": []
+  },
+  {
+   "id": 22,
+   "type": "stat",
+   "title": "Abweichungen",
+   "description": "Controls the committed assessment reports as deviating.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 36
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_deviations",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "orange",
+        "value": 10
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 23,
+   "type": "stat",
+   "title": "ohne Behandlung",
+   "description": "Deviating controls with no treatment measure. Must be zero: scripts/poam.py refuses to derive a plan of action above it and fails the pipeline. A finding nobody is accountable for is the failure mode the plan exists to prevent.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 4,
+    "y": 36
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_deviations_untreated",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 24,
+   "type": "piechart",
+   "title": "Maßnahmen nach Option",
+   "description": "The four treatment options. 'akzeptieren' needs no deadline but does need a residual risk and a review date -- acceptance without one is permanent by default, which isms_treatment_tracked rejects.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 8,
+    "y": 36
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (option) (isms_measures)",
+     "instant": true,
+     "legendFormat": "{{option}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "pieType": "donut",
+    "displayLabels": [
+     "value"
+    ],
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "showLegend": true,
+     "values": [
+      "value"
+     ]
+    }
+   }
+  },
+  {
+   "id": 25,
+   "type": "piechart",
+   "title": "Risikoklassen",
+   "description": "Risk considerations by class, from the four-by-four BSI 200-3 matrix in tailoring/risk-method.yaml. Each class is recomputed from its own frequency and consequence, so a rating adjusted afterwards to look better fails arithmetically.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 16,
+    "y": 36
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (class) (isms_risks)",
+     "instant": true,
+     "legendFormat": "{{class}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "pieType": "donut",
+    "displayLabels": [
+     "value"
+    ],
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "showLegend": true,
+     "values": [
+      "value"
+     ]
+    }
+   }
+  },
+  {
+   "id": 26,
+   "type": "table",
+   "title": "Maßnahmen",
+   "description": "The treatment plan. 'Frist in' counts down to the measure's deadline; for an accepted risk there is no deadline and the review date applies instead. A date in the past fails the pipeline rather than turning amber here.",
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 41
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_measure_info",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_measure_deadline_timestamp_seconds - time()",
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_measure_review_due_timestamp_seconds - time()",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "joinByField",
+     "options": {
+      "byField": "measure",
+      "mode": "outer"
+     }
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Time 1": true,
+       "Time 2": true,
+       "Time 3": true,
+       "__name__": true,
+       "__name__ 1": true,
+       "__name__ 2": true,
+       "__name__ 3": true,
+       "instance": true,
+       "instance 1": true,
+       "instance 2": true,
+       "instance 3": true,
+       "job": true,
+       "job 1": true,
+       "job 2": true,
+       "job 3": true,
+       "namespace": true,
+       "namespace 1": true,
+       "namespace 2": true,
+       "namespace 3": true,
+       "service": true,
+       "service 1": true,
+       "service 2": true,
+       "service 3": true,
+       "pod": true,
+       "pod 1": true,
+       "pod 2": true,
+       "pod 3": true,
+       "container": true,
+       "container 1": true,
+       "container 2": true,
+       "container 3": true,
+       "endpoint": true,
+       "endpoint 1": true,
+       "endpoint 2": true,
+       "endpoint 3": true
+      },
+      "renameByName": {
+       "measure": "Maßnahme",
+       "title": "Titel",
+       "option": "Option",
+       "risk": "Risiko",
+       "owner": "Verantwortlich",
+       "Value #A": "Controls",
+       "Value #B": "Frist in",
+       "Value #C": "Prüfung in"
+      }
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": true
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byRegexp",
+       "options": ".*(Frist|Prüfung) in"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       },
+       {
+        "id": "decimals",
+        "value": 0
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 0
+          },
+          {
+           "color": "yellow",
+           "value": 1209600
+          },
+          {
+           "color": "green",
+           "value": 2592000
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   }
+  },
+  {
+   "id": 27,
+   "type": "table",
+   "title": "Offene Meilensteine",
+   "description": "Milestones not yet marked done, with their own deadlines. A milestone goes overdue before its measure does, which is the point of having them: isms_treatment_tracked fails on an unfinished milestone whose date has passed.",
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 48
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_milestone_deadline_timestamp_seconds - time()",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "instance": true,
+       "job": true,
+       "namespace": true,
+       "service": true,
+       "pod": true,
+       "container": true,
+       "endpoint": true
+      },
+      "renameByName": {
+       "measure": "Maßnahme",
+       "milestone": "Nr.",
+       "title": "Titel",
+       "status": "Status",
+       "Value": "Frist in"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Frist in"
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": true
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Frist in"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       },
+       {
+        "id": "decimals",
+        "value": 0
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 0
+          },
+          {
+           "color": "yellow",
+           "value": 1209600
+          },
+          {
+           "color": "green",
+           "value": 2592000
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   }
+  },
+  {
+   "id": 28,
+   "type": "row",
+   "title": "Attestierungen",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 55
+   },
+   "panels": []
+  },
+  {
+   "id": 29,
+   "type": "table",
+   "title": "Fälligkeit der Attestierungen",
+   "description": "An attestation past its review date still reports pass. Nothing in the assessment catches that, because the verdict is the human statement itself -- so the due date belongs on a dashboard. 48 of the 134 profile controls rest on one of these alone.",
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 56
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_attestation_review_due_timestamp_seconds - time()",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "instance": true,
+       "job": true,
+       "namespace": true,
+       "service": true,
+       "pod": true,
+       "container": true,
+       "endpoint": true
+      },
+      "renameByName": {
+       "rule": "Regel",
+       "attested_by": "Attestiert von",
+       "Value": "Fällig in"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Fällig in"
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "auto",
+      "filterable": true
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Fällig in"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       },
+       {
+        "id": "decimals",
+        "value": 0
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "red",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 0
+          },
+          {
+           "color": "yellow",
+           "value": 1209600
+          },
+          {
+           "color": "green",
+           "value": 2592000
+          }
+         ]
+        }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   }
+  },
+  {
+   "id": 30,
+   "type": "row",
+   "title": "MN.1 — Container-Härtung",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 63
+   },
+   "panels": []
+  },
+  {
+   "id": 31,
+   "type": "timeseries",
+   "title": "Härtungslücken je Eigenschaft",
+   "description": "Container instances missing a hardening property. Counted per running container, so a DaemonSet counts once per node -- confusing that with workload count already produced one wrong estimate. The target is zero after the genuine exceptions are allowlisted: Falco's eBPF capabilities, Cilium, the privileged CSI node plugin and three others.",
+   "gridPos": {
+    "h": 7,
+    "w": 16,
+    "x": 0,
+    "y": 64
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (property) (isms_container_hardening_gaps)",
+     "instant": false,
+     "range": true,
+     "legendFormat": "{{property}}"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(isms_container_hardening_gaps)",
+     "instant": false,
+     "range": true,
+     "legendFormat": "gesamt"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "spanNulls": true,
+      "axisPlacement": "auto",
+      "pointSize": 5
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   }
+  },
+  {
+   "id": 32,
+   "type": "stat",
+   "title": "Container geprüft",
+   "description": "Running containers the hardening check examined.",
+   "gridPos": {
+    "h": 7,
+    "w": 4,
+    "x": 16,
+    "y": 64
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "isms_containers",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 33,
+   "type": "stat",
+   "title": "Lücken gesamt",
+   "description": "Sum over all four properties. 411 at the start of MN.1 on 2026-10-27.",
+   "gridPos": {
+    "h": 7,
+    "w": 4,
+    "x": 20,
+    "y": 64
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(isms_container_hardening_gaps)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "yellow",
+        "value": 1
+       },
+       {
+        "color": "orange",
+        "value": 200
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "textMode": "auto",
+    "justifyMode": "auto"
+   }
+  }
+ ]
+}
