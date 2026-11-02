@@ -33,6 +33,11 @@ spec:
         runAsNonRoot: true
         runAsUser: 65534
         runAsGroup: 65534
+        # Required for the token to be readable at all. Kubelet owns secret
+        # volume files as root and only applies fsGroup as their group, so
+        # without this the 0440 mount below is root-only and the exporter
+        # dies on startup with a PermissionError.
+        fsGroup: 65534
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -107,7 +112,8 @@ spec:
         - name: token
           secret:
             secretName: isms-exporter-git
-            defaultMode: 0400
+            # Group-readable, not 0400: see fsGroup above.
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service
