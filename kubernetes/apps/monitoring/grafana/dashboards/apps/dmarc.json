@@ -903,7 +903,41 @@
      },
      "expr": "sum by (reporter) (dmarc_total)",
      "instant": true,
-     "legendFormat": "{{reporter}}"
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "instance": true,
+       "job": true,
+       "namespace": true,
+       "service": true,
+       "pod": true,
+       "container": true,
+       "endpoint": true
+      },
+      "renameByName": {
+       "reporter": "Reporter",
+       "Value": "Messages"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Messages",
+        "desc": true
+       }
+      ]
+     }
     }
    ],
    "fieldConfig": {
@@ -975,7 +1009,41 @@
      },
      "expr": "sum by (from_domain) (dmarc_total)",
      "instant": true,
-     "legendFormat": "{{from_domain}}"
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "instance": true,
+       "job": true,
+       "namespace": true,
+       "service": true,
+       "pod": true,
+       "container": true,
+       "endpoint": true
+      },
+      "renameByName": {
+       "from_domain": "From domain",
+       "Value": "Messages"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Messages",
+        "desc": true
+       }
+      ]
+     }
     }
    ],
    "fieldConfig": {
