@@ -62,6 +62,7 @@ configMapGenerator:
       - observability/prometheus.json
   - name: grafana-repo-dashboards-apps
     files:
+      - apps/dmarc.json
       - apps/gitlab.json
       - apps/nextcloud.json
       - apps/open-webui.json

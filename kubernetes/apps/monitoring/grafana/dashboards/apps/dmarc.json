@@ -1,0 +1,1451 @@
+{
+ "title": "DMARC",
+ "uid": "dmarc",
+ "tags": [
+  "dmarc",
+  "mail",
+  "apps"
+ ],
+ "description": "DMARC aggregate reports for the domains this cluster sends mail for, parsed out of an IMAP mailbox by dmarc-metrics-exporter (kubernetes/apps/mail/dmarc-exporter/).\n\nTwo things to know before reading any number here.\n\nFirst, every value is an absolute counter held in the exporter's memory, covering the period shown as \"Counters accumulated for\". They are not scoped to the dashboard window and a restart resets them, which is why uptime and restarts sit on the dashboard rather than in a runbook.\n\nSecond, this measures what receivers report, not what was sent. Reports arrive once a day at best and only from receivers that bother, so the window defaults to 30 days and a quiet dashboard means nobody reported -- not that nothing was delivered.",
+ "schemaVersion": 39,
+ "version": 1,
+ "editable": true,
+ "graphTooltip": 1,
+ "refresh": "5m",
+ "time": {
+  "from": "now-30d",
+  "to": "now"
+ },
+ "timezone": "",
+ "annotations": {
+  "list": []
+ },
+ "templating": {
+  "list": []
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "stat",
+   "title": "Exporter up",
+   "description": "0 means Prometheus did not reach the exporter. Every total below is then whatever the last successful scrape saw.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "up{job=\"dmarc-exporter\"}",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "0": {
+         "text": "NO",
+         "color": "red"
+        },
+        "1": {
+         "text": "yes",
+         "color": "green"
+        }
+       }
+      }
+     ],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "DMARC compliance",
+   "description": "Share of reported messages that satisfied DMARC: SPF or DKIM passed *and* was aligned with the From domain. Covers the whole accumulation period shown under \"Counters accumulated for\", not the dashboard window -- the exporter's counters are absolute.\n\nReads NaN rather than 0% when nothing has been reported yet, which is the honest answer: no reports is not the same as no compliance.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 4,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * sum(dmarc_compliant_total) / sum(dmarc_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 95
+       },
+       {
+        "color": "green",
+        "value": 99
+       }
+      ]
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Reported messages",
+   "description": "Messages covered by the aggregate reports the exporter has parsed. Providers send these once a day at best, so this moves in steps, not continuously.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 9,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "New in window",
+   "description": "Messages added within the dashboard's time range.\n\nDeliberately a difference of two absolute reads rather than increase(): a report from a new sender/reporter pair creates a new series, and increase() cannot see a series' very first sample. Measured on this data it returned 0 while the total had in fact risen by one. The offset read is guarded with \"or vector(0)\" so a window reaching past the start of the series shows the full total instead of nothing.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 14,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_total) - (sum(dmarc_total offset $__range) or vector(0))",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "Counters accumulated for",
+   "description": "Exporter process age. The counters live in memory, so a restart sets every total on this dashboard back to zero and they then rebuild only from reports that arrive afterwards. The PVC holds deduplication state, not the counters. This is the period all totals refer to.",
+   "gridPos": {
+    "h": 5,
+    "w": 5,
+    "x": 19,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "time() - process_start_time_seconds{job=\"dmarc-exporter\"}",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 6,
+   "type": "row",
+   "title": "Enforcement and alignment",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 5
+   },
+   "panels": []
+  },
+  {
+   "id": 7,
+   "type": "stat",
+   "title": "Quarantined",
+   "description": "Reported messages the receiver quarantined. Anything above zero is either someone spoofing the domain or legitimate mail failing authentication -- both worth reading the report for.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 0,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_quarantine_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 8,
+   "type": "stat",
+   "title": "Rejected",
+   "description": "Reported messages the receiver rejected outright. Same two causes as quarantine, with the mail already lost.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 4,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_reject_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 9,
+   "type": "stat",
+   "title": "SPF aligned",
+   "description": "Share of reported messages whose SPF result was aligned with the From domain. Alignment, not just a pass, is what DMARC requires.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 8,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * sum(dmarc_spf_aligned_total) / sum(dmarc_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 90
+       },
+       {
+        "color": "green",
+        "value": 99
+       }
+      ]
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 10,
+   "type": "stat",
+   "title": "DKIM aligned",
+   "description": "Share of reported messages whose DKIM signature was aligned with the From domain. DMARC passes on SPF *or* DKIM alignment, so a low value here is not a failure by itself -- but DKIM survives forwarding, where SPF does not.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 12,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * sum(dmarc_dkim_aligned_total) / sum(dmarc_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 90
+       },
+       {
+        "color": "green",
+        "value": 99
+       }
+      ]
+     },
+     "decimals": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 11,
+   "type": "stat",
+   "title": "SPF pass, not aligned",
+   "description": "Messages that passed SPF but against a domain other than the From domain. They earn no DMARC credit, and the usual cause is mail sent through a provider that envelopes it under its own domain.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 16,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_spf_pass_total) - sum(dmarc_spf_aligned_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 12,
+   "type": "stat",
+   "title": "DKIM pass, not aligned",
+   "description": "Messages carrying a valid DKIM signature from a domain other than the From domain. Also no DMARC credit; typically a provider signing with its own key instead of yours.",
+   "gridPos": {
+    "h": 5,
+    "w": 4,
+    "x": 20,
+    "y": 6
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_dkim_pass_total) - sum(dmarc_dkim_aligned_total)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 13,
+   "type": "row",
+   "title": "Who reported what",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 11
+   },
+   "panels": []
+  },
+  {
+   "id": 14,
+   "type": "table",
+   "title": "Messages by sending domain and reporter",
+   "description": "One row per From domain and reporting receiver. Zero rows means no aggregate report has been parsed at all -- check the exporter's IMAP mailbox before believing the posture above.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 12
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (from_domain, reporter) (dmarc_total)",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "instance": true,
+       "job": true,
+       "namespace": true,
+       "service": true,
+       "pod": true,
+       "container": true,
+       "endpoint": true
+      },
+      "renameByName": {
+       "from_domain": "From domain",
+       "reporter": "Reporter",
+       "Value": "Messages"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Messages",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "align": "auto",
+      "filterable": true,
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   }
+  },
+  {
+   "id": 15,
+   "type": "barchart",
+   "title": "By reporter",
+   "description": "Which receivers send aggregate reports at all. A receiver that stops reporting disappears here rather than dropping to zero, so compare against who you expect to hear from.",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 12,
+    "y": 12
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (reporter) (dmarc_total)",
+     "instant": true,
+     "legendFormat": "{{reporter}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisPlacement": "auto",
+      "fillOpacity": 80,
+      "lineWidth": 1,
+      "gradientMode": "none",
+      "axisLabel": "",
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "showValue": "auto",
+    "stacking": "none",
+    "xTickLabelRotation": 0,
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": false,
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "single",
+     "sort": "none"
+    }
+   }
+  },
+  {
+   "id": 16,
+   "type": "barchart",
+   "title": "By sending domain",
+   "description": "Reported volume per From domain. A domain you do not send from showing up here is spoofing.",
+   "gridPos": {
+    "h": 8,
+    "w": 6,
+    "x": 18,
+    "y": 12
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (from_domain) (dmarc_total)",
+     "instant": true,
+     "legendFormat": "{{from_domain}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "axisPlacement": "auto",
+      "fillOpacity": 80,
+      "lineWidth": 1,
+      "gradientMode": "none",
+      "axisLabel": "",
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "showValue": "auto",
+    "stacking": "none",
+    "xTickLabelRotation": 0,
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": false,
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "single",
+     "sort": "none"
+    }
+   }
+  },
+  {
+   "id": 17,
+   "type": "table",
+   "title": "Non-compliant by domain and reporter",
+   "description": "Reported messages that failed DMARC, broken down the same way.\n\nIntentionally not filtered to rows above zero: a table that empties itself when everything passes is indistinguishable from a table whose query broke. Zeros here mean \"checked, nothing failed\".",
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 20
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (from_domain, reporter) (dmarc_total - dmarc_compliant_total)",
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "__name__": true,
+       "instance": true,
+       "job": true,
+       "namespace": true,
+       "service": true,
+       "pod": true,
+       "container": true,
+       "endpoint": true
+      },
+      "renameByName": {
+       "from_domain": "From domain",
+       "reporter": "Reporter",
+       "Value": "Failed"
+      }
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "fields": {},
+      "sort": [
+       {
+        "field": "Failed",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "align": "auto",
+      "filterable": true,
+      "cellOptions": {
+       "type": "auto"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Failed"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "red",
+           "value": 1
+          }
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "footer": {
+     "show": false,
+     "reducer": [
+      "sum"
+     ],
+     "countRows": false,
+     "fields": ""
+    }
+   }
+  },
+  {
+   "id": 18,
+   "type": "timeseries",
+   "title": "Cumulative reported messages",
+   "description": "The raw counters over time. Drawn as steps because that is what they are: flat while no report arrives, then a jump when one is parsed. A drop to zero is an exporter restart, not lost mail.",
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 12,
+    "y": 20
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_total)",
+     "range": true,
+     "instant": false,
+     "legendFormat": "reported"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(dmarc_compliant_total)",
+     "range": true,
+     "instant": false,
+     "legendFormat": "compliant"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "palette-classic"
+     },
+     "custom": {
+      "drawStyle": "line",
+      "lineInterpolation": "stepAfter",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "auto",
+      "pointSize": 5,
+      "spanNulls": true,
+      "axisPlacement": "auto",
+      "axisLabel": "",
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true,
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   }
+  },
+  {
+   "id": 19,
+   "type": "row",
+   "title": "Plumbing",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 27
+   },
+   "panels": []
+  },
+  {
+   "id": 20,
+   "type": "stat",
+   "title": "Exporter version",
+   "description": "Version reported by dmarc-metrics-exporter itself, which is the one actually running -- not the tag in the manifest.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 0,
+    "y": 28
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "dmarc_metrics_exporter_build_info",
+     "instant": true,
+     "legendFormat": "{{version}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "blue",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "name",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 21,
+   "type": "stat",
+   "title": "Restarts",
+   "description": "Container restarts. Every one of them zeroed the counters above, so a non-zero value explains a total that looks too low.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 8,
+    "y": 28
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"mail\",container=\"exporter\",pod=~\"dmarc-exporter-.*\"}) or vector(0)",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  },
+  {
+   "id": 22,
+   "type": "stat",
+   "title": "Weekly prune last succeeded",
+   "description": "Age of the last successful dmarc-prune run, which deletes processed report mails. It is scheduled Sundays at 04:40, so anything past eight days means a run was missed and the mailbox is growing.",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 16,
+    "y": 28
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "time() - kube_cronjob_status_last_successful_time{cronjob=\"dmarc-prune\"}",
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "mappings": [],
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 691200
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "background",
+    "graphMode": "none",
+    "justifyMode": "auto",
+    "textMode": "auto",
+    "orientation": "auto",
+    "wideLayout": true
+   }
+  }
+ ]
+}
