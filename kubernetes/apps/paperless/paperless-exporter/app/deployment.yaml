@@ -41,6 +41,13 @@ spec:
               containerPort: 9877
               protocol: TCP
           env:
+            # Matches the ServiceMonitor's old 5m interval, not its new 1m one.
+            # Prometheus now scrapes every minute to stay inside its lookback
+            # window, but only one scrape in five finds the cache expired, so
+            # Paperless still sees two API calls per five minutes -- exactly
+            # the load the 5m interval was there to limit.
+            - name: CACHE_TTL_SECONDS
+              value: "300"
             - name: PAPERLESS_HOST
               value: "http://paperless.paperless.svc.cluster.local:80"
             - name: PAPERLESS_USER
@@ -111,8 +118,14 @@ spec:
     matchLabels:
       app.kubernetes.io/name: paperless-exporter
   endpoints:
-    # Every scrape triggers two live API calls against Paperless, so this is
-    # deliberately slow. None of these values move on a shorter timescale.
+    # Must stay under Prometheus' 5m lookbackDelta. At a 5m interval the
+    # newest sample was measured at 292s old, 8s short of falling out of the
+    # lookback window -- and once it does, every instant query returns empty
+    # and the dashboard's stat panels read "No data" for a healthy exporter.
+    #
+    # The API load this interval used to limit is now held down by the
+    # exporter's CACHE_TTL_SECONDS instead: two calls per five minutes,
+    # unchanged, because four of every five scrapes are served from cache.
     - port: metrics
-      interval: 5m
+      interval: 1m
       scrapeTimeout: 30s
