@@ -6,7 +6,7 @@
   "mail",
   "apps"
  ],
- "description": "DMARC aggregate reports for the domains this cluster sends mail for, parsed out of an IMAP mailbox by dmarc-metrics-exporter (kubernetes/apps/mail/dmarc-exporter/).\n\nTwo things to know before reading any number here.\n\nFirst, every value is an absolute counter held in the exporter's memory, covering the period shown as \"Counters accumulated for\". They are not scoped to the dashboard window and a restart resets them, which is why uptime and restarts sit on the dashboard rather than in a runbook.\n\nSecond, this measures what receivers report, not what was sent. Reports arrive once a day at best and only from receivers that bother, so the window defaults to 30 days and a quiet dashboard means nobody reported -- not that nothing was delivered.",
+ "description": "DMARC aggregate reports for the domains this cluster sends mail for, parsed out of the dmarc@ IMAP mailbox by dmarc-metrics-exporter (kubernetes/apps/mail/dmarc-exporter/).\n\nTwo things to know before reading any number here.\n\nFirst, every value is an absolute counter covering the exporter's whole history, not the dashboard window. The counters are written to metrics.db on the exporter's PVC and read back at startup (MetricsPersister.load), so they survive restarts and reconciles -- totals only ever grow, and the window selector affects just the time series and \"New in window\".\n\nSecond, this measures what receivers report, not what was sent. Reports arrive once a day at best and only from receivers that bother, so the window defaults to 30 days and a quiet dashboard means nobody reported -- not that nothing was delivered.",
  "schemaVersion": 39,
  "version": 1,
  "editable": true,
@@ -107,7 +107,7 @@
    "id": 2,
    "type": "stat",
    "title": "DMARC compliance",
-   "description": "Share of reported messages that satisfied DMARC: SPF or DKIM passed *and* was aligned with the From domain. Covers the whole accumulation period shown under \"Counters accumulated for\", not the dashboard window -- the exporter's counters are absolute.\n\nReads NaN rather than 0% when nothing has been reported yet, which is the honest answer: no reports is not the same as no compliance.",
+   "description": "Share of reported messages that satisfied DMARC: SPF or DKIM passed *and* was aligned with the From domain. Covers every report the exporter has ever parsed, not the dashboard window -- the counters are absolute and persisted.\n\nReads NaN rather than 0% when nothing has been reported yet, which is the honest answer: no reports is not the same as no compliance.",
    "gridPos": {
     "h": 5,
     "w": 5,
@@ -298,8 +298,8 @@
   {
    "id": 5,
    "type": "stat",
-   "title": "Counters accumulated for",
-   "description": "Exporter process age. The counters live in memory, so a restart sets every total on this dashboard back to zero and they then rebuild only from reports that arrive afterwards. The PVC holds deduplication state, not the counters. This is the period all totals refer to.",
+   "title": "Exporter uptime",
+   "description": "Age of the exporter process.\n\nDoes not bound the totals on this dashboard, which is the easy wrong assumption to make: the counters are persisted to metrics.db on the PVC and restored at startup, so they predate the current process. Verified against the running pod -- the file holds the same values Prometheus serves. Low uptime therefore means a recent restart, not reset counters.",
    "gridPos": {
     "h": 5,
     "w": 5,
@@ -1389,7 +1389,7 @@
    "id": 21,
    "type": "stat",
    "title": "Restarts",
-   "description": "Container restarts. Every one of them zeroed the counters above, so a non-zero value explains a total that looks too low.",
+   "description": "Container restarts. They do not reset the totals above -- the counters are reloaded from metrics.db on the PVC -- so this is here as a plain health signal, not as an explanation for a low total.\n\nWhat a restart does interrupt is the 15 minute IMAP poll, and a pod stuck restarting is one that stops collecting new reports.",
    "gridPos": {
     "h": 5,
     "w": 8,
