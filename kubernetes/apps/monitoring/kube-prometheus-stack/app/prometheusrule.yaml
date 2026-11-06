@@ -221,6 +221,29 @@ spec:
           for: 0m
           labels:
             severity: critical
+        # A control that could not be assessed at all. Distinct from a
+        # deviation on purpose: a deviation is a known, treated gap, while an
+        # error means the assessment has no opinion and the dashboard's
+        # compliance percentage is computed over fewer controls than it
+        # claims.
+        #
+        # This alert was missing until 2026-11-06 and the gap cost three days.
+        # Two kubectl calls were added to the harvester on 2026-11-03 without
+        # extending the collector's RBAC, so one evidence source failed with
+        # Forbidden every night. harvest.py recorded the failure in meta.json
+        # and left the previous file in place, the assessment read it as
+        # current, and three controls reported a backup 72.9 hours overdue
+        # while every nightly backup had in fact completed. Nothing alerted,
+        # because the snapshot as a whole was fresh -- only one file inside it
+        # was not.
+        - alert: ISMSAssessmentError
+          annotations:
+            description: '{{ $value }} control(s) could not be assessed. The usual cause is an evidence source that failed to harvest -- check sources[].status in evidence/latest/meta.json, the isms-collector CronJob logs, and whether a recently added source needs RBAC the collector does not have. The compliance percentage on this dashboard excludes these controls, so it reads better than the evidence supports.'
+            summary: ISMS control could not be assessed.
+          expr: isms_controls_by_verdict{verdict="error"} > 0
+          for: 30m
+          labels:
+            severity: warning
         # A deviation with no treatment measure. poam.py fails the pipeline on
         # this, so like the ratchet it should be unreachable -- which is
         # exactly why it is worth an alert.

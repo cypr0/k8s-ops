@@ -90,6 +90,32 @@ rules:
       - "schedules"
       - "backups"
       - "backupstoragelocations"
+      # `restores` added 2026-11-06, and late: the harvester started reading
+      # them on 2026-11-03 for isms_recovery_rehearsed (DLS.3.6, DLS.4.1.1),
+      # tested against an admin kubeconfig. The collector then failed the
+      # whole velero-backups source with Forbidden every night, its old file
+      # stayed in place, and the assessment reported the daily backup as 72.9
+      # hours overdue -- three controls deviated while the cluster was fine.
+      # Exactly the failure mode the gateway-dos comment above describes, so
+      # `kubectl auth can-i --as=system:serviceaccount:security:isms-collector`
+      # is now part of adding a source rather than an afterthought.
+      - "restores"
+    verbs:
+      - "get"
+      - "list"
+  # The secret chain: which external stores exist and whether everything
+  # resolving against them is syncing. Backs isms_provider_delivery for
+  # DL.1PASSWORD, which holds the root of every secret in the cluster.
+  #
+  # Only the two resource kinds, and only get/list. The ExternalSecret and
+  # ClusterSecretStore objects name vault items and report sync status; they
+  # carry no secret material, which is why this does not need `secrets` and
+  # does not trip no-sensitive-resource-access.
+  - apiGroups:
+      - "external-secrets.io"
+    resources:
+      - "clustersecretstores"
+      - "externalsecrets"
     verbs:
       - "get"
       - "list"
