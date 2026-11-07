@@ -64,6 +64,7 @@ check here before assuming a gap means "not interesting."
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
 | Proxmox Ansible | automation | [proxmox-ansible.md](proxmox-ansible.md) |
 | Reloader | kube-system | [reloader.md](reloader.md) |
+| retry | velero | [retry.md](retry.md) |
 | Spegel | kube-system | [spegel.md](spegel.md) |
 | Tika (open-webui) | open-webui | [open-webui-tika.md](open-webui-tika.md) |
 | Tika (Paperless) | paperless | [paperless-tika.md](paperless-tika.md) |
