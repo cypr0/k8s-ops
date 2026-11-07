@@ -1421,8 +1421,8 @@
   {
    "id": 24,
    "type": "piechart",
-   "title": "Maßnahmen nach Option",
-   "description": "The four treatment options. 'akzeptieren' needs no deadline but does need a residual risk and a review date -- acceptance without one is permanent by default, which isms_treatment_tracked rejects.",
+   "title": "Offene Maßnahmen nach Option",
+   "description": "The four treatment options, counting only measures still open or under way -- a closed one is finished work and would pad the backlog. The table below lists all of them including the closed, so the two figures differ by design. 'akzeptieren' needs no deadline but does need a residual risk and a review date -- acceptance without one is permanent by default, which isms_treatment_tracked rejects.",
    "gridPos": {
     "h": 5,
     "w": 8,
@@ -1440,7 +1440,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (option) (isms_measures)",
+     "expr": "sum by (option) (isms_measures{status!=\"abgeschlossen\"})",
      "instant": true,
      "legendFormat": "{{option}}"
     }
@@ -1538,7 +1538,7 @@
    "id": 26,
    "type": "table",
    "title": "Maßnahmen",
-   "description": "The treatment plan. 'Frist in' counts down to the measure's deadline; for an accepted risk there is no deadline and the review date applies instead. A date in the past fails the pipeline rather than turning amber here.",
+   "description": "The treatment plan, closed entries included -- the plan should show what was done, not only what is left. 'Frist in' counts down to the deadline; an accepted risk has none and uses the review date instead, and a closed measure has neither, so both cells stay empty. A date in the past fails the pipeline rather than turning amber here.",
    "gridPos": {
     "h": 7,
     "w": 24,
@@ -1638,7 +1638,8 @@
        "owner": "Verantwortlich",
        "Value #A": "Controls",
        "Value #B": "Frist in",
-       "Value #C": "Prüfung in"
+       "Value #C": "Prüfung in",
+       "status": "Status"
       }
      }
     }
@@ -1688,6 +1689,45 @@
           }
          ]
         }
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Status"
+      },
+      "properties": [
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "offen": {
+            "text": "offen",
+            "color": "orange",
+            "index": 0
+           },
+           "laufend": {
+            "text": "laufend",
+            "color": "yellow",
+            "index": 1
+           },
+           "abgeschlossen": {
+            "text": "abgeschlossen",
+            "color": "green",
+            "index": 2
+           }
+          }
+         }
+        ]
        },
        {
         "id": "custom.cellOptions",
