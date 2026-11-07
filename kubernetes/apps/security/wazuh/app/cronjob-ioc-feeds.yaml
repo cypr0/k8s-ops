@@ -9,13 +9,35 @@
 # already validates the CDB format, and analysisd can be reloaded in place
 # instead of restarting the whole manager.
 #
-# Rolling window instead of snapshot: the abuse.ch "recent" exports only cover
-# the last 48 hours, so each run merges into what is already uploaded and drops
-# entries not seen for TTL days. A failed source therefore never empties a
-# list -- the previous entries simply age out as usual.
+# Rolling window instead of snapshot: the abuse.ch sources only cover the last
+# few days, so each run merges into what is already uploaded and drops entries
+# not seen for TTL days. A failed source therefore never empties a list -- the
+# previous entries simply age out as usual. That design held when the abuse.ch
+# downloads were retired (see below): the three working feeds kept updating
+# while the dead ones decayed, rather than everything going blank at once.
 #
-# All sources are free and need no account. Rules using the lists are in
-# configmap-manager-ruleset.yaml.
+# abuse.ch now requires an Auth-Key. The unauthenticated bulk exports were
+# retired and answer 410 Gone; the replacement APIs answer 401 without a key.
+# Checked 2026-11-06, after the job had been failing daily since 2026-10-22
+# and KubeJobFailed had been firing unnoticed for at least ten days:
+#
+#   threatfox.abuse.ch/export/csv/{ip-port,domains,sha256}/recent/   410
+#   urlhaus.abuse.ch/downloads/hostfile/                             410
+#
+# What that cost, measured on the manager before the fix: ioc-domains and
+# ioc-sha256 had nothing newer than 2026-10-21 and would have emptied around
+# 2026-11-20 as the 30-day TTL caught up; ioc-c2-ip was down to five fresh
+# entries a day from feodotracker alone. Only ioc-scanner-ip was unaffected,
+# because none of its three sources is abuse.ch.
+#
+# Replaced by the documented APIs with the key in a header rather than the
+# export URLs that carry it in the path -- a key in a URL ends up in logs and
+# metrics. The Auth-Key is free from https://auth.abuse.ch/ and is mounted as
+# a file, not an env var (CIS 5.4.1, which the cluster's own
+# prefer-secrets-as-files policy was already flagging here for the Wazuh API
+# credentials).
+#
+# Rules using the lists are in configmap-manager-ruleset.yaml.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -25,9 +47,7 @@ data:
     #!/usr/bin/env python3
     """Merge public IOC feeds into Wazuh CDB lists and reload analysisd."""
     import base64
-    import csv
     import datetime
-    import io
     import ipaddress
     import json
     import os
@@ -38,9 +58,33 @@ data:
     import urllib.request
 
     API = os.environ.get("WAZUH_API", "https://wazuh:55000")
-    USER = os.environ["API_USERNAME"]
-    PASSWORD = os.environ["API_PASSWORD"]
+    SECRETS = os.environ.get("SECRETS_DIR", "/secrets")
     TODAY = datetime.date.today()
+
+    def secret(name, required=True):
+        """Read a mounted secret file.
+
+        Files rather than env vars because the cluster's own
+        prefer-secrets-as-files policy (CIS 5.4.1) says so, and it had been
+        flagging this CronJob for exactly that -- the compliance collector
+        was told off by a rule this job ignored.
+        """
+        path = os.path.join(SECRETS, name)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return fh.read().strip()
+        except FileNotFoundError:
+            if required:
+                raise
+            return ""
+
+    USER = secret("api-username")
+    PASSWORD = secret("api-password")
+    # Optional on purpose. Without it the abuse.ch sources are skipped with a
+    # named reason and the run still exits non-zero, because the coverage is
+    # genuinely reduced -- but the other three feeds keep updating instead of
+    # the job dying before it reaches them.
+    ABUSE_KEY = secret("abuse-ch-auth-key", required=False)
 
     # The API presents the manager's self-signed certificate, issued for a
     # name that is not the Service's. Cluster-internal and behind a
@@ -57,23 +101,125 @@ data:
     # reading back an existing list.
     KEY_RE = re.compile(r"^[0-9a-z._-]+$")
 
-    def fetch(url):
-        req = urllib.request.Request(url, headers=UA)
+    def fetch(url, headers=None, data=None):
+        req = urllib.request.Request(
+            url, headers={**UA, **(headers or {})}, data=data
+        )
         with urllib.request.urlopen(req, timeout=120) as resp:
             return resp.read().decode("utf-8", "replace")
+
+    class Skipped(Exception):
+        """A source that cannot run for a stated reason, not a failure to fix."""
+
+    def abuse_headers():
+        if not ABUSE_KEY:
+            raise Skipped(
+                "no abuse.ch Auth-Key mounted at "
+                f"{SECRETS}/abuse-ch-auth-key -- get one free at "
+                "https://auth.abuse.ch/ and add ABUSE_CH_AUTH_KEY to the "
+                "1Password item `wazuh`"
+            )
+        return {"Auth-Key": ABUSE_KEY}
+
+    # One request serves all three ThreatFox-backed lists. The retired CSV
+    # exports were per IOC type, the API is not: get_iocs returns every type
+    # in one response with an `ioc_type` discriminator, so fetching it once
+    # and filtering three times is both fewer requests and what abuse.ch's
+    # fair-use note asks for.
+    _threatfox_cache = {}
+
+    def threatfox_iocs():
+        if "data" not in _threatfox_cache:
+            body = json.dumps({"query": "get_iocs", "days": 7}).encode()
+            raw = fetch(
+                "https://threatfox-api.abuse.ch/api/v1/",
+                headers={**abuse_headers(), "Content-Type": "application/json"},
+                data=body,
+            )
+            doc = json.loads(raw)
+            status = doc.get("query_status")
+            if status != "ok":
+                raise RuntimeError(f"threatfox query_status={status!r}")
+            _threatfox_cache["data"] = doc.get("data") or []
+        return _threatfox_cache["data"]
+
+    def threatfox(*ioc_types):
+        """Values of the given ioc_type from the shared response.
+
+        `days` is capped at 7 by the API, which is wider than the 48h window
+        of the old CSV export -- the rolling merge below makes a wider window
+        harmless.
+        """
+        wanted = set(ioc_types)
+
+        def loader():
+            for row in threatfox_iocs():
+                if row.get("ioc_type") in wanted:
+                    value = row.get("ioc")
+                    if value:
+                        yield value
+
+        return loader
+
+    def urlhaus_hosts():
+        """Hostnames from URLhaus' recent URLs.
+
+        Narrower than the retired hostfile, and deliberately so rather than by
+        oversight: the v1 API caps a response at 1000 entries, while the
+        export file that would carry more puts the Auth-Key in the URL path.
+        The old hostfile only held hostnames that were active or added in the
+        last 48 hours anyway, so the overlap is larger than the cap suggests.
+        """
+        raw = fetch(
+            "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1000/",
+            headers=abuse_headers(),
+        )
+        doc = json.loads(raw)
+        status = doc.get("query_status")
+        if status == "no_results":
+            return
+        if status != "ok":
+            raise RuntimeError(f"urlhaus query_status={status!r}")
+        for row in doc.get("urls") or []:
+            host = row.get("host")
+            if host:
+                yield host
+
+    def malwarebazaar_hashes():
+        """Recent SHA256 hashes from MalwareBazaar.
+
+        Form-encoded rather than JSON: the MalwareBazaar API predates the
+        others and takes POST fields, not a JSON body.
+        """
+        raw = fetch(
+            "https://mb-api.abuse.ch/api/v1/",
+            headers=abuse_headers(),
+            data=b"query=get_recent&selector=time",
+        )
+        doc = json.loads(raw)
+        status = doc.get("query_status")
+        if status == "no_results":
+            return
+        if status != "ok":
+            raise RuntimeError(f"malwarebazaar query_status={status!r}")
+        for row in doc.get("data") or []:
+            value = row.get("sha256_hash")
+            if value:
+                yield value
+
+    def plain(url):
+        """Loader for the line-oriented lists that need no key."""
+
+        def loader():
+            return lines(fetch(url))
+
+        return loader
 
     def lines(text):
         for line in text.splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
                 yield line
-
-    def threatfox(text):
-        # CSV rows with a quoted, space-padded third column: the IOC value.
-        for row in csv.reader(io.StringIO("\n".join(lines(text))),
-                              skipinitialspace=True):
-            if len(row) > 2:
-                yield row[2]
 
     def public_ipv4(value):
         # IPv4 only: a CDB key containing ':' would have to be quoted, and
@@ -95,30 +241,44 @@ data:
         return value if SHA256_RE.match(value) else None
 
     # name -> (ttl_days, normaliser, [(label, url, parser), ...])
+    # (label, loader) -- loader() yields raw values and raises Skipped when it
+    # cannot run for a stated reason. The previous shape was (label, url,
+    # parser) with a shared text fetch, which no longer fits: ThreatFox is a
+    # POST returning JSON for every IOC type at once, so the source has to own
+    # how it gets its data rather than being handed a URL.
+    #
+    # Five of these nine entries went dead on 2026-10-22 when abuse.ch retired
+    # its unauthenticated exports: ThreatFox in all three lists, plus URLhaus
+    # and MalwareBazaar. That left ioc-sha256 with no working source at all and
+    # ioc-domains likewise. The three in ioc-scanner-ip were untouched, which
+    # is why that one list stayed healthy throughout.
     LISTS = {
         # Command-and-control servers. Matched against DESTINATION addresses
         # (firewall, Suricata) and successful logins.
         "ioc-c2-ip": (30, public_ipv4, [
-            ("feodo", "https://feodotracker.abuse.ch/downloads/ipblocklist.txt", lines),
-            ("threatfox", "https://threatfox.abuse.ch/export/csv/ip-port/recent/", threatfox),
+            # Still unauthenticated as of 2026-11-06, unlike the rest of
+            # abuse.ch. Worth not relying on: if it follows the others, this
+            # list falls to ThreatFox alone.
+            ("feodo", plain("https://feodotracker.abuse.ch/downloads/ipblocklist.txt")),
+            # ip:port rows; public_ipv4 already splits on ":".
+            ("threatfox", threatfox("ip:port")),
         ]),
         # Hosts currently scanning / brute-forcing the internet. Far too common
         # to alert on as a source by itself -- the rules only use it to raise
         # a SUCCESSFUL login from such an address. Short TTL: these lists are
         # full snapshots and addresses churn quickly.
         "ioc-scanner-ip": (7, public_ipv4, [
-            ("blocklist.de", "https://lists.blocklist.de/lists/all.txt", lines),
-            ("cins", "https://cinsscore.com/list/ci-badguys.txt", lines),
-            ("et-compromised", "https://rules.emergingthreats.net/blockrules/compromised-ips.txt", lines),
+            ("blocklist.de", plain("https://lists.blocklist.de/lists/all.txt")),
+            ("cins", plain("https://cinsscore.com/list/ci-badguys.txt")),
+            ("et-compromised", plain("https://rules.emergingthreats.net/blockrules/compromised-ips.txt")),
         ]),
         "ioc-domains": (30, domain, [
-            ("threatfox", "https://threatfox.abuse.ch/export/csv/domains/recent/", threatfox),
-            ("urlhaus", "https://urlhaus.abuse.ch/downloads/hostfile/",
-             lambda t: (l.split()[-1] for l in lines(t))),
+            ("threatfox", threatfox("domain")),
+            ("urlhaus", urlhaus_hosts),
         ]),
         "ioc-sha256": (30, sha256, [
-            ("threatfox", "https://threatfox.abuse.ch/export/csv/sha256/recent/", threatfox),
-            ("malwarebazaar", "https://bazaar.abuse.ch/export/txt/sha256/recent/", lines),
+            ("threatfox", threatfox("sha256_hash")),
+            ("malwarebazaar", malwarebazaar_hashes),
         ]),
     }
 
@@ -173,9 +333,17 @@ data:
             entries = existing(name, token)
             before = len(entries)
             fresh = set()
-            for label, url, parser in sources:
+            for label, loader in sources:
                 try:
-                    got = {v for v in map(norm, parser(fetch(url))) if v}
+                    got = {v for v in map(norm, loader()) if v}
+                except Skipped as err:
+                    # Not configured is reported differently from broken, but
+                    # still counts against the run: the coverage is reduced
+                    # either way and a silently smaller list is the failure
+                    # mode this whole job exists to avoid.
+                    print(f"{name}: {label} SKIPPED: {err}", file=sys.stderr)
+                    failed = True
+                    continue
                 except Exception as err:  # noqa: BLE001 -- keep going per source
                     print(f"{name}: {label} FAILED: {err}", file=sys.stderr)
                     failed = True
@@ -245,6 +413,9 @@ spec:
             runAsNonRoot: true
             runAsUser: 65534
             runAsGroup: 65534
+            # Required for the mounted secrets to be readable at all; see the
+            # note on the secrets volume below.
+            fsGroup: 65534
             seccompProfile:
               type: RuntimeDefault
           containers:
@@ -255,20 +426,17 @@ spec:
               command:
                 - "python3"
                 - "/scripts/update.py"
-              env:
-                - name: API_USERNAME
-                  valueFrom:
-                    secretKeyRef:
-                      name: wazuh-api-cred
-                      key: username
-                - name: API_PASSWORD
-                  valueFrom:
-                    secretKeyRef:
-                      name: wazuh-api-cred
-                      key: password
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts
+                  readOnly: true
+                # Secrets as files, not env vars. The cluster's own
+                # prefer-secrets-as-files ClusterPolicy (CIS 5.4.1) had been
+                # raising a PolicyViolation on this CronJob for the Wazuh API
+                # credentials -- in Audit mode, so nothing blocked and nobody
+                # looked. Noticed while tracing the feed failure.
+                - name: secrets
+                  mountPath: /secrets
                   readOnly: true
               resources:
                 requests:
@@ -287,3 +455,27 @@ spec:
               configMap:
                 name: wazuh-ioc-feeds
                 defaultMode: 0555
+            # Group-readable, not 0400: kubelet owns secret volume files as
+            # root and applies fsGroup only as their group, so 0400 would be
+            # root-only while this pod runs as 65534. Same trap the ISMS
+            # exporter hit on 2026-11-03.
+            - name: secrets
+              projected:
+                defaultMode: 0440
+                sources:
+                  - secret:
+                      name: wazuh-api-cred
+                      items:
+                        - key: username
+                          path: api-username
+                        - key: password
+                          path: api-password
+                  - secret:
+                      name: wazuh-ioc-feeds-abuse-ch
+                      items:
+                        - key: auth-key
+                          path: abuse-ch-auth-key
+                      # Optional so the job still runs before the key exists:
+                      # the abuse.ch sources then report SKIPPED with the
+                      # registration URL and the other feeds keep updating.
+                      optional: true

@@ -36,6 +36,25 @@ rules:
     verbs:
       - "get"
       - "list"
+  # Scheduled work, for the `scheduled-jobs` evidence source. A CronJob's
+  # status.lastSuccessfulTime is the one field that distinguishes "runs every
+  # night" from "is scheduled every night and has not succeeded since
+  # October" -- and only the status, no pod contents.
+  #
+  # Added 2026-11-06 after the Wazuh IOC feed refresh had been failing daily
+  # since 2026-10-22, unnoticed: abuse.ch had retired its unauthenticated
+  # exports, two of the four IOC lists stopped receiving anything, and the
+  # ISMS could not see it because nothing in the harvest covered scheduled
+  # work. The CronJob's own status said lastSuccessfulTime 2026-10-21 the
+  # whole time.
+  - apiGroups:
+      - "batch"
+    resources:
+      - "cronjobs"
+      - "jobs"
+    verbs:
+      - "get"
+      - "list"
   # Pod specs, not pod contents: the evidence for KONF.9.1 and KONF.15.1/15.2
   # (limiting memory and compute) needs the resources.limits actually set per
   # container. Deployments alone are not enough, because CronJobs, Jobs and
