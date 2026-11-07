@@ -23,6 +23,7 @@ check here before assuming a gap means "not interesting."
 | Cloudflare Tunnel | network | [cloudflare-tunnel.md](cloudflare-tunnel.md) |
 | CloudNativePG | database | [cloudnative-pg.md](cloudnative-pg.md) |
 | Collabora | nextcloud | [collabora.md](collabora.md) |
+| collector | isms | [collector.md](collector.md) |
 | CoreDNS | kube-system | [coredns.md](coredns.md) |
 | csi-driver-nfs | kube-system | [csi-driver-nfs.md](csi-driver-nfs.md) |
 | DMARC Exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
