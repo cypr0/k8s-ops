@@ -190,11 +190,20 @@ data:
 
         Form-encoded rather than JSON: the MalwareBazaar API predates the
         others and takes POST fields, not a JSON body.
+
+        `selector=100` rather than `selector=time`, which returns the last
+        *hour* only -- measured on 2026-11-07 that was 18 samples against 100
+        for the numeric selector, so a daily job using `time` was collecting
+        one twenty-fourth of what it looked like. 100 is the ceiling; 1000 is
+        rejected as unknown_selector. Still a fraction of a day's samples,
+        which is tolerable because ThreatFox contributes two orders of
+        magnitude more hashes to this same list and the 30-day TTL
+        accumulates.
         """
         raw = fetch(
             "https://mb-api.abuse.ch/api/v1/",
             headers=abuse_headers(),
-            data=b"query=get_recent&selector=time",
+            data=b"query=get_recent&selector=100",
         )
         doc = json.loads(raw)
         status = doc.get("query_status")
