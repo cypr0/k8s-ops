@@ -83,7 +83,7 @@ spec:
           # alpine/curl rather than the python:*-alpine + `apk add curl` combo
           # used elsewhere in this repo: curl is already in the image, so the
           # Job needs no egress to the internet at all.
-          image: alpine/curl:8.22.0
+          image: alpine/curl:8.23.0
           command:
             - "/bin/sh"
             - "/scripts/setup.sh"
