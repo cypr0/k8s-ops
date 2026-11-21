@@ -115,9 +115,17 @@ data:
       if (!flags.last) {
         return;
       }
-      var text = Buffer.concat(pending[id]).toString();
+      var out;
+      try {
+        var text = Buffer.concat(pending[id]).toString();
+        out = Buffer.from(normalize(text));
+        r.warn('feed out ' + text.length + ' -> ' + out.length);
+      } catch (e) {
+        r.warn('feed error ' + e);
+        out = Buffer.alloc(0);
+      }
       delete pending[id];
-      r.sendBuffer(Buffer.from(normalize(text)), flags);
+      r.sendBuffer(out, flags);
     }
 
     export default { header, body };
