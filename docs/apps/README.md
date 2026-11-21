@@ -16,6 +16,7 @@ check here before assuming a gap means "not interesting."
 | 1Password Connect | security | [onepassword-connect.md](onepassword-connect.md) |
 | Alloy | monitoring | [alloy.md](alloy.md) |
 | Authentik | security | [authentik.md](authentik.md) |
+| Calendar Public | mail | [calendar-public.md](calendar-public.md) |
 | cert-manager | cert-manager | [cert-manager.md](cert-manager.md) |
 | Cilium | kube-system | [cilium.md](cilium.md) |
 | ClamAV | nextcloud | [clamav.md](clamav.md) |

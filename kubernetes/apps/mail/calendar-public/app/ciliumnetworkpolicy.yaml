@@ -1,0 +1,49 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: calendar-public
+  namespace: mail
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: calendar-public
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": network
+            app.kubernetes.io/name: envoy
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    # Kubelet readiness/liveness probes
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Radicale directly, not via front: Radicale trusts X-Remote-User, which
+    # is exactly what this proxy sets. Its own mailu CiliumNetworkPolicy
+    # already admits every pod of the mail namespace.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: mailu
+            app.kubernetes.io/component: webdav
+      toPorts:
+        - ports:
+            - port: "5232"
+              protocol: TCP
