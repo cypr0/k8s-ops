@@ -106,15 +106,15 @@ data:
         return;
       }
       var id = r.variables.request_id;
-      // latin1 keeps every byte intact, so UTF-8 split across chunks survives;
-      // the lines edited below are plain ASCII.
-      pending[id] = (pending[id] || '') + data.toString('latin1');
+      // Chunks can split a multi-byte character, so collect raw bytes (as
+      // hex) and decode only once the body is complete.
+      pending[id] = (pending[id] || '') + data.toString('hex');
       if (!flags.last) {
         return;
       }
-      var text = pending[id];
+      var text = Buffer.from(pending[id], 'hex').toString();
       delete pending[id];
-      r.sendBuffer(Buffer.from(normalize(text), 'latin1'), flags);
+      r.sendBuffer(Buffer.from(normalize(text)), flags);
     }
 
     export default { header, body };
