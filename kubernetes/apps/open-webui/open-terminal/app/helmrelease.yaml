@@ -34,7 +34,7 @@ spec:
             image:
               repository: ghcr.io/open-webui/open-terminal
               # renovate: datasource=docker depName=ghcr.io/open-webui/open-terminal
-              tag: latest@sha256:94181fbaedfbfc4756df342de83483188b528eb75b7861c4252238c5fafa3b11
+              tag: latest@sha256:3b62a6ba155e8315af331af5c3d9d5cbc16c73ff0f4d57f19221233d6341f0b3
             env:
               # Per-user Linux accounts inside this single container. NOTE: this
               # is Unix-permission isolation, not hard kernel/network isolation
