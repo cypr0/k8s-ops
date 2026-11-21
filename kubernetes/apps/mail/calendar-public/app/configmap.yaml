@@ -13,6 +13,7 @@ data:
     access_log /dev/stdout feed;
 
     js_import feed from /etc/nginx/feed/feed.js;
+    js_var $feed_buf '';
   server.conf: |
     server_tokens off;
 
@@ -69,8 +70,6 @@ data:
     //    one), left over from an imported event.
     //  - X-WR-CALNAME/X-WR-CALDESC with a ";VALUE=TEXT" parameter.
 
-    var pending = {};
-
     function normalize(text) {
       var lines = text.split('\r\n');
       var out = [];
@@ -105,17 +104,14 @@ data:
         r.sendBuffer(data, flags);
         return;
       }
-      var id = r.variables.request_id;
       // Chunks can split a multi-byte character, so collect raw bytes (as
-      // hex) and decode only once the body is complete.
-      pending[id] = (pending[id] || '') + data.toString('hex');
-      r.warn('dbg chunk=' + data.length + ' hexlen=' + data.toString('hex').length + ' type=' + typeof data);
+      // hex) and decode only once the body is complete. The per-request
+      // state lives in an nginx variable (js_var in http.conf).
+      r.variables.feed_buf = (r.variables.feed_buf || '') + data.toString('hex');
       if (!flags.last) {
         return;
       }
-      var text = Buffer.from(pending[id], 'hex').toString();
-      r.warn('dbg hex=' + pending[id].length + ' text=' + text.length + ' head=' + text.substring(0, 20));
-      delete pending[id];
+      var text = Buffer.from(r.variables.feed_buf, 'hex').toString();
       r.sendBuffer(Buffer.from(normalize(text)), flags);
     }
 
