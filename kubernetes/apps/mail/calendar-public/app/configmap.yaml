@@ -106,26 +106,15 @@ data:
         return;
       }
       var id = r.variables.request_id;
-      if (!pending[id]) {
-        pending[id] = [];
-      }
-      // The filter's buffer is only valid during this call: keep a copy.
-      pending[id].push(Buffer.from(data));
-      r.warn('feed chunk ' + data.length + ' last=' + flags.last);
+      // latin1 keeps every byte intact, so UTF-8 split across chunks survives;
+      // the lines edited below are plain ASCII.
+      pending[id] = (pending[id] || '') + data.toString('latin1');
       if (!flags.last) {
         return;
       }
-      var out;
-      try {
-        var text = Buffer.concat(pending[id]).toString();
-        out = Buffer.from(normalize(text));
-        r.warn('feed out ' + text.length + ' -> ' + out.length);
-      } catch (e) {
-        r.warn('feed error ' + e);
-        out = Buffer.alloc(0);
-      }
+      var text = pending[id];
       delete pending[id];
-      r.sendBuffer(out, flags);
+      r.sendBuffer(Buffer.from(normalize(text), 'latin1'), flags);
     }
 
     export default { header, body };
