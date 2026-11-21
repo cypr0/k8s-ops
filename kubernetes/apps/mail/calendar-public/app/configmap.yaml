@@ -109,7 +109,9 @@ data:
       if (!pending[id]) {
         pending[id] = [];
       }
-      pending[id].push(data);
+      // The filter's buffer is only valid during this call: keep a copy.
+      pending[id].push(Buffer.from(data));
+      r.log('feed chunk ' + data.length + ' last=' + flags.last);
       if (!flags.last) {
         return;
       }
