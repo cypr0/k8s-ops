@@ -25,7 +25,24 @@ data:
       return 200 "ok\n";
     }
   location.conf: |-
-    limit_except GET HEAD { deny all; }
+    # Browser-based subscribers (web apps) fetch the feed cross-origin. The
+    # URL token is the only protection, so a wildcard origin adds no exposure.
+    # add_header in a location replaces the server-level ones, hence repeated.
+    add_header Access-Control-Allow-Origin "*" always;
+    add_header Cache-Control "private, no-store" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    if ($request_method = OPTIONS) {
+      add_header Access-Control-Allow-Origin "*" always;
+      add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
+      add_header Access-Control-Allow-Headers "*" always;
+      add_header Access-Control-Max-Age 86400 always;
+      return 204;
+    }
+
+    limit_except GET HEAD OPTIONS { deny all; }
 
     proxy_set_header Authorization "";
     proxy_set_header Cookie "";
