@@ -16,7 +16,8 @@ Publishes selected private Radicale calendars (Mailu's `webdav`) as read-only `.
 | File | Purpose |
 | --- | --- |
 | `kubernetes/apps/mail/calendar-public/ks.yaml` | Flux Kustomization |
-| `kubernetes/apps/mail/calendar-public/app/externalsecret.yaml` | Token generator + ExternalSecret that renders the nginx config |
+| `kubernetes/apps/mail/calendar-public/app/externalsecret.yaml` | Token generator + ExternalSecret that renders the token-bearing nginx server block |
+| `kubernetes/apps/mail/calendar-public/app/configmap.yaml` | Static nginx parts: headers/CORS, `nginx.conf` (loads njs), `feed.js` (feed normalization) |
 | `kubernetes/apps/mail/calendar-public/app/deployment.yaml` | nginx Deployment + Service |
 | `kubernetes/apps/mail/calendar-public/app/httproute.yaml` | `cal.${SECRET_DOMAIN}` on `envoy-external` |
 | `kubernetes/apps/mail/calendar-public/app/ciliumnetworkpolicy.yaml` | Ingress from Envoy, egress to CoreDNS and Radicale only |
@@ -31,10 +32,12 @@ Collection ids: `kubectl -n mail exec deploy/mailu-webdav -- sh -c 'grep -l VCAL
 
 ## Routing & access
 - `envoy-external` → Service `calendar-public:8080`; DNS is created automatically from the HTTPRoute.
-- Only `GET`/`HEAD` on the exact token paths are proxied; everything else returns 404.
+- Only `GET`/`HEAD` (and CORS `OPTIONS`) on the exact token paths are proxied; everything else returns 404.
 - nginx's access log omits the request URI because it contains the token. Envoy's access log still contains it.
 
 ## Known quirks
+- **Feed normalization (`feed.js`, njs body filter):** Radicale's export is rewritten on the fly because Daely's parser (Dart `icalendar_parser`) rejects the *entire* feed on one bad line. It fixes `GEO` values with an escaped separator (`lat\;lon` → `lat;lon`), drops a `TZID` property inside a `VEVENT`, and strips `;VALUE=TEXT` from `X-WR-CALNAME`/`X-WR-CALDESC`. `Content-Disposition` is dropped too, and CORS is open (`*`) for browser clients. The stock `nginx.conf` is replaced via `subPath` only to `load_module` njs, so re-check it when the image tag changes. Memory: the filter buffers the whole feed (~1 MB hex) per request, so keep the 64Mi limit in mind before adding more feeds or very large calendars.
+- Tested with `icalendar_parser` 2.1.0 (`dart run` with `ICalendar.fromString` on the downloaded feed).
 - Tokens are generated with `refreshPolicy: CreatedOnce`, so they stay stable. Rotate a token by deleting Secret `calendar-public-nginx` (all feed URLs change). The mailbox/collection fields are only read at that time too; after changing them in 1Password, delete the Secret as well.
 - Radicale, not nginx, enforces what is readable: the proxy only ever requests the configured collection.
 
