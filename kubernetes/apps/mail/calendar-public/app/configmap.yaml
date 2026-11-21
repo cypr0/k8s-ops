@@ -109,10 +109,12 @@ data:
       // Chunks can split a multi-byte character, so collect raw bytes (as
       // hex) and decode only once the body is complete.
       pending[id] = (pending[id] || '') + data.toString('hex');
+      r.warn('dbg chunk=' + data.length + ' hexlen=' + data.toString('hex').length + ' type=' + typeof data);
       if (!flags.last) {
         return;
       }
       var text = Buffer.from(pending[id], 'hex').toString();
+      r.warn('dbg hex=' + pending[id].length + ' text=' + text.length + ' head=' + text.substring(0, 20));
       delete pending[id];
       r.sendBuffer(Buffer.from(normalize(text)), flags);
     }
