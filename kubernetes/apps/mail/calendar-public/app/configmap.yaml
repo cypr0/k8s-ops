@@ -1,0 +1,48 @@
+---
+# Static nginx parts of the feed proxy; the token-bearing server block is in
+# externalsecret.yaml and includes these files.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: calendar-public-nginx-static
+data:
+  http.conf: |
+    # The request URI is deliberately absent from the log format: it carries
+    # the token.
+    log_format feed '$remote_addr "$request_method" $status $body_bytes_sent';
+    access_log /dev/stdout feed;
+  server.conf: |
+    server_tokens off;
+
+    add_header Cache-Control "private, no-store" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location = /healthz {
+      access_log off;
+      default_type text/plain;
+      return 200 "ok\n";
+    }
+  location.conf: |-
+    limit_except GET HEAD { deny all; }
+
+    proxy_set_header Authorization "";
+    proxy_set_header Cookie "";
+    proxy_set_header X-Forwarded-For "";
+    # sub_filter needs an uncompressed body.
+    proxy_set_header Accept-Encoding "";
+
+    # Radicale marks the collection as a download; subscribers want a feed.
+    proxy_hide_header Content-Disposition;
+
+    # Make Radicale's export acceptable to strict subscribers:
+    #  - plain X-WR-CALNAME/X-WR-CALDESC (no ;VALUE=TEXT parameter)
+    #  - drop a TZID property that is not allowed inside a VEVENT (an
+    #    imported event carries one right before its VALARM; a VTIMEZONE's
+    #    TZID is followed by BEGIN:STANDARD/DAYLIGHT, so it is never matched)
+    sub_filter_types text/calendar;
+    sub_filter_once off;
+    sub_filter "X-WR-CALNAME;VALUE=TEXT:" "X-WR-CALNAME:";
+    sub_filter "X-WR-CALDESC;VALUE=TEXT:" "X-WR-CALDESC:";
+    sub_filter "\r\nTZID:Europe/Berlin\r\nBEGIN:VALARM" "\r\nBEGIN:VALARM";
