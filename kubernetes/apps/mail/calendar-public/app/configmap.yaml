@@ -11,6 +11,8 @@ data:
     # the token.
     log_format feed '$remote_addr "$request_method" $status $body_bytes_sent';
     access_log /dev/stdout feed;
+
+    js_import feed from /etc/nginx/feed/feed.js;
   server.conf: |
     server_tokens off;
 
@@ -53,13 +55,96 @@ data:
     # Radicale marks the collection as a download; subscribers want a feed.
     proxy_hide_header Content-Disposition;
 
-    # Make Radicale's export acceptable to strict subscribers:
-    #  - plain X-WR-CALNAME/X-WR-CALDESC (no ;VALUE=TEXT parameter)
-    #  - drop a TZID property that is not allowed inside a VEVENT (an
-    #    imported event carries one right before its VALARM; a VTIMEZONE's
-    #    TZID is followed by BEGIN:STANDARD/DAYLIGHT, so it is never matched)
-    sub_filter_types text/calendar;
-    sub_filter_once off;
-    sub_filter "X-WR-CALNAME;VALUE=TEXT:" "X-WR-CALNAME:";
-    sub_filter "X-WR-CALDESC;VALUE=TEXT:" "X-WR-CALDESC:";
-    sub_filter "\r\nTZID:Europe/Berlin\r\nBEGIN:VALARM" "\r\nBEGIN:VALARM";
+    # Radicale's export is not accepted by strict subscribers; feed.js
+    # rewrites the few offending lines (see there).
+    js_header_filter feed.header;
+    js_body_filter feed.body buffer_type=buffer;
+  feed.js: |
+    // Normalizes Radicale's calendar export for strict iCalendar parsers.
+    // Found with Daely's parser (Dart icalendar_parser), which rejects the
+    // whole feed on a single bad line:
+    //  - GEO written with an escaped separator ("lat\;lon"); RFC 5545
+    //    wants a bare ";" there.
+    //  - a TZID property directly inside a VEVENT (only VTIMEZONE may have
+    //    one), left over from an imported event.
+    //  - X-WR-CALNAME/X-WR-CALDESC with a ";VALUE=TEXT" parameter.
+
+    var pending = {};
+
+    function normalize(text) {
+      var lines = text.split('\r\n');
+      var out = [];
+      var inZone = false;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line === 'BEGIN:VTIMEZONE') {
+          inZone = true;
+        } else if (line === 'END:VTIMEZONE') {
+          inZone = false;
+        } else if (!inZone && line.indexOf('TZID:') === 0) {
+          continue;
+        } else if (line.indexOf('GEO:') === 0) {
+          line = line.replace(/\\;/g, ';');
+        } else if (line.indexOf('X-WR-CAL') === 0) {
+          line = line.replace(/^(X-WR-CAL(?:NAME|DESC));VALUE=TEXT:/, '$1:');
+        }
+        out.push(line);
+      }
+      return out.join('\r\n');
+    }
+
+    function header(r) {
+      // The body is rewritten, so the upstream length no longer applies.
+      if (r.status === 200) {
+        delete r.headersOut['Content-Length'];
+      }
+    }
+
+    function body(r, data, flags) {
+      if (r.status !== 200) {
+        r.sendBuffer(data, flags);
+        return;
+      }
+      var id = r.variables.request_id;
+      if (!pending[id]) {
+        pending[id] = [];
+      }
+      pending[id].push(data);
+      if (!flags.last) {
+        return;
+      }
+      var text = Buffer.concat(pending[id]).toString();
+      delete pending[id];
+      r.sendBuffer(Buffer.from(normalize(text)), flags);
+    }
+
+    export default { header, body };
+  nginx.conf: |-
+    # The image's stock nginx.conf plus load_module for njs (feed.js). Keep in
+    # step with the image when bumping its tag.
+    load_module modules/ngx_http_js_module.so;
+
+    worker_processes  auto;
+
+    error_log  /var/log/nginx/error.log notice;
+    pid        /tmp/nginx.pid;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        proxy_temp_path /tmp/proxy_temp;
+        client_body_temp_path /tmp/client_temp;
+        fastcgi_temp_path /tmp/fastcgi_temp;
+        uwsgi_temp_path /tmp/uwsgi_temp;
+        scgi_temp_path /tmp/scgi_temp;
+
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        sendfile        on;
+        keepalive_timeout  65;
+
+        include /etc/nginx/conf.d/*.conf;
+    }

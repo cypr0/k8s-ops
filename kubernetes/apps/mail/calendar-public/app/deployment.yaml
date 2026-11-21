@@ -41,6 +41,10 @@ spec:
             - name: static
               mountPath: /etc/nginx/feed
               readOnly: true
+            - name: static
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
             - name: tmp
               mountPath: /tmp
           readinessProbe:
