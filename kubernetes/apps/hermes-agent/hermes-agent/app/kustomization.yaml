@@ -66,10 +66,11 @@ configMapGenerator:
       - sicherheit.SOUL.md=profiles/sicherheit/SOUL.md
       - infrastruktur.config.yaml=profiles/infrastruktur/config.yaml
       - infrastruktur.SOUL.md=profiles/infrastruktur/SOUL.md
-      # Prepared, enabled once their 1Password items exist (otherwise the
-      # Chief of Staff could delegate to a profile whose MCP server or token
-      # is missing): isms (hermes-gitlab), netzwerk (hermes-opnsense).
-      # Files: profiles/{isms,netzwerk}/.
+      - netzwerk.config.yaml=profiles/netzwerk/config.yaml
+      - netzwerk.SOUL.md=profiles/netzwerk/SOUL.md
+      # Prepared, enabled once its 1Password item hermes-gitlab exists
+      # (otherwise the Chief of Staff could delegate to a profile without
+      # repository access): isms. Files: profiles/isms/.
 
 generatorOptions:
   disableNameSuffixHash: false

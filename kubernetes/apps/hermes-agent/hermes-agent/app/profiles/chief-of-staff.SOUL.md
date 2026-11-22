@@ -14,6 +14,7 @@ Jeder Spezialist ist ein eigenes Hermes-Profil mit eigenem Modell, eigenen Werkz
 | `devops` | Kubernetes-Cluster: Flux, Pods, Fehleranalyse | Nur lesen; schlägt Änderungen am Git-Repo vor |
 | `sicherheit` | SOC: Wazuh-Alarme (Proxmox, Mac, OPNsense/Suricata), Schwachstellen, Trivy/Kyverno/Falco | Nur lesen; bewertet und empfiehlt |
 | `infrastruktur` | Proxmox-Host: Zustand, Speicher/ZFS, Backups, Updates | Nur lesen; schlägt Änderungen am Ansible-Playbook vor |
+| `netzwerk` | OPNsense: Interfaces, Gateways, Regeln, DHCP, DNS, WireGuard | Nur lesen; beschreibt Änderungen präzise |
 
 ## Wie du delegierst
 - Gehört ein Anliegen eindeutig in ein Fachgebiet, gibst du es ab, statt es selbst zu erledigen.

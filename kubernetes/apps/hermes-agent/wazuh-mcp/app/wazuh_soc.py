@@ -1,7 +1,7 @@
 """
 title: Wazuh (SOC, read-only)
 author: cypr0
-version: 1.0.0
+version: 1.0.1
 license: MIT
 requirements: httpx
 description: >
@@ -181,6 +181,7 @@ class Tools:
         """Search Wazuh alerts, newest first. hours: look-back window. min_level: rule level 0-15. agent: agent name. group: rule group (e.g. sshd, suricata, authentication_failed). text: free text. size: max 100."""
         body = {
             "size": max(1, min(int(size), 100)),
+            "track_total_hits": True,  # otherwise totals cap at 10,000
             "sort": [{"timestamp": {"order": "desc"}}],
             "query": self._alert_query(hours, min_level, agent or None, group or None, text or None),
         }
@@ -194,6 +195,7 @@ class Tools:
         """Counts of alerts in the window: per level, per agent, top rules and top source IPs. Use this first to see where to look."""
         body = {
             "size": 0,
+            "track_total_hits": True,
             "query": self._alert_query(hours, min_level, None, None, None),
             "aggs": {
                 "by_level": {"terms": {"field": "rule.level", "size": 16, "order": {"_key": "desc"}}},
@@ -227,6 +229,7 @@ class Tools:
             must.append({"term": {"agent.name": agent}})
         body = {
             "size": max(0, min(int(size), 100)),
+            "track_total_hits": True,
             "query": {"bool": {"must": must}},
             "sort": [{"vulnerability.score.base": {"order": "desc", "unmapped_type": "float"}}],
             "aggs": {
