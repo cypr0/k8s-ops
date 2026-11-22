@@ -27,7 +27,13 @@ data:
       # "no API access") instead of reporting the real tool failure. Moved
       # to the paid mistral-medium-3.1 tier to fix the reliability problem
       # at the source rather than paper over the symptom.
-      default: mistralai/mistral-medium-3.1
+      # mistral-large-4-0 since 2026-11-22: Mistral retired mistral-medium-2508
+      # (= medium-3.1) -- OpenRouter still listed it, but every call came
+      # back "Invalid model: mistral-medium-2508" (400) and only the Haiku
+      # fallback kept the Chief of Staff, the Paperless pipeline and all cron
+      # jobs alive. Large 4: EU / zero-data-retention endpoint, real tool call
+      # verified under provider.zdr=true; similar price ($0.70/$2.10).
+      default: mistralai/mistral-large-4-0
       provider: auto
       base_url: https://openrouter.ai/api/v1
     # ── One model per use case, all through the one OpenRouter key ─────────
@@ -36,20 +42,15 @@ data:
     # Every model below was checked live (2026-10-17) to return a real
     # tool_call through OpenRouter with data_collection=deny still set.
     #
-    # The default above stays mistral-medium-3.1 on purpose: the Paperless
-    # extraction prompt and the cron jobs were tuned against it, and the
-    # unattended pipelines are where a model swap hurts first.
-    # BUT: mistral-medium-3.1 has no zero-data-retention endpoint on
-    # OpenRouter (live probe 2026-11-22: provider.zdr=true -> HTTP 400
-    # "Invalid model: mistral-medium-2508"). Do not enforce ZDR account-wide
-    # on OpenRouter until the default model has moved off it.
+    # Every model in this file now has a zero-data-retention endpoint, so
+    # ZDR can be enforced account-wide on OpenRouter.
     # Everything else is opt-in:
     #   - per session (desktop app / any chat): `/model code`, `/model tief`, ...
     #   - per cron job: `hermes cron edit <id> --model <id> --provider openrouter`
     #   - subagents and side tasks: delegation / auxiliary below, automatic
     model_aliases:
       alltag:
-        model: mistralai/mistral-medium-3.1
+        model: mistralai/mistral-large-4-0
         provider: openrouter
       # Agentic coding / long tool-call chains (desktop work sessions).
       code:
