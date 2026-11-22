@@ -131,6 +131,12 @@ spec:
               # default profile (= Chief of Staff). See the script's own
               # header and kustomization.yaml's hermes-agent-profiles.
               sh /profiles-bootstrap/bootstrap_profiles.sh
+              # Cron scripts of the specialists live in each profile's own
+              # scripts/ (a profile's --script must resolve inside its own
+              # HERMES_HOME/scripts): the depot price check and the devops
+              # Homelab-Waechter.
+              cp /portfolio-script/portfolio_price_check.py /opt/data/profiles/depot/scripts/portfolio_price_check.py
+              cp /cluster-health-script/cluster_health_check.py /opt/data/profiles/devops/scripts/cluster_health_check.py
           env:
             - name: HERMES_HOME
               value: &home /opt/data

@@ -70,6 +70,8 @@ configMapGenerator:
       - netzwerk.SOUL.md=profiles/netzwerk/SOUL.md
       - isms.config.yaml=profiles/isms/config.yaml
       - isms.SOUL.md=profiles/isms/SOUL.md
+      - depot.config.yaml=profiles/depot/config.yaml
+      - depot.SOUL.md=profiles/depot/SOUL.md
 
 generatorOptions:
   disableNameSuffixHash: false

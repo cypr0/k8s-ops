@@ -17,3 +17,4 @@ resources:
   - ./wazuh-mcp/ks.yaml
   - ./proxmox-mcp/ks.yaml
   - ./opnsense-mcp/ks.yaml
+  - ./portfolio-mcp/ks.yaml

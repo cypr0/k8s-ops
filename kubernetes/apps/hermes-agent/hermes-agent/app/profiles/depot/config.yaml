@@ -1,0 +1,81 @@
+---
+# Profile "depot" -- the securities depot: daily price check of the real
+# positions and watch candidates (portfolio DB), buy/sell/hold assessment,
+# researching new candidates on the web.
+#
+# Seeded into HERMES_HOME/profiles/depot/config.yaml by bootstrap-config
+# on every pod start. No inheritance from the default profile's config.yaml.
+_config_version: 54
+model:
+  # EU / zero-data-retention endpoint, verified with a real tool call under
+  # provider.zdr=true (2026-11-22). Market analysis with numbers wants the
+  # larger model.
+  default: mistralai/mistral-large-4-0
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+fallback_providers:
+  - provider: openrouter
+    model: anthropic/claude-haiku-5.5
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: anthropic/claude-haiku-5.5
+  compression:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  title_generation:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+  vision:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+agent:
+  max_turns: 45
+  # Paperless documents are untrusted input (any scanned letter or mailed
+  # PDF can carry a prompt injection). No shell, code, local files, web or
+  # browser: nothing that could carry document contents out of the pod.
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - browser
+    - web
+    - search
+    - x_search
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+# The daily price check runs portfolio_price_check.py as its cron --script
+# (seeded into this profile's scripts/ by bootstrap-config). Script env is
+# sanitised; the PG* values come from this profile's .env
+# (externalsecret-profile-env.yaml) and are passed through explicitly.
+terminal:
+  env_passthrough:
+    - PGHOST
+    - PGDATABASE
+    - PGUSER
+    - PGPASSWORD
+web:
+  backend: firecrawl
+mcp_servers:
+  # kubernetes/apps/hermes-agent/portfolio-mcp/ -- holdings, price history,
+  # add/retire WATCH candidates, log assessments. No free SQL, no deletes.
+  portfolio:
+    url: "http://portfolio-mcp.hermes-agent.svc.cluster.local:8000/mcp"

@@ -168,6 +168,9 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": hermes-agent
             app.kubernetes.io/name: opnsense-mcp
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: portfolio-mcp
       toPorts:
         - ports:
             - port: "8000"

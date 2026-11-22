@@ -168,26 +168,35 @@ def check_pvcs():
 
 
 def main() -> int:
+    # (emoji, heading, problems) -- rendered as Telegram Markdown (bold
+    # heading, bullet per finding, resource names in code spans), because
+    # this job runs --no-agent and its stdout IS the Telegram message.
     sections = [
-        ("Flux Kustomizations", check_flux("kustomizations.kustomize.toolkit.fluxcd.io", "Kustomizations")),
-        ("Flux HelmReleases", check_flux("helmreleases.helm.toolkit.fluxcd.io", "HelmReleases")),
-        ("Zertifikate", check_certificates()),
-        ("Nodes", check_nodes()),
-        ("Pods", check_pods()),
-        ("PVCs", check_pvcs()),
+        ("🔄", "Flux Kustomizations", check_flux("kustomizations.kustomize.toolkit.fluxcd.io", "Kustomizations")),
+        ("📦", "Helm Releases", check_flux("helmreleases.helm.toolkit.fluxcd.io", "HelmReleases")),
+        ("🔐", "Zertifikate", check_certificates()),
+        ("🖥️", "Nodes", check_nodes()),
+        ("🧩", "Pods", check_pods()),
+        ("💾", "Volumes", check_pvcs()),
     ]
 
-    total = sum(len(problems) for _, problems in sections)
+    total = sum(len(problems) for _, _, problems in sections)
     if total == 0:
         return 0  # clean run -- empty stdout is the no-agent silence convention
 
-    print(f"Cluster-Wächter: {total} Auffälligkeit(en)")
-    for label, problems in sections:
+    noun = "Auffälligkeit" if total == 1 else "Auffälligkeiten"
+    print(f"🩺 *Homelab-Wächter* – {total} {noun}")
+    for emoji, label, problems in sections:
         if not problems:
             continue
-        print(f"\n{label}:")
+        print(f"\n{emoji} *{label}*")
         for p in problems:
-            print(f"  - {p}")
+            name, _, reason = p.partition(": ")
+            if reason:
+                print(f"• `{name}` – {reason}")
+            else:
+                print(f"• {p}")
+    print("\n_Details: einfach hier im Thema nachfragen._")
     return 0
 
 

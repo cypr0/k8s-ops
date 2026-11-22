@@ -193,6 +193,11 @@ data:
           chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
           thread_id: "6"
           profile: devops
+        - name: tg-depot
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "44"
+          profile: depot
     # ── Chief of Staff: delegation to the specialist profiles via Kanban ──
     # The specialists (assistenz, finanzen, steuern, kurator, devops) live in
     # HERMES_HOME/profiles/, seeded from ./profiles/ by bootstrap-config. A
