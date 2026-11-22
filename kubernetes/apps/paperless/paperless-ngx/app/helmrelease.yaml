@@ -140,6 +140,14 @@ spec:
               # resolved. Docs: docs/apps/envoy-gateway.md (Client IP).
               PAPERLESS_ALLAUTH_TRUSTED_PROXY_COUNT: 1
               PAPERLESS_URL: https://paperless.${SECRET_DOMAIN}
+              # Since 3.5, setting PAPERLESS_URL turns ALLOWED_HOSTS from "*"
+              # into "the URL's host + localhost" (src/paperless/settings).
+              # Every in-cluster client calls the Service name instead:
+              # Gatus, paperless-exporter, hermes' paperless-mcp, Open WebUI's
+              # paperless tool, dmarc-exporter's prune job. Without this list
+              # they all got 400 DisallowedHost after the 3.3.4 -> 3.5.1 bump
+              # (2026-11-22). Django strips the port before matching.
+              PAPERLESS_ALLOWED_HOSTS: paperless.${SECRET_DOMAIN},paperless.paperless.svc.cluster.local,paperless-paperless-ngx.paperless.svc.cluster.local
               USERMAP_UID: 3000
               USERMAP_GID: 3000
             envFrom:
