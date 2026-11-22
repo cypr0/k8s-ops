@@ -58,14 +58,15 @@ check here before assuming a gap means "not interesting."
 | Nextcloud | nextcloud | [nextcloud.md](nextcloud.md) |
 | nextcloud-exporter | nextcloud | [nextcloud-exporter.md](nextcloud-exporter.md) |
 | nextcloud-mcp | hermes-agent | [nextcloud-mcp.md](nextcloud-mcp.md) |
-| opnsense-mcp | hermes-agent | [opnsense-mcp.md](opnsense-mcp.md) |
 | OIDC RBAC | security | [oidc-rbac.md](oidc-rbac.md) |
 | Open Terminal | open-webui | [open-terminal.md](open-terminal.md) |
 | Open WebUI | open-webui | [open-webui.md](open-webui.md) |
+| opnsense-mcp | hermes-agent | [opnsense-mcp.md](opnsense-mcp.md) |
 | paperless-exporter | paperless | [paperless-exporter.md](paperless-exporter.md) |
 | paperless-mcp | hermes-agent | [paperless-mcp.md](paperless-mcp.md) |
 | paperless-ngx | paperless | [paperless-ngx.md](paperless-ngx.md) |
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
+| portfolio-mcp | hermes-agent | [portfolio-mcp.md](portfolio-mcp.md) |
 | Proxmox Ansible | automation | [proxmox-ansible.md](proxmox-ansible.md) |
 | proxmox-mcp | hermes-agent | [proxmox-mcp.md](proxmox-mcp.md) |
 | Reloader | kube-system | [reloader.md](reloader.md) |
