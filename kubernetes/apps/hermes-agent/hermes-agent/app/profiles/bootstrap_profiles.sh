@@ -47,6 +47,18 @@ if [ -e "${SRC}/chief-of-staff.SOUL.md" ]; then
   echo "default profile (chief of staff): SOUL.md seeded"
 fi
 
+# The default profile's own .env takes precedence over the container env,
+# and it carried a stale API_SERVER_KEY (Aug 2026) that made /v1 reject the
+# key Open WebUI uses. Replace just that one line; every other entry the
+# app keeps there (e.g. WHATSAPP_ENABLED) stays untouched.
+if [ -s "${API_KEY_FILE}" ]; then
+  touch "${HOME_DIR}/.env"
+  grep -v '^API_SERVER_KEY=' "${HOME_DIR}/.env" > "${HOME_DIR}/.env.tmp" || true
+  printf 'API_SERVER_KEY=%s\n' "$(cat "${API_KEY_FILE}")" >> "${HOME_DIR}/.env.tmp"
+  mv "${HOME_DIR}/.env.tmp" "${HOME_DIR}/.env"
+  echo "default profile: API_SERVER_KEY set"
+fi
+
 found=0
 for cfg in "${SRC}"/*.config.yaml; do
   [ -e "${cfg}" ] || continue
