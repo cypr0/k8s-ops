@@ -168,7 +168,8 @@ def check_pvcs():
 
 
 def main() -> int:
-    # (emoji, heading, problems) -- rendered as Telegram Markdown (bold
+    # (emoji, heading, problems) -- standard Markdown (hermes converts it to
+    # Telegram MarkdownV2 itself: **bold**, _italic_, `code`) with a bold
     # heading, bullet per finding, resource names in code spans), because
     # this job runs --no-agent and its stdout IS the Telegram message.
     sections = [
@@ -185,11 +186,11 @@ def main() -> int:
         return 0  # clean run -- empty stdout is the no-agent silence convention
 
     noun = "Auffälligkeit" if total == 1 else "Auffälligkeiten"
-    print(f"🩺 *Homelab-Wächter* – {total} {noun}")
+    print(f"🩺 **Homelab-Wächter** – {total} {noun}")
     for emoji, label, problems in sections:
         if not problems:
             continue
-        print(f"\n{emoji} *{label}*")
+        print(f"\n{emoji} **{label}**")
         for p in problems:
             name, _, reason = p.partition(": ")
             if reason:

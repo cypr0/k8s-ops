@@ -1,7 +1,7 @@
 """
 title: Paperless-ngx (Full Access)
 author: cypr0
-version: 2.0.0
+version: 2.0.1
 license: MIT
 requirements: httpx
 description: >
@@ -75,6 +75,7 @@ description: >
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 from typing import Any, Optional
@@ -96,8 +97,11 @@ else goes in extra_filters={...} as raw Paperless query params:
   correspondent__isnull, document_type__isnull, checksum__iexact.
 Field lookups follow Django: __icontains __istartswith __iendswith __iexact
 __gt __gte __lt __lte __isnull __in.
-custom_field_query is a serialized expression, e.g.
+custom_field_query is an expression (JSON string or the list itself), e.g.
   ["AND", [["1","exact","foo"], ["2","gte","2026-01-01"]]]
+A field is referenced by id or by name. Date window, either of two fields:
+  ["OR", [["faelligkeitsdatum","range",["2026-11-22","2026-12-22"]],
+          ["kuendigungsfrist_datum","range",["2026-11-22","2026-12-22"]]]]
 operators: exact in isnull exists icontains istartswith iendswith gt gte lt
 lte range contains.
 ordering: any document field, "-" prefix for descending (e.g. "-created").
@@ -317,7 +321,7 @@ class Tools:
         document_type_id: Optional[int] = None,
         created_after: Optional[str] = None,
         created_before: Optional[str] = None,
-        custom_field_query: Optional[str] = None,
+        custom_field_query: Optional[str | list] = None,
         ordering: Optional[str] = None,
         page: int = 1,
         page_size: int = 25,
@@ -328,7 +332,7 @@ class Tools:
         :param query: Full-text search over OCR content + title.
         :param created_after: ISO date YYYY-MM-DD, inclusive.
         :param created_before: ISO date YYYY-MM-DD, inclusive.
-        :param custom_field_query: Serialized custom-field filter expression -- see capabilities("filters").
+        :param custom_field_query: Custom-field filter expression (JSON string or list), e.g. ["OR", [["faelligkeitsdatum","range",["2026-11-22","2026-12-22"]], ["kuendigungsfrist_datum","range",["2026-11-22","2026-12-22"]]]] -- see capabilities("filters").
         :param ordering: Sort field, "-" prefix for descending, e.g. "-created". Omit when query is set to keep relevance ranking.
         :param extra_filters: Any other Paperless filter as raw query params -- see capabilities("filters").
         """
@@ -346,7 +350,11 @@ class Tools:
         if created_before:
             params["created__date__lte"] = created_before
         if custom_field_query:
-            params["custom_field_query"] = custom_field_query
+            # Models often send the expression as a JSON array instead of a
+            # string (Mistral Large did, 2026-11-22, then looped). Accept both.
+            params["custom_field_query"] = (
+                custom_field_query if isinstance(custom_field_query, str) else json.dumps(custom_field_query)
+            )
         if ordering:
             params["ordering"] = ordering
         if extra_filters:

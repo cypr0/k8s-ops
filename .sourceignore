@@ -1,0 +1,10 @@
+# Read by Flux's source-controller when it packs this repo into the
+# artifact every Kustomization builds from. Its built-in exclusions drop
+# images (*.png, *.jpg, ...) from that artifact even though they are in
+# git, so a configMapGenerator that ships a PNG fails with "no such file
+# or directory" (open-webui, 2026-11-22). Patterns here are evaluated after
+# the built-in ones, so a negation re-includes exactly the files a
+# Kustomization needs.
+
+# Open WebUI workspace model icons (workspace/kustomization.yaml)
+!/kubernetes/apps/open-webui/open-webui/app/workspace/icons/*.png

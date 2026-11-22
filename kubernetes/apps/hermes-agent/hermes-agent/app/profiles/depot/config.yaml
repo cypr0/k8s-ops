@@ -35,18 +35,22 @@ auxiliary:
     provider: openrouter
     model: mistralai/mistral-small-2603
     extra_body: *zeroRetention
+  web_extract:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
 agent:
   max_turns: 45
-  # Paperless documents are untrusted input (any scanned letter or mailed
-  # PDF can carry a prompt injection). No shell, code, local files, web or
-  # browser: nothing that could carry document contents out of the pod.
+  # Web search (firecrawl) is the point of this profile: news on titles
+  # that moved, ticker lookup for new candidates. Web content is attacker-
+  # controlled, so no shell, code or local files -- in the shared pod those
+  # could read every other profile's .env. The portfolio MCP server is the
+  # only write path (watch candidates and assessments, never positions).
   disabled_toolsets:
     - terminal
     - code_execution
     - file
     - browser
-    - web
-    - search
     - x_search
     - computer_use
     - cronjob

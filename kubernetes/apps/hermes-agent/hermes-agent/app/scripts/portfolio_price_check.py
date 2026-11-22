@@ -40,19 +40,22 @@ single ticker's fetch failure is caught, logged to stdout, and
 skipped -- one bad/delisted ticker must never abort the whole run.
 
 Connects to Postgres via the standard PG* environment variables
-(psycopg2.connect() with no arguments reads these automatically).
+(asyncpg.connect() with no arguments reads these automatically). asyncpg,
+not psycopg2: it ships inside the hermes image's own venv (the
+interpreter cron scripts run with), so nothing has to be pip-installed
+into /opt/data -- the old psycopg2 wheels there broke silently when the
+v0.23 image moved to Python 3.14.
 """
 
+import asyncio
 import math
 import statistics
 import sys
-import time
 import urllib.error
 import urllib.request
 import json
 
-import psycopg2
-import psycopg2.extras
+import asyncpg
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{}"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -171,17 +174,15 @@ def to_eur(price: float, currency: str, fx_rates: dict) -> float | None:
     return round(price * rate, 4) if rate else None
 
 
-def main() -> int:
-    conn = psycopg2.connect()
-    conn.autocommit = True
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+async def main() -> int:
+    conn = await asyncpg.connect(timeout=10)
 
-    cur.execute(
+    holdings = await conn.fetch(
         "SELECT isin, name, asset_class, ticker, quantity, entry_price_eur, status, note "
         "FROM holdings WHERE active = true AND ticker IS NOT NULL ORDER BY status, name"
     )
-    holdings = cur.fetchall()
     if not holdings:
+        await conn.close()
         print("No active holdings with a resolved ticker -- nothing to check.")
         return 0
 
@@ -203,31 +204,29 @@ def main() -> int:
             skipped.append(f"{h['name']} ({h['ticker']}): no FX rate for {currency_native}")
             continue
 
-        cur.execute(
+        await conn.execute(
             "INSERT INTO price_history (isin, price_native, currency_native, price_eur) "
-            "VALUES (%s, %s, %s, %s)",
-            (h["isin"], price_native, currency_native, price_eur),
+            "VALUES ($1, $2, $3, $4)",
+            h["isin"], price_native, currency_native, price_eur,
         )
-        cur.execute(
-            "UPDATE holdings SET last_price_native = %s, last_price_currency = %s, "
-            "last_price_eur = %s, last_price_at = now(), updated_at = now() "
-            "WHERE isin = %s",
-            (price_native, currency_native, price_eur, h["isin"]),
+        await conn.execute(
+            "UPDATE holdings SET last_price_native = $1, last_price_currency = $2, "
+            "last_price_eur = $3, last_price_at = now(), updated_at = now() "
+            "WHERE isin = $4",
+            price_native, currency_native, price_eur, h["isin"],
         )
 
         # 7d/30d trend from price_history, if enough history has accumulated yet.
-        cur.execute(
-            "SELECT price_eur FROM price_history WHERE isin = %s AND "
+        row_7d = await conn.fetchrow(
+            "SELECT price_eur FROM price_history WHERE isin = $1 AND "
             "fetched_at <= now() - interval '7 days' ORDER BY fetched_at DESC LIMIT 1",
-            (h["isin"],),
+            h["isin"],
         )
-        row_7d = cur.fetchone()
-        cur.execute(
-            "SELECT price_eur FROM price_history WHERE isin = %s AND "
+        row_30d = await conn.fetchrow(
+            "SELECT price_eur FROM price_history WHERE isin = $1 AND "
             "fetched_at <= now() - interval '30 days' ORDER BY fetched_at DESC LIMIT 1",
-            (h["isin"],),
+            h["isin"],
         )
-        row_30d = cur.fetchone()
 
         pct_7d = (
             round((price_eur / float(row_7d["price_eur"]) - 1) * 100, 1) if row_7d else None
@@ -240,11 +239,11 @@ def main() -> int:
             f"30T: {f'{pct_30d:+.1f}%' if pct_30d is not None else 'n/a'}"
         )
 
-        cur.execute(
-            "SELECT price_eur FROM price_history WHERE isin = %s ORDER BY fetched_at ASC",
-            (h["isin"],),
+        rows = await conn.fetch(
+            "SELECT price_eur FROM price_history WHERE isin = $1 ORDER BY fetched_at ASC",
+            h["isin"],
         )
-        price_points = [float(r["price_eur"]) for r in cur.fetchall()]
+        price_points = [float(r["price_eur"]) for r in rows]
         stats_str = format_risk_stats(compute_risk_stats(price_points))
 
         if h["status"] == "watching":
@@ -255,15 +254,14 @@ def main() -> int:
             )
         else:
             entry = h["entry_price_eur"]
-            pct_vs_entry = round((price_eur / float(entry) - 1) * 100, 1) if entry else None
+            vs_entry = f"{(price_eur / float(entry) - 1) * 100:+.1f}%" if entry else "n/a"
             lines.append(
                 f"{h['name']} [{h['asset_class']}] {h['ticker']}: {price_eur:.2f} EUR "
-                f"(x{h['quantity']}) | vs. Einstieg: {pct_vs_entry:+.1f}% | {trend} | {stats_str}"
+                f"(x{h['quantity']}) | vs. Einstieg: {vs_entry} | {trend} | {stats_str}"
             )
-        time.sleep(0.2)  # be a polite, unhurried caller -- this is a once-daily job
+        await asyncio.sleep(0.2)  # be a polite, unhurried caller -- this is a once-daily job
 
-    cur.close()
-    conn.close()
+    await conn.close()
 
     print(f"Portfolio-Kurscheck ({len(lines)}/{len(holdings)} Positionen aktualisiert):")
     print()
@@ -278,4 +276,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))
