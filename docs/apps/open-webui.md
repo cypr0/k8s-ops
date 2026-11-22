@@ -48,6 +48,11 @@ Four of the five tool source files are mirrored (not shared at runtime) into `ku
 | `kubernetes/apps/open-webui/open-webui/app/workspace/sync_workspace.py` | The sync script the workspace Job runs |
 | `kubernetes/apps/open-webui/open-webui/app/workspace/job-sync-workspace.yaml` | Post-reconcile Job that writes groups/models into the Open WebUI DB |
 
+## Hermes agents as models
+`workspace/workspace.yaml` → `openai_connections` declares ten connections to hermes-agent's API server: the Chief of Staff (`/v1`) and one per specialist profile (`/p/<profile>/v1`), all with prefix `hermes`. `sync_workspace.py` (`_sync_openai_connections`) adds them by URL to the per-key config rows `openai.api_base_urls` / `api_keys` / `api_configs` (Open WebUI ≥ 0.13 stores config per key; the OpenAI router reads them on every request, so no restart is needed). It never touches connections it doesn't list (OpenRouter and other admin-UI connections). The key comes from `open-webui-hermes-secret` / `HERMES_API_SERVER_KEY`.
+
+**Visibility:** a connection model with no row in the `models` table is shown to admins only (`utils/models.py` `get_filtered_models`). The Hermes models deliberately have none, because they act on the owner's mail, finances and infrastructure. Don't add a `models[]` entry or access grant for them casually.
+
 ## Secrets
 | ExternalSecret | 1Password item / field(s) | Consumer |
 | --- | --- | --- |

@@ -126,6 +126,8 @@ def main() -> None:
         _sync_models(db, Model, AccessGrant, owner.id, spec.get("models") or [], group_ids, now)
         db.commit()
 
+    _sync_openai_connections(spec.get("openai_connections") or [])
+
     log.info("Workspace sync OK")
 
 
@@ -283,6 +285,63 @@ def _reconcile_model_grants(
                 created_at=now,
             )
         )
+
+
+def _sync_openai_connections(entries: list) -> None:
+    """Make the OpenAI connections listed in workspace.yaml exist, matched by
+    URL. Open WebUI >= 0.13 keeps them as three per-key config rows
+    (openai.api_base_urls / api_keys / api_configs, the latter keyed by list
+    index as a string). Entries not listed in the YAML are left untouched.
+    """
+    if not entries:
+        return
+    import asyncio
+
+    from open_webui.models.config import Config
+
+    async def run() -> None:
+        urls = list(await Config.get("openai.api_base_urls") or [])
+        keys = list(await Config.get("openai.api_keys") or [])
+        configs = dict(await Config.get("openai.api_configs") or {})
+        keys += [""] * (len(urls) - len(keys))
+        changed = False
+        for entry in entries:
+            url = (entry.get("url") or "").rstrip("/")
+            key_env = entry.get("key_env") or ""
+            key = os.environ.get(key_env, "") if key_env else ""
+            if not url or not key:
+                log.error("openai_connections entry needs url and a non-empty key_env (%r)", entry)
+                sys.exit(1)
+            declared = {
+                "enable": bool(entry.get("enable", True)),
+                "tags": list(entry.get("tags") or []),
+                "prefix_id": entry.get("prefix_id") or "",
+                "connection_type": "external",
+                "auth_type": "bearer",
+            }
+            if url in urls:
+                idx = urls.index(url)
+                current = dict(configs.get(str(idx)) or {})
+                merged = {**{"model_ids": []}, **current, **declared}
+                if keys[idx] != key or merged != current:
+                    keys[idx] = key
+                    configs[str(idx)] = merged
+                    changed = True
+                    log.info("Connection %s: updated", url)
+            else:
+                urls.append(url)
+                keys.append(key)
+                configs[str(len(urls) - 1)] = {**declared, "model_ids": []}
+                changed = True
+                log.info("Connection %s: added", url)
+        if changed:
+            await Config.upsert(
+                {"openai.api_base_urls": urls, "openai.api_keys": keys, "openai.api_configs": configs}
+            )
+        else:
+            log.info("Connections: no change")
+
+    asyncio.run(run())
 
 
 if __name__ == "__main__":

@@ -360,17 +360,36 @@ spec:
                 secretKeyRef:
                   name: hermes-agent-secrets
                   key: TELEGRAM_CHAT_ID
+            # Home channel = the "Hermes" forum group, General topic (thread 1)
+            # since 2026-11-22: cron results and webhook deliveries of the
+            # default profile (Chief of Staff) land there instead of the DM.
+            # The group id comes from the SOPS cluster-secrets (secretKeyRef,
+            # not Flux substitution: an all-digit value would render as a
+            # YAML number, see WHATSAPP_ALLOWED_USERS above).
             - name: TELEGRAM_HOME_CHANNEL
               valueFrom:
                 secretKeyRef:
-                  name: hermes-agent-secrets
-                  key: TELEGRAM_CHAT_ID
+                  name: cluster-secrets
+                  key: SECRET_HERMES_TELEGRAM_GROUP
+            - name: TELEGRAM_HOME_CHANNEL_THREAD_ID
+              value: "1"
             # In-cluster webhook platform (config.yaml's platforms.webhook) --
             # gateway/config.py reads WEBHOOK_ENABLED/_PORT/_SECRET directly
             # from the environment and merges them into the route config
             # config.yaml declares -- see that file's own comment for why
             # the secret specifically MUST come from here, not from a
             # $${VAR}-templated value inline in config.yaml.
+            # OpenAI-compatible API server for Open WebUI: /v1 = Chief of Staff,
+            # /p/<profile>/v1 = each specialist (multiplexed, one listener).
+            # API_SERVER_KEY comes via envFrom hermes-agent-secrets; the
+            # specialists need it in their own .env (bootstrap_profiles.sh).
+            # Reachable only from the open-webui pod (ciliumnetworkpolicy.yaml).
+            - name: API_SERVER_ENABLED
+              value: "true"
+            - name: API_SERVER_HOST
+              value: "0.0.0.0"
+            - name: API_SERVER_PORT
+              value: "8642"
             - name: WEBHOOK_ENABLED
               value: "true"
             - name: WEBHOOK_PORT
@@ -553,6 +572,11 @@ spec:
             items:
               - key: OPENROUTER_API_KEY
                 path: OPENROUTER_API_KEY
+              - key: API_SERVER_KEY
+                path: API_SERVER_KEY
+            # optional: a missing key (e.g. a new field not yet in 1Password)
+            # must not keep the pod from starting; bootstrap skips it.
+            optional: true
             # Without fsGroup the file is root:root; bootstrap-config runs as
             # uid 10000. Readable in-pod only -- the main container already
             # carries the same key as an env var.

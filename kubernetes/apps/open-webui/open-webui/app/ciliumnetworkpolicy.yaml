@@ -127,6 +127,10 @@ spec:
         - ports:
             - port: "8644"
               protocol: TCP
+            # hermes-agent's OpenAI-compatible API server: the Hermes agents
+            # as models (connections in workspace/workspace.yaml).
+            - port: "8642"
+              protocol: TCP
     # Open Terminal multi-user shell sandbox (same namespace); the backend
     # proxies user terminal requests to it on :8000
     - toEndpoints:

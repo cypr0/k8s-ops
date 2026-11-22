@@ -235,6 +235,13 @@ data:
       - web
       whatsapp: *cosToolsets
       cli: *cosToolsets
+      api_server: *cosToolsets
+    # The "Hermes" group is the owner's own workspace (only allowlisted
+    # users get answers anyway, TELEGRAM_ALLOWED_USERS): no @mention needed
+    # there. Other groups keep the default require-mention behaviour.
+    telegram:
+      free_response_chats:
+        - "${SECRET_HERMES_TELEGRAM_GROUP}"
     # Backend for the Hermes Desktop app (HERMES_DASHBOARD=1 in deployment.yaml
     # starts the image's own s6-supervised `hermes dashboard` on :9119, next to
     # the gateway, same HERMES_HOME). Desktop sessions run HERE -- the agent

@@ -57,6 +57,13 @@ spec:
               value: "/workspace-src/workspace.yaml"
             # Same admin account ../tools/job-sync-tools.yaml uses as
             # TOOL_OWNER_EMAIL: created groups and models are owned by it.
+            # Bearer key for the Hermes connections (openai_connections in
+            # workspace.yaml reference it by this env name).
+            - name: HERMES_API_SERVER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: open-webui-hermes-secret
+                  key: HERMES_API_SERVER_KEY
             - name: WORKSPACE_OWNER_EMAIL
               value: "mail@cisotop.de"
             - name: LOG_LEVEL

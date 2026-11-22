@@ -40,6 +40,10 @@ spec:
         - ports:
             - port: "8644"
               protocol: TCP
+            # OpenAI-compatible API server: Hermes agents as Open WebUI
+            # models (Bearer API_SERVER_KEY on top of this network rule).
+            - port: "8642"
+              protocol: TCP
     # Hermes Desktop backend (config.yaml's dashboard: block), only via the
     # Envoy proxies -- the one path that terminates TLS for
     # hermes.${SECRET_DOMAIN}. The app's OIDC gate is the authentication;

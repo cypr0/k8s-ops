@@ -230,3 +230,69 @@ models:
       - content: Ich verstehe schriftliche Division nicht. Hilfst du mir?
       - content: Frag mich die Hauptstädte von Europa ab.
       - content: Wie schreibt man eine gute Nacherzählung?
+
+# OpenAI-compatible connections this file owns, matched by URL. The sync
+# adds missing ones and keeps the declared fields (key, prefix, tags, enable)
+# of existing ones in line; connections NOT listed here (OpenRouter, ...) are
+# never touched, so the admin UI stays the place for those.
+#
+# hermes-agent (kubernetes/apps/hermes-agent/): one API listener, /v1 = the
+# Chief of Staff, /p/<profile>/v1 = each specialist. Their models get the
+# "hermes." prefix (hermes.hermes-agent, hermes.devops, ...).
+# VISIBILITY: Open WebUI shows a connection model that has no row in the
+# models table to admins ONLY (utils/models.py get_filtered_models) -- and
+# none of these get one. These agents read the owner's mail, finances and
+# infrastructure, so admin-only is exactly right; do NOT add a models[]
+# entry or access grant for them without thinking about who that exposes
+# them to.
+openai_connections:
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/assistenz/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/finanzen/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/steuern/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/kurator/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/devops/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/sicherheit/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/isms/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/infrastruktur/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes
+  - url: http://hermes-agent.hermes-agent.svc.cluster.local:8642/p/netzwerk/v1
+    key_env: HERMES_API_SERVER_KEY
+    prefix_id: hermes
+    tags:
+      - hermes

@@ -85,6 +85,18 @@ Why it's built this way:
 - **Personal names are placeholders.** SOULs and prompts use `${SECRET_HERMES_OWNER_NAME}`, `${SECRET_HERMES_PARTNER_NAME}`, `${SECRET_HERMES_OWNER_MAILBOX}` and `${SECRET_HERMES_PARTNER_MAILBOX}` from the SOPS-encrypted `cluster-secrets`. The profiles ConfigMap goes through Flux substitution, so **no other `$` may appear in those files**. `bootstrap_profiles.sh` sits in its own ConfigMap with substitution disabled.
 - **Telegram delivery from a specialist** (its cron jobs, a webhook route with `profile: <name>`) only works into a chat/topic that `gateway.profile_routes` maps to that profile; the shared bot refuses anything else (502). Moving the existing cron jobs and the Paperless webhook to `finanzen`/`assistenz` therefore waits for the Telegram group with one topic per specialist.
 
+## Telegram and Open WebUI
+- **Telegram:** The forum group "Hermes" (id in `SECRET_HERMES_TELEGRAM_GROUP`) is the home.
+  - Topic 1 (General) belongs to the Chief of Staff. It is `TELEGRAM_HOME_CHANNEL` + `TELEGRAM_HOME_CHANNEL_THREAD_ID=1`, so the default profile's cron results and webhook deliveries land there.
+  - Topics 2-6 are routed to specialists (`gateway.profile_routes`).
+  - `telegram.free_response_chats` lifts the @mention requirement for this group only.
+  - The old DM still works; only the owner's user id is allowed anywhere (`TELEGRAM_ALLOWED_USERS`).
+- **Open WebUI:** The OpenAI-compatible API server (`API_SERVER_*` env vars, port 8642, Service port `api`) is reachable only from the open-webui pod (CNP), and requests carry Bearer `API_SERVER_KEY` (1Password `hermes-agent` / `HERMES_API_SERVER_KEY`).
+  - `/v1` is the Chief of Staff; `/p/<profile>/v1` is a specialist.
+  - A served profile only accepts the key from its own `.env`, so `bootstrap_profiles.sh` writes it into every profile.
+  - Open WebUI's workspace sync (`kubernetes/apps/open-webui/open-webui/app/workspace/workspace.yaml`, `openai_connections`) creates the ten connections with prefix `hermes.`.
+  - Models without a row in Open WebUI's `models` table are **admin-only**, which is why no access grant exists for them.
+
 ## Hermes Desktop (thin client)
 The desktop app is only a renderer: chats, agent loop, tools, MCP calls, memory and LLM calls all run in this pod (upstream: each `(gateway, profile)` pair runs on the machine that owns it; a remote gateway's files and tool output are fetched through it). Setup on a Mac:
 
