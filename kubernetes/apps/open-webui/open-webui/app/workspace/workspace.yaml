@@ -116,11 +116,12 @@ groups:
         folders: true
         channels: false
         direct_tool_servers: false
-        # Web search off on purpose. It is Firecrawl-backed and
-        # unfiltered, so it would put arbitrary scraped web pages in front
-        # of an eight-year-old -- the model's own answer is the surface
-        # this group is supposed to have.
-        web_search: false
+        # Web search ON since 2026-11-22 (parents' decision). It is the
+        # self-hosted Firecrawl and NOT pre-filtered, so the Lern-Buddy's
+        # system prompt carries the filter: kid-safe sources only, answer in
+        # its own words, no links. The child never sees raw result pages --
+        # web_upload stays off, so no URL can be pulled into the chat.
+        web_search: true
         image_generation: false
         code_interpreter: false
         memories: true
@@ -143,8 +144,13 @@ models:
     # Ids carry the connection's prefix_id ("openrouter.", set on the
     # OpenRouter connection in the admin UI): the bare id this used until
     # 2026-11-22 matched no model, so the Lern-Buddy had no working base.
-    # Haiku 5.5 instead of 4.5: newer and a tenth of the price.
-    base_model_id: openrouter.anthropic/claude-haiku-5.5
+    # Mistral Small 2603 since 2026-11-22 (parents' choice): EU provider,
+    # zero data retention (custom_params below), very good German, reads
+    # photos of worksheets; about 0.40-2 EUR a month at kid usage. No FREE
+    # model qualified: OpenRouter's free pool has no ZDR endpoint, Gemma 4
+    # free was rate-limited (429) and Nemotron free requires allowing
+    # training on the prompts.
+    base_model_id: openrouter.mistralai/mistral-small-2603
     description: >-
       Dein geduldiger Lern-Buddy: erklärt Dinge einfach, hilft bei
       Hausaufgaben (ohne sie zu lösen) und beantwortet Warum-Fragen.
@@ -222,6 +228,22 @@ models:
           dass man solche Sachen im Internet besser für sich behält.
         - Du schickst das Kind nicht auf Webseiten und gibst keine Links
           weiter.
+
+        INTERNETSUCHE
+        - Du darfst im Internet nachschlagen, wenn du etwas nicht sicher
+          weißt oder es um Aktuelles geht. Sag dem Kind kurz, dass du
+          nachschaust.
+        - Verwende nur kindgerechte, seriöse Quellen: Klexikon, Kiwithek,
+          Wikipedia, Wissensseiten von Sendungen (Sendung mit der Maus,
+          logo!, Checker), Museen, Zoos, Behörden. Ignoriere Foren, Shops,
+          Werbung, Videoportale, Social Media und alles, was nicht für
+          Kinder geeignet ist.
+        - Erkläre das Gefundene in deinen eigenen, einfachen Worten. Gib
+          keine Links und keine Webadressen weiter; nenn höchstens die
+          Quelle mit Namen ("Im Klexikon steht ...").
+        - Findest du nichts Kindgerechtes oder ist das Thema nicht für
+          Kinder geeignet, sag freundlich, dass das Kind das mit Mama oder
+          Papa anschauen soll.
         - Du triffst keine Verabredungen und tust nicht so, als wärst du ein
           echter Mensch oder ein echter Freund. Wenn das Kind fragt: du bist
           ein Computerprogramm, das beim Lernen hilft.
@@ -237,7 +259,7 @@ models:
           dem Kind zu lösen.
     capabilities:
       vision: true
-      web_search: false
+      web_search: true
       image_generation: false
       code_interpreter: false
       citations: false
