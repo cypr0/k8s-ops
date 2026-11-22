@@ -183,6 +183,23 @@ def _sync_groups(db, Group, owner_id: str, groups: list, defaults: dict, now: in
     return ids
 
 
+def _icon_data_uri(icon: str | None) -> str | None:
+    if not icon:
+        return None
+    import base64
+    path = os.path.join(os.path.dirname(_env("WORKSPACE_FILE")), os.path.basename(icon))
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        log.error("Icon %s not readable: %s", path, e)
+        sys.exit(1)
+    if not data.startswith(b"\x89PNG"):
+        log.error("Icon %s is not a PNG", path)
+        sys.exit(1)
+    return "data:image/png;base64," + base64.b64encode(data).decode()
+
+
 def _sync_models(
     db, Model, AccessGrant, owner_id: str, models: list, group_ids: dict[str, str], now: int
 ) -> None:
@@ -207,6 +224,10 @@ def _sync_models(
             "capabilities": entry.get("capabilities") or {},
             "tags": [{"name": t} for t in (entry.get("tags") or [])],
             "suggestion_prompts": entry.get("suggestion_prompts") or None,
+            # icon: a PNG next to workspace.yaml (icons/ in git, mounted into
+            # the same ConfigMap). Stored inline as a data URI; Open WebUI only
+            # serves raster types from data URIs (SVG is refused on purpose).
+            "profile_image_url": _icon_data_uri(entry.get("icon")),
             # Marker so it is obvious in the UI that editing this model by
             # hand will be overwritten on the next reconcile.
             "managed_by": "GitOps (job-sync-workspace)",

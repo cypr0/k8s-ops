@@ -21,6 +21,21 @@ configMapGenerator:
   - name: openwebui-workspace-src
     files:
       - workspace.yaml
+      - icons/allzweck.png
+      - icons/assistenz.png
+      - icons/devops.png
+      - icons/dokumente-verstehen.png
+      - icons/finanzen.png
+      - icons/hermes-agent.png
+      - icons/infrastruktur.png
+      - icons/isms.png
+      - icons/kids-assistant.png
+      - icons/kurator.png
+      - icons/netzwerk.png
+      - icons/recherche.png
+      - icons/schreibbuero.png
+      - icons/sicherheit.png
+      - icons/steuern.png
   - name: openwebui-workspace-sync-code
     files:
       - sync_workspace.py

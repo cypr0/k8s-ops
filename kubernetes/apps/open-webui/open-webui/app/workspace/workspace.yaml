@@ -133,6 +133,7 @@ groups:
 
 models:
   - id: kids-assistant
+    icon: kids-assistant.png
     name: Lern-Buddy
     # CHANGE ME IF THE MODEL IS WRONG: this must be a model id this
     # instance's OpenRouter key can actually serve (OPENAI_API_BASE_URL is
@@ -274,6 +275,7 @@ models:
   # zero-data-retention endpoints through custom_params (passed to the
   # request body verbatim, open_webui/utils/payload.py).
   - id: allzweck
+    icon: allzweck.png
     name: Allzweck-Assistent
     base_model_id: openrouter.anthropic/claude-sonnet-5.5
     description: >-
@@ -316,6 +318,7 @@ models:
       - content: Fasse diese Datei in fünf Punkten zusammen.
 
   - id: schreibbuero
+    icon: schreibbuero.png
     name: Schreibbüro
     base_model_id: openrouter.mistralai/mistral-large-4-0
     description: >-
@@ -365,6 +368,7 @@ models:
       - content: Formuliere diese E-Mail an den Vermieter höflicher.
 
   - id: dokumente-verstehen
+    icon: dokumente-verstehen.png
     name: Dokumente verstehen
     base_model_id: openrouter.mistralai/mistral-large-4-0
     description: >-
@@ -413,6 +417,7 @@ models:
       - content: Was steht in diesem Vertrag zur Kündigung?
 
   - id: recherche
+    icon: recherche.png
     name: Recherche & Kaufberatung
     base_model_id: openrouter.anthropic/claude-sonnet-5.5
     description: >-
@@ -458,6 +463,7 @@ models:
   # hermes-users group (without a row they are admin-only) and give them
   # readable names. No params: the agents bring their own model and prompt.
   - id: hermes.hermes-agent
+    icon: hermes-agent.png
     name: Hermes · Chief of Staff
     connection_model: true
     description: "Delegiert an die Spezialisten, Mails, Termine, Überblick."
@@ -466,6 +472,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.assistenz
+    icon: assistenz.png
     name: Hermes · Assistenz
     connection_model: true
     description: "Mails und Kalender."
@@ -474,6 +481,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.finanzen
+    icon: finanzen.png
     name: Hermes · Finanzen
     connection_model: true
     description: "Rechnungen, Verträge, Fristen in Paperless."
@@ -482,6 +490,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.steuern
+    icon: steuern.png
     name: Hermes · Steuern
     connection_model: true
     description: "Steuerliche Auswertung der Belege (nur lesend)."
@@ -490,6 +499,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.kurator
+    icon: kurator.png
     name: Hermes · Kurator
     connection_model: true
     description: "Fotobibliothek in Immich."
@@ -498,6 +508,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.devops
+    icon: devops.png
     name: Hermes · DevOps
     connection_model: true
     description: "Kubernetes-Cluster (nur lesend)."
@@ -506,6 +517,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.sicherheit
+    icon: sicherheit.png
     name: Hermes · Sicherheit
     connection_model: true
     description: "SOC: Wazuh, Schwachstellen, Cluster-Befunde."
@@ -514,6 +526,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.isms
+    icon: isms.png
     name: Hermes · ISMS
     connection_model: true
     description: "Compliance as Code, Merge Requests in GitLab."
@@ -522,6 +535,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.infrastruktur
+    icon: infrastruktur.png
     name: Hermes · Infrastruktur
     connection_model: true
     description: "Proxmox-Host (nur lesend)."
@@ -530,6 +544,7 @@ models:
     grant_to_groups:
       - hermes-users
   - id: hermes.netzwerk
+    icon: netzwerk.png
     name: Hermes · Netzwerk
     connection_model: true
     description: "OPNsense (nur lesend)."
