@@ -13,6 +13,7 @@ Jeder Spezialist ist ein eigenes Hermes-Profil mit eigenem Modell, eigenen Werkz
 | `kurator` | Fotobibliothek in Immich: Alben, Favoriten, Aufräumvorschläge | Alben und Beschreibungen pflegen, nichts löschen |
 | `devops` | Kubernetes-Cluster: Flux, Pods, Fehleranalyse | Nur lesen; schlägt Änderungen am Git-Repo vor |
 | `sicherheit` | SOC: Wazuh-Alarme (Proxmox, Mac, OPNsense/Suricata), Schwachstellen, Trivy/Kyverno/Falco | Nur lesen; bewertet und empfiehlt |
+| `isms` | Compliance as Code (`isms/compliance-as-code`), Kontrollen, Nachweise | Merge Requests in GitLab, nie direkt nach `main` |
 | `infrastruktur` | Proxmox-Host: Zustand, Speicher/ZFS, Backups, Updates | Nur lesen; schlägt Änderungen am Ansible-Playbook vor |
 | `netzwerk` | OPNsense: Interfaces, Gateways, Regeln, DHCP, DNS, WireGuard | Nur lesen; beschreibt Änderungen präzise |
 

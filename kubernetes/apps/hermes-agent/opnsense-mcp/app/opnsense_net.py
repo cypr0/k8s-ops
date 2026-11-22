@@ -1,7 +1,7 @@
 """
 title: OPNsense (read-only)
 author: cypr0
-version: 1.1.0
+version: 1.1.1
 license: MIT
 requirements: httpx
 description: >
@@ -105,8 +105,16 @@ class Tools:
 
     @staticmethod
     def _rows(res: Any, limit: int) -> Any:
+        """Cap a search result at `limit` rows -- and say so, so a model that
+        asked for too few rows knows the rest exists (OPNsense itself returns
+        every row regardless of rowCount)."""
         if isinstance(res, dict) and isinstance(res.get("rows"), list):
-            return {"total": res.get("total", len(res["rows"])), "rows": res["rows"][:limit]}
+            total = res.get("total", len(res["rows"]))
+            rows = res["rows"][:limit]
+            out = {"total": total, "returned": len(rows), "rows": rows}
+            if len(rows) < total:
+                out["truncated"] = f"only {len(rows)} of {total} rows returned; call again with a higher limit"
+            return out
         return res
 
     def capabilities(self, topic: str = "endpoints") -> str:
@@ -139,12 +147,18 @@ class Tools:
         }
 
     def dhcp_leases(self, search: str = "", limit: int = 100) -> dict:
-        """Current DHCP leases (tries ISC dhcpd first, then Kea). search: hostname/IP/MAC filter."""
+        """Current DHCP leases from whichever DHCP server OPNsense runs (ISC, Kea or Dnsmasq). search: hostname/IP/MAC filter."""
         params = {"searchPhrase": search, "rowCount": max(1, min(int(limit), 500))}
-        res = self._get("/dhcpv4/leases/searchLease", params)
-        if isinstance(res, dict) and res.get("error"):
-            res = self._get("/kea/leases4/search", params)
-        return self._rows(res, limit)
+        # ISC dhcpd is gone from current OPNsense (404); Kea and Dnsmasq both
+        # exist as plugins/core. Return the first backend that has leases,
+        # and say which one -- or all three answers if none has any.
+        tried: dict[str, Any] = {}
+        for backend, path in (("dnsmasq", "/dnsmasq/leases/search"), ("kea", "/kea/leases4/search"), ("isc", "/dhcpv4/leases/searchLease")):
+            res = self._get(path, params)
+            if isinstance(res, dict) and res.get("rows"):
+                return {"backend": backend, **self._rows(res, limit)}
+            tried[backend] = res.get("total", res) if isinstance(res, dict) else res
+        return {"backend": None, "note": "no backend returned leases (DHCP may be served elsewhere, or the API user lacks the page privilege)", "tried": tried}
 
     def vpn_status(self) -> dict:
         """WireGuard service, tunnels and peers with last handshake."""
