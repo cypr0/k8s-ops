@@ -25,6 +25,23 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
+  # The startupProbe allows up to 15 min for image pull + alembic migrations,
+  # but a Deployment's default progressDeadlineSeconds is 600: on a slow
+  # upgrade Kubernetes marked the Deployment "Failed" at 10 min, Helm rolled
+  # back, and the old image crash-looped on the newer DB revision ("Can't
+  # locate revision identified by ..."). Happened 2026-11-22 on v0.12.5 ->
+  # v0.13.4. app-template has no knob for it, hence the post-render patch;
+  # 1800s also stays inside the HelmRelease timeout (20m) + startup budget.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: open-webui
+            patch: |
+              - op: add
+                path: /spec/progressDeadlineSeconds
+                value: 1800
   values:
     controllers:
       open-webui:

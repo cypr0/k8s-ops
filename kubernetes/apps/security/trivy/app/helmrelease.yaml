@@ -99,12 +99,17 @@ spec:
     # 512Mi OOM-killed the operator when ~15 pods appeared at once (Velero
     # restore-test namespaces) and it queued a scan job per pod. Now excluded
     # above too, but keep headroom for any other legitimate burst.
+    # Raised 2026-11-22: the operator sat at ~1021Mi of a 1Gi limit for days
+    # (informer cache of ~370 ConfigAuditReports + ~200 VulnerabilityReports),
+    # GC-thrashed, answered /healthz too slowly for the chart's 1s liveness
+    # timeout and was killed 109 times in 3 days (CrashLoopBackOff). The
+    # request now reflects the real steady-state footprint.
     resources:
       requests:
-        cpu: 20m
-        memory: 128Mi
+        cpu: 100m
+        memory: 768Mi
       limits:
-        memory: 1Gi
+        memory: 2Gi
 
     serviceMonitor:
       enabled: true
