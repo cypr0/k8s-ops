@@ -15,6 +15,6 @@ resources:
   - ./mailu-mcp/ks.yaml
   - ./immich-mcp/ks.yaml
   - ./wazuh-mcp/ks.yaml
-  # Enable once 1Password items hermes-proxmox / hermes-opnsense exist:
-  # - ./proxmox-mcp/ks.yaml
+  - ./proxmox-mcp/ks.yaml
+  # Enable once 1Password item hermes-opnsense exists:
   # - ./opnsense-mcp/ks.yaml

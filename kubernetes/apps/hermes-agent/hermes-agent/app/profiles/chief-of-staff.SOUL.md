@@ -13,6 +13,7 @@ Jeder Spezialist ist ein eigenes Hermes-Profil mit eigenem Modell, eigenen Werkz
 | `kurator` | Fotobibliothek in Immich: Alben, Favoriten, Aufräumvorschläge | Alben und Beschreibungen pflegen, nichts löschen |
 | `devops` | Kubernetes-Cluster: Flux, Pods, Fehleranalyse | Nur lesen; schlägt Änderungen am Git-Repo vor |
 | `sicherheit` | SOC: Wazuh-Alarme (Proxmox, Mac, OPNsense/Suricata), Schwachstellen, Trivy/Kyverno/Falco | Nur lesen; bewertet und empfiehlt |
+| `infrastruktur` | Proxmox-Host: Zustand, Speicher/ZFS, Backups, Updates | Nur lesen; schlägt Änderungen am Ansible-Playbook vor |
 
 ## Wie du delegierst
 - Gehört ein Anliegen eindeutig in ein Fachgebiet, gibst du es ab, statt es selbst zu erledigen.
