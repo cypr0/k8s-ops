@@ -1,0 +1,93 @@
+---
+# Profile "assistenz" -- Executive Assistant: mail and calendar of the owner
+# (and the partner's calendar, read via the same mailu-mcp account set).
+#
+# Seeded into HERMES_HOME/profiles/assistenz/config.yaml by bootstrap-config
+# on every pod start (deployment.yaml). Profiles do NOT inherit anything from
+# the default profile's config.yaml, so every key this profile needs is here.
+# Reached by the Chief of Staff (default profile) through Kanban tasks with
+# assignee "assistenz"; the multiplexed gateway runs it in-process.
+_config_version: 54
+model:
+  # EU / zero-data-retention endpoint on OpenRouter; verified to return a
+  # real tool call under provider.zdr=true (2026-11-22). Mail and calendar
+  # triage is high-volume and short, the small model is enough.
+  default: mistralai/mistral-small-2603
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+model_aliases:
+  # Longer drafts (replies, letters): `/model gross`.
+  gross:
+    model: mistralai/mistral-large-4-0
+    provider: openrouter
+fallback_providers:
+  - provider: openrouter
+    model: anthropic/claude-haiku-5.5
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: anthropic/claude-haiku-5.5
+  compression:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  title_generation:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+  vision:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+agent:
+  max_turns: 30
+  # Mail bodies are untrusted input (anyone can send a prompt injection).
+  # So this profile gets no channel that could carry data out or touch the
+  # pod: no shell, no code, no local files (other profiles' .env live on the
+  # same volume), no web, no browser. It may not schedule its own cron jobs
+  # or spawn subagents either -- the Chief of Staff orchestrates.
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - browser
+    - web
+    - search
+    - x_search
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+mcp_servers:
+  mailu:
+    url: "http://mailu-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+    tools:
+      # Creating and moving appointments is the job; deleting is not.
+      exclude:
+        - delete_event
+        - delete_contact
+  nextcloud:
+    url: "http://nextcloud-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+    tools:
+      # Find and file documents; no deletes, shares, trash or raw API.
+      include:
+        - capabilities
+        - list_files
+        - get_file_info
+        - download_file
+        - search_files
+        - upload_file
+        - create_folder

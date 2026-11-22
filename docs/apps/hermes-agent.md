@@ -14,7 +14,7 @@ A personal LLM agent (OpenRouter-backed) that runs as a long-lived gateway proce
 ## Repo layout
 | File | Purpose |
 | --- | --- |
-| `kubernetes/apps/hermes-agent/hermes-agent/app/deployment.yaml` | Hand-rolled Deployment — 3 init containers + main container, extensively commented |
+| `kubernetes/apps/hermes-agent/hermes-agent/app/deployment.yaml` | Hand-rolled Deployment — 2 init containers + main container + kubeconfig sidecar, extensively commented |
 | `kubernetes/apps/hermes-agent/hermes-agent/app/configmap.yaml` | Bootstrap `config.yaml` — model routing per use case, agent, terminal, security, desktop backend OIDC (`dashboard:`) |
 | `kubernetes/apps/hermes-agent/hermes-agent/app/externalsecret.yaml` | OpenRouter key, Telegram bot token/chat ID, webhook shared secret, portfolio DB password |
 | `kubernetes/apps/hermes-agent/hermes-agent/app/service.yaml` | ClusterIP, port 8644 (webhook) + 9119 (desktop backend) |
@@ -23,6 +23,7 @@ A personal LLM agent (OpenRouter-backed) that runs as a long-lived gateway proce
 | `kubernetes/apps/hermes-agent/hermes-agent/app/rbac.yaml` | Read-only Kubernetes API access for the agent's terminal tool |
 | `kubernetes/apps/hermes-agent/hermes-agent/app/pvc.yaml` | `hermes-agent-data`, 5Gi, `zfs-nfs`, RWO |
 | `kubernetes/apps/hermes-agent/hermes-agent/app/job-portfolio-schema.yaml` | One-off schema-init Job for the portfolio database |
+| `kubernetes/apps/hermes-agent/hermes-agent/app/profiles/` | Specialist profiles (`<name>/config.yaml` + `SOUL.md`), the Chief of Staff's `chief-of-staff.SOUL.md`, and `bootstrap_profiles.sh`, which seeds them on every start |
 
 ## Secrets
 | Key (in `hermes-agent-secrets`) | 1Password source | Consumed by |
@@ -57,6 +58,26 @@ A personal LLM agent (OpenRouter-backed) that runs as a long-lived gateway proce
 - **The desktop backend runs with `HOME=/opt/data`, the gateway with `HOME=/opt/data/home`.** The image's s6 `dashboard` run script hard-codes `export HOME=/opt/data`. Anything a desktop session resolves relative to `~` therefore lands in a different tree than the gateway's — in practice only `hermes cron create --script` from a desktop session (validated against `/opt/data/.hermes/scripts/`, executed by the gateway from `/opt/data/home/.hermes/scripts/`). Create script-based cron jobs via `kubectl exec` instead.
 - **The desktop backend is also an admin surface.** It can edit `config.yaml`, MCP servers, skills and API keys of this instance. `config.yaml` edits vanish on the next pod start (`bootstrap-config` overwrites it), but keys written to `/opt/data/.env` and skills persist on the PVC. That is why access is limited to `hermes-users`.
 - **Model choice was changed for reliability, not cost**: moved off OpenRouter's free-tier shared pool (`mistralai/mistral-small-3.2-24b-instruct`) after it repeatedly hit 429s and returned garbled tool-call names under load, burning the full `agent.max_turns` budget on stuck retries — the LLM then filled the forced summary with invented excuses rather than reporting the real tool failure. Now on the paid `mistral-medium-3.1` tier.
+
+## Chief of Staff and specialist profiles
+The default profile is the **Chief of Staff**: it talks to the owner on Telegram, WhatsApp and the desktop app and hands domain work to specialist profiles as Kanban tasks. One gateway process serves every profile (`gateway.multiplex_profiles`), including the Kanban dispatcher (`kanban.dispatch_in_gateway`, 20 s tick).
+
+| Profile | Domain | Model | MCP tools | Disabled toolsets |
+| --- | --- | --- | --- | --- |
+| `default` (Chief of Staff) | Triage, delegation, summaries | `mistral-medium-3.1` (for now; the Paperless pipeline and cron jobs still run here) | all four servers | none; `kanban` enabled per platform |
+| `assistenz` | Mail, calendar, Nextcloud files | `mistral-small-2603` (alias `gross` → Large 4) | mailu without `delete_*`; nextcloud read + upload only | terminal, code_execution, file, web, search, browser, cronjob, delegation, … |
+| `finanzen` | Invoices, contracts, deadlines | `mistral-large-4-0` | paperless without `delete_documents` | same as assistenz |
+| `steuern` | Tax view on Paperless | `mistral-large-4-0` | paperless, read-only allow-list (11 tools) | same as assistenz |
+| `kurator` | Immich curation | `mistral-small-2603` (vision stays on Mistral) | immich without `raw_request` | same as assistenz |
+| `devops` | Cluster diagnosis | `claude-haiku-5.5` (alias `analyse` → Sonnet 5.5) | flux-operator-mcp (read-only) | browser, cronjob, delegation, … (keeps terminal + web) |
+
+Why it's built this way:
+- **Kanban, not `delegate_task`.** A Kanban task runs entirely in the assignee's profile: its own model, `mcp_servers`, `agent.disabled_toolsets`, `.env` and memory. `delegate_task` children (including the `advanced-delegation` plugin's `profile_routes`) keep the **parent's** toolsets and MCP servers, so they give no isolation.
+- **Profiles don't inherit config.** Each `profiles/<name>/config.yaml` is complete. Served profiles don't see the container environment either (`agent/secret_scope.py`), so `bootstrap_profiles.sh` writes each profile's own `.env` with the OpenRouter key, read from a mounted Secret file.
+- **Untrusted input → no exfiltration channel.** Profiles that read mail or documents have no shell, no local files, no web and no browser. Prompt-injection text in a PDF has nothing to send data out with.
+- **Not a security boundary between profiles.** All profiles share one pod and uid 10000. `devops` (terminal + file) could technically read the other profiles' `.env`; accepted because it only processes cluster data. Real separation would mean one pod per profile.
+- **Personal names are placeholders.** SOULs and prompts use `${SECRET_HERMES_OWNER_NAME}`, `${SECRET_HERMES_PARTNER_NAME}`, `${SECRET_HERMES_OWNER_MAILBOX}` and `${SECRET_HERMES_PARTNER_MAILBOX}` from the SOPS-encrypted `cluster-secrets`. The profiles ConfigMap goes through Flux substitution, so **no other `$` may appear in those files**. `bootstrap_profiles.sh` sits in its own ConfigMap with substitution disabled.
+- **Telegram delivery from a specialist** (its cron jobs, a webhook route with `profile: <name>`) only works into a chat/topic that `gateway.profile_routes` maps to that profile; the shared bot refuses anything else (502). Moving the existing cron jobs and the Paperless webhook to `finanzen`/`assistenz` therefore waits for the Telegram group with one topic per specialist.
 
 ## Hermes Desktop (thin client)
 The desktop app is only a renderer: chats, agent loop, tools, MCP calls, memory and LLM calls all run in this pod (upstream: each `(gateway, profile)` pair runs on the machine that owns it; a remote gateway's files and tool output are fetched through it). Setup on a Mac:

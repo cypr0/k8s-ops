@@ -31,6 +31,36 @@ configMapGenerator:
   - name: hermes-agent-refresh-kubeconfig-script
     files:
       - scripts/refresh_kubeconfig.py
+  # Specialist profiles (Chief of Staff = default profile in configmap.yaml).
+  # bootstrap_profiles.sh seeds every <name>.config.yaml / <name>.SOUL.md pair
+  # into HERMES_HOME/profiles/<name>/; adding a profile = adding its two
+  # files below.
+  # The script lives in its own ConfigMap with Flux substitution disabled, so
+  # its shell variables reach the pod byte-for-byte. The profile files DO go
+  # through substitution: personal names and mailbox ids are placeholders
+  # (SECRET_HERMES_OWNER_NAME, ..._PARTNER_NAME, ..._OWNER_MAILBOX,
+  # ..._PARTNER_MAILBOX) filled from the SOPS-encrypted cluster-secrets, so
+  # they never appear in this public repo. Consequence: no other dollar sign
+  # may appear in those files.
+  - name: hermes-agent-profiles-bootstrap
+    options:
+      annotations:
+        kustomize.toolkit.fluxcd.io/substitute: disabled
+    files:
+      - bootstrap_profiles.sh=profiles/bootstrap_profiles.sh
+  - name: hermes-agent-profiles
+    files:
+      - chief-of-staff.SOUL.md=profiles/chief-of-staff.SOUL.md
+      - assistenz.config.yaml=profiles/assistenz/config.yaml
+      - assistenz.SOUL.md=profiles/assistenz/SOUL.md
+      - finanzen.config.yaml=profiles/finanzen/config.yaml
+      - finanzen.SOUL.md=profiles/finanzen/SOUL.md
+      - steuern.config.yaml=profiles/steuern/config.yaml
+      - steuern.SOUL.md=profiles/steuern/SOUL.md
+      - kurator.config.yaml=profiles/kurator/config.yaml
+      - kurator.SOUL.md=profiles/kurator/SOUL.md
+      - devops.config.yaml=profiles/devops/config.yaml
+      - devops.SOUL.md=profiles/devops/SOUL.md
 
 generatorOptions:
   disableNameSuffixHash: false

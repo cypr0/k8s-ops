@@ -1,0 +1,69 @@
+---
+# Profile "kurator" -- curates the Immich photo library: albums, people,
+# duplicates and blurry shots, year-in-review selections.
+#
+# Seeded into HERMES_HOME/profiles/kurator/config.yaml by bootstrap-config
+# on every pod start. No inheritance from the default profile's config.yaml.
+_config_version: 54
+model:
+  # Vision-capable, EU / zero-data-retention endpoint (verified 2026-11-22).
+  # Family photos are the most personal data this agent touches, so image
+  # analysis stays with Mistral too (auxiliary.vision below), instead of
+  # the default profile's Claude Haiku lane.
+  default: mistralai/mistral-small-2603
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+fallback_providers:
+  - provider: openrouter
+    model: mistralai/mistral-large-4-0
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: mistralai/mistral-small-2603
+  vision:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  compression:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+  title_generation:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+agent:
+  max_turns: 60
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - browser
+    - web
+    - search
+    - x_search
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+mcp_servers:
+  immich:
+    url: "http://immich-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+    tools:
+      # immich-mcp's bridge already refuses DELETE; raw_request is the one
+      # tool that could still reach endpoints outside the curated set.
+      exclude:
+        - raw_request

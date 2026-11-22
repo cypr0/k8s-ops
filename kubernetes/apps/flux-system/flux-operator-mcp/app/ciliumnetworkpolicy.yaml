@@ -1,6 +1,8 @@
 ---
-# flux-operator-mcp: read-only MCP server exposing Flux/Kubernetes state to
-# OpenClaw over HTTP (streamable-http), gated by the built-in `view` role.
+# flux-operator-mcp: read-only MCP server exposing Flux/Kubernetes state over
+# HTTP (streamable-http), gated by the built-in `view` role. Client since
+# 2026-11-22: hermes-agent's "devops" profile (OpenClaw, the original client,
+# was decommissioned in July 2026).
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -13,8 +15,8 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
-            "k8s:io.kubernetes.pod.namespace": openclaw
-            app.kubernetes.io/name: openclaw
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
       toPorts:
         - ports:
             - port: "9090"

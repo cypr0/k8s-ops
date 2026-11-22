@@ -10,8 +10,9 @@ spec:
   interval: 1h
   values:
     transport: http
-    # Disable every mutating MCP tool (reconcile/suspend/resume/...); OpenClaw
-    # should only ever be able to inspect Flux state, never change it.
+    # Disable every mutating MCP tool (reconcile/suspend/resume/...); the
+    # agent (hermes-agent "devops" profile) should only ever be able to
+    # inspect Flux state, never change it.
     readonly: true
     rbac:
       # Chart default grants cluster-admin to its own ServiceAccount. We bind

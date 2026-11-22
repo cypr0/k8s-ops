@@ -116,6 +116,10 @@ spec:
               # documented in `hermes cron create --help`.
               mkdir -p /opt/data/scripts
               cp /cluster-health-script/cluster_health_check.py /opt/data/scripts/cluster_health_check.py
+              # Specialist profiles (assistenz, finanzen, ...) next to the
+              # default profile (= Chief of Staff). See the script's own
+              # header and kustomization.yaml's hermes-agent-profiles.
+              sh /profiles-bootstrap/bootstrap_profiles.sh
           env:
             - name: HERMES_HOME
               value: &home /opt/data
@@ -130,6 +134,18 @@ spec:
               readOnly: true
             - name: cluster-health-script
               mountPath: /cluster-health-script
+              readOnly: true
+            - name: profiles
+              mountPath: /profiles
+              readOnly: true
+            - name: profiles-bootstrap
+              mountPath: /profiles-bootstrap
+              readOnly: true
+            # Only the OpenRouter key, as a file: bootstrap_profiles.sh copies
+            # it into each profile's own .env (served profiles don't see the
+            # container env).
+            - name: openrouter-key
+              mountPath: /secrets/openrouter
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -500,6 +516,21 @@ spec:
         - name: refresh-kubeconfig-script
           configMap:
             name: hermes-agent-refresh-kubeconfig-script
+        - name: profiles
+          configMap:
+            name: hermes-agent-profiles
+        - name: profiles-bootstrap
+          configMap:
+            name: hermes-agent-profiles-bootstrap
+        - name: openrouter-key
+          secret:
+            secretName: hermes-agent-secrets
+            items:
+              - key: OPENROUTER_API_KEY
+                path: OPENROUTER_API_KEY
+            # Group-readable for gid 1000 (fsGroup): bootstrap-config runs
+            # as uid 10000, not as the file's owner.
+            defaultMode: 0440
         - name: tmp
           emptyDir: {}
         # Browser tool uses shared memory for headless rendering.

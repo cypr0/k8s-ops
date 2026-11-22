@@ -142,6 +142,17 @@ spec:
         - ports:
             - port: "8000"
               protocol: TCP
+    # flux-operator-mcp (kubernetes/apps/flux-system/flux-operator-mcp/,
+    # read-only): MCP server of the "devops" profile. Its own CNP needs the
+    # matching ingress rule.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": flux-system
+            app.kubernetes.io/name: flux-operator-mcp
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
     # Firecrawl's api service (kubernetes/apps/hermes-agent/firecrawl/),
     # this agent's web.backend for search/scrape/extract. app-template
     # labels every controller's pods app.kubernetes.io/name: firecrawl

@@ -1,0 +1,78 @@
+---
+# Profile "steuern" -- tax view on Paperless: what belongs to which tax
+# year, what is deductible, what is still missing. Read-only by design.
+#
+# Seeded into HERMES_HOME/profiles/steuern/config.yaml by bootstrap-config
+# on every pod start. No inheritance from the default profile's config.yaml.
+_config_version: 54
+model:
+  # EU / zero-data-retention endpoint (verified 2026-11-22). Tax questions
+  # need careful reading of long documents; this is not the place to save
+  # the last cent.
+  default: mistralai/mistral-large-4-0
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+fallback_providers:
+  - provider: openrouter
+    model: anthropic/claude-haiku-5.5
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: anthropic/claude-haiku-5.5
+  compression:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  title_generation:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+  vision:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+agent:
+  max_turns: 45
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - browser
+    - web
+    - search
+    - x_search
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+mcp_servers:
+  paperless:
+    url: "http://paperless-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+    tools:
+      # Read-only allow-list: this profile can look at everything and change
+      # nothing. Findings go back to the Chief of Staff; "finanzen" writes.
+      include:
+        - capabilities
+        - list_documents
+        - get_document
+        - get_document_metadata
+        - download_document
+        - list_tags
+        - list_correspondents
+        - list_document_types
+        - list_custom_fields
+        - global_search
+        - get_statistics

@@ -1,0 +1,73 @@
+---
+# Profile "finanzen" -- invoices, contracts, deadlines, monthly overview in
+# Paperless-ngx (and later the depot / portfolio cron).
+#
+# Seeded into HERMES_HOME/profiles/finanzen/config.yaml by bootstrap-config
+# on every pod start. No inheritance from the default profile's config.yaml.
+_config_version: 54
+model:
+  # EU / zero-data-retention endpoint, verified with a real tool call under
+  # provider.zdr=true (2026-11-22). Bigger than the Chief of Staff's model on
+  # purpose: this profile does unattended writes to Paperless (custom
+  # fields, tags) where a wrong or invented value is the expensive failure.
+  default: mistralai/mistral-large-4-0
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+fallback_providers:
+  - provider: openrouter
+    model: anthropic/claude-haiku-5.5
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: anthropic/claude-haiku-5.5
+  compression:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  title_generation:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+  vision:
+    provider: openrouter
+    model: mistralai/mistral-small-2603
+    extra_body: *zeroRetention
+agent:
+  max_turns: 45
+  # Paperless documents are untrusted input (any scanned letter or mailed
+  # PDF can carry a prompt injection). No shell, code, local files, web or
+  # browser: nothing that could carry document contents out of the pod.
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - browser
+    - web
+    - search
+    - x_search
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+mcp_servers:
+  paperless:
+    url: "http://paperless-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+    tools:
+      # Everything the extraction pipeline uses, minus deleting documents.
+      # raw_request stays: paperless_full v2 routes the less common
+      # endpoints through it (see the webhook prompt in configmap.yaml).
+      exclude:
+        - delete_documents

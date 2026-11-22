@@ -157,6 +157,49 @@ data:
     # file on every start -- so it is pinned here to keep the file stable.
     gateway:
       multiplex_profiles: true
+    # ── Chief of Staff: delegation to the specialist profiles via Kanban ──
+    # The specialists (assistenz, finanzen, steuern, kurator, devops) live in
+    # HERMES_HOME/profiles/, seeded from ./profiles/ by bootstrap-config. A
+    # Kanban task runs entirely in the assignee's profile -- its own model,
+    # MCP servers, toolset restrictions, .env and memory -- unlike
+    # delegate_task, whose children keep the PARENT's tools. The result
+    # comes back to the chat that created the task (auto_subscribe_on_create,
+    # default on) and wakes this agent to summarise it.
+    kanban:
+      dispatch_in_gateway: true
+      # Default 60s; a chat round-trip through a specialist shouldn't wait a
+      # full minute just to be picked up.
+      dispatch_interval_seconds: 20
+      # The Chief of Staff assigns tasks itself; no auxiliary decomposer
+      # second-guessing it (and no extra LLM call per task).
+      auto_decompose: false
+    # `kanban` is not part of the default tool selection; enabling it per
+    # platform materialises the full list. This is exactly what
+    # `hermes tools enable kanban --platform <p>` writes (checked against
+    # v0.23.3 on 2026-11-22): the stock list plus kanban. A list that names
+    # no MCP server keeps every server in mcp_servers below.
+    platform_toolsets:
+      telegram: &cosToolsets
+      - browser
+      - clarify
+      - code_execution
+      - computer_use
+      - connections
+      - cronjob
+      - delegation
+      - file
+      - image_gen
+      - kanban
+      - memory
+      - session_search
+      - skills
+      - terminal
+      - todo
+      - tts
+      - vision
+      - web
+      whatsapp: *cosToolsets
+      cli: *cosToolsets
     # Backend for the Hermes Desktop app (HERMES_DASHBOARD=1 in deployment.yaml
     # starts the image's own s6-supervised `hermes dashboard` on :9119, next to
     # the gateway, same HERMES_HOME). Desktop sessions run HERE -- the agent
@@ -359,15 +402,15 @@ data:
                    (auch wenn die Custom Fields bereits vorher korrekt gesetzt waren --
                    das entscheidet NICHT, ob schon ein Kalendertermin existiert):
                    falls faelligkeitsdatum oder kuendigungsfrist_datum erkannt wurden,
-                   lege dafür je einen ganztägigen Termin in Philipps Kalender an
-                   (mailu-mcp create_event, mailbox="philipp", all_day=true):
+                   lege dafür je einen ganztägigen Termin in ${SECRET_HERMES_OWNER_NAME}s Kalender an
+                   (mailu-mcp create_event, mailbox="${SECRET_HERMES_OWNER_MAILBOX}", all_day=true):
                    - faelligkeitsdatum: Titel "Fällig: <Dokumenttitel>"
                    - kuendigungsfrist_datum: Titel "Kündigungsfrist: <Dokumenttitel>"
                    Beschreibung jeweils: "Automatisch erstellt aus Paperless-Dokument
                    #{document_id}. Bei Fehlern: Termin einfach löschen, betrifft nicht
                    das Paperless-Dokument." -- das macht Fehlextraktionen leicht
                    erkennbar und risikolos rückgängig zu machen. Entscheidungsregel:
-                   rufe list_events(mailbox="philipp") für genau dieses eine Datum auf -- taucht darin
+                   rufe list_events(mailbox="${SECRET_HERMES_OWNER_MAILBOX}") für genau dieses eine Datum auf -- taucht darin
                    BEREITS ein Termin mit demselben Titel auf, nichts weiter tun;
                    TAUCHT KEINER AUF (Normalfall, auch wenn die Custom Fields schon
                    vorher gesetzt waren), dann create_event() jetzt aufrufen, nicht
@@ -433,7 +476,7 @@ data:
     # scope/tradeoffs), so treat every tool call through them with the
     # same care as a direct API call would deserve. mailu (kubernetes/apps/
     # hermes-agent/mailu-mcp/) is the same story with the owner's and
-    # Ann's real personal Mailu calendar/mailbox accounts (replaces the
+    # partner's real personal Mailu calendar/mailbox accounts (replaces the
     # former sogo-mcp, which pointed at the same kind of account on
     # Netcup's now-retired SOGo hosting -- see git history).
     mcp_servers:
