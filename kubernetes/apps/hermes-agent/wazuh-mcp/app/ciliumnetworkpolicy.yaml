@@ -1,0 +1,57 @@
+---
+# Only hermes-agent may call this MCP server; it may only reach DNS, PyPI
+# (init container pip install, 443) and its one backend.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: wazuh-mcp
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: wazuh-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Wazuh server API and indexer, nothing else in the wazuh namespace.
+    # The matching ingress rules live in kubernetes/apps/security/wazuh/app/
+    # ciliumnetworkpolicy.yaml.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-manager
+      toPorts:
+        - ports:
+            - port: "55000"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": wazuh
+            app: wazuh-indexer
+      toPorts:
+        - ports:
+            - port: "9200"
+              protocol: TCP

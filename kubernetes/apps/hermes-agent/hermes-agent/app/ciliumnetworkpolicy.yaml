@@ -142,6 +142,32 @@ spec:
         - ports:
             - port: "8000"
               protocol: TCP
+    # In-cluster GitLab (isms/compliance-as-code) for the "isms" profile;
+    # 8181 = container port (policies are evaluated post-DNAT).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": gitlab
+            app.kubernetes.io/name: gitlab
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
+    # Read-only MCP servers of the sicherheit / infrastruktur / netzwerk
+    # profiles (kubernetes/apps/hermes-agent/{wazuh,proxmox,opnsense}-mcp/).
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: wazuh-mcp
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: proxmox-mcp
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: opnsense-mcp
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
     # flux-operator-mcp (kubernetes/apps/flux-system/flux-operator-mcp/,
     # read-only): MCP server of the "devops" profile. Its own CNP needs the
     # matching ingress rule.

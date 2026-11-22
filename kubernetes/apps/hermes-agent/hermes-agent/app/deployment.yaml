@@ -158,6 +158,10 @@ spec:
             - name: openrouter-key
               mountPath: /secrets/openrouter
               readOnly: true
+            # <profile>__<VAR> files, see bootstrap_profiles.sh.
+            - name: profile-env
+              mountPath: /secrets/profile-env
+              readOnly: true
             - name: tmp
               mountPath: /tmp
           securityContext: &initSecurityContext
@@ -536,6 +540,13 @@ spec:
         - name: profiles-bootstrap
           configMap:
             name: hermes-agent-profiles-bootstrap
+        - name: profile-env
+          secret:
+            secretName: hermes-agent-profile-env
+            defaultMode: 0444
+            # A missing 1Password item must not keep the whole agent down;
+            # the affected profile just starts without that secret.
+            optional: true
         - name: openrouter-key
           secret:
             secretName: hermes-agent-secrets

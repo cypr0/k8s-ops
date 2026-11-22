@@ -12,6 +12,7 @@ Jeder Spezialist ist ein eigenes Hermes-Profil mit eigenem Modell, eigenen Werkz
 | `steuern` | Steuerliche Auswertung der Paperless-Belege nach Steuerjahr | Nur lesen |
 | `kurator` | Fotobibliothek in Immich: Alben, Favoriten, Aufräumvorschläge | Alben und Beschreibungen pflegen, nichts löschen |
 | `devops` | Kubernetes-Cluster: Flux, Pods, Fehleranalyse | Nur lesen; schlägt Änderungen am Git-Repo vor |
+| `sicherheit` | SOC: Wazuh-Alarme (Proxmox, Mac, OPNsense/Suricata), Schwachstellen, Trivy/Kyverno/Falco | Nur lesen; bewertet und empfiehlt |
 
 ## Wie du delegierst
 - Gehört ein Anliegen eindeutig in ein Fachgebiet, gibst du es ab, statt es selbst zu erledigen.

@@ -71,12 +71,17 @@ The default profile is the **Chief of Staff**: it talks to the owner on Telegram
 | `steuern` | Tax view on Paperless | `mistral-large-4-0` | paperless, read-only allow-list (11 tools) | same as assistenz |
 | `kurator` | Immich curation | `mistral-small-2603` (vision stays on Mistral) | immich without `raw_request` | same as assistenz |
 | `devops` | Cluster diagnosis | `claude-haiku-5.5` (alias `analyse` → Sonnet 5.5) | flux-operator-mcp (read-only) | browser, cronjob, delegation, … (keeps terminal + web) |
+| `sicherheit` | SOC: Wazuh alerts (Proxmox, Mac, OPNsense/Suricata), vulnerabilities, Trivy/Kyverno | `claude-haiku-5.5` (alias `analyse`) | wazuh-mcp, flux-operator-mcp | same as assistenz (log content is attacker-controlled) |
+| `isms` | Compliance as code in GitLab `isms/compliance-as-code`, MRs only | `claude-sonnet-5.5` (alias `schnell`) | flux-operator-mcp; GitLab via git/REST with its own token | browser, cronjob, delegation, … (keeps terminal + file + web) |
+| `infrastruktur` | Proxmox host | `claude-haiku-5.5` (alias `analyse`) | proxmox-mcp (PVEAuditor) | same as assistenz |
+| `netzwerk` | OPNsense | `claude-haiku-5.5` (alias `analyse`) | opnsense-mcp (GET only) | same as assistenz |
 
 Why it's built this way:
 - **Kanban, not `delegate_task`.** A Kanban task runs entirely in the assignee's profile: its own model, `mcp_servers`, `agent.disabled_toolsets`, `.env` and memory. `delegate_task` children (including the `advanced-delegation` plugin's `profile_routes`) keep the **parent's** toolsets and MCP servers, so they give no isolation.
 - **Profiles don't inherit config.** Each `profiles/<name>/config.yaml` is complete. Served profiles don't see the container environment either (`agent/secret_scope.py`), so `bootstrap_profiles.sh` writes each profile's own `.env` with the OpenRouter key, read from a mounted Secret file.
 - **Untrusted input → no exfiltration channel.** Profiles that read mail or documents have no shell, no local files, no web and no browser. Prompt-injection text in a PDF has nothing to send data out with.
 - **Not a security boundary between profiles.** All profiles share one pod and uid 10000. `devops` (terminal + file) could technically read the other profiles' `.env`; accepted because it only processes cluster data. Real separation would mean one pod per profile.
+- **Profile-only secrets** use keys `<profile>__<VAR>` in `externalsecret-profile-env.yaml`. `bootstrap_profiles.sh` writes each one only into that profile's `.env`, e.g. `isms__GITLAB_TOKEN`. The Secret volume is `optional`, so a missing 1Password item doesn't stop the pod.
 - **Personal names are placeholders.** SOULs and prompts use `${SECRET_HERMES_OWNER_NAME}`, `${SECRET_HERMES_PARTNER_NAME}`, `${SECRET_HERMES_OWNER_MAILBOX}` and `${SECRET_HERMES_PARTNER_MAILBOX}` from the SOPS-encrypted `cluster-secrets`. The profiles ConfigMap goes through Flux substitution, so **no other `$` may appear in those files**. `bootstrap_profiles.sh` sits in its own ConfigMap with substitution disabled.
 - **Telegram delivery from a specialist** (its cron jobs, a webhook route with `profile: <name>`) only works into a chat/topic that `gateway.profile_routes` maps to that profile; the shared bot refuses anything else (502). Moving the existing cron jobs and the Paperless webhook to `finanzen`/`assistenz` therefore waits for the Telegram group with one topic per specialist.
 

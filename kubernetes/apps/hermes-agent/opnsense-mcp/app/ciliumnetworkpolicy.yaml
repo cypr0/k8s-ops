@@ -1,0 +1,40 @@
+---
+# Only hermes-agent may call this MCP server; it may only reach DNS, PyPI
+# (init container pip install, 443) and its one backend.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: opnsense-mcp
+  namespace: hermes-agent
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: opnsense-mcp
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - world
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+              # OPNsense web GUI/API on the LAN (`world` for Cilium); 443 is already
+              # allowed above for the pip install.

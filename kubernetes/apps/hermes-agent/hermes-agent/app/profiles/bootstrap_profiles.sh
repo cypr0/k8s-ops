@@ -26,6 +26,11 @@ set -eu
 HOME_DIR=/opt/data
 SRC=/profiles
 KEY_FILE=/secrets/openrouter/OPENROUTER_API_KEY
+# Profile-specific secrets: one file per value, named <profile>__<VAR>
+# (ExternalSecret hermes-agent-profile-env). Each lands only in that
+# profile's .env, so e.g. the GitLab token of "isms" is invisible to the
+# other profiles' secret scope.
+EXTRA_DIR=/secrets/profile-env
 
 umask 077
 mkdir -p "${HOME_DIR}/profiles"
@@ -52,9 +57,16 @@ for cfg in "${SRC}"/*.config.yaml; do
     cp "${SRC}/${name}.SOUL.md" "${dir}/SOUL.md"
   fi
   printf 'OPENROUTER_API_KEY=%s\n' "$(cat "${KEY_FILE}")" > "${dir}/.env.tmp"
+  extras=0
+  for f in "${EXTRA_DIR}/${name}__"*; do
+    [ -e "${f}" ] || continue
+    var=${f##*__}
+    printf '%s=%s\n' "${var}" "$(cat "${f}")" >> "${dir}/.env.tmp"
+    extras=$((extras + 1))
+  done
   mv "${dir}/.env.tmp" "${dir}/.env"
   found=$((found + 1))
-  echo "profile ${name}: seeded"
+  echo "profile ${name}: seeded (${extras} extra secret(s))"
 done
 
 echo "${found} profile(s) seeded"

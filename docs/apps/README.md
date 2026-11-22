@@ -58,6 +58,7 @@ check here before assuming a gap means "not interesting."
 | Nextcloud | nextcloud | [nextcloud.md](nextcloud.md) |
 | nextcloud-exporter | nextcloud | [nextcloud-exporter.md](nextcloud-exporter.md) |
 | nextcloud-mcp | hermes-agent | [nextcloud-mcp.md](nextcloud-mcp.md) |
+| opnsense-mcp | hermes-agent | [opnsense-mcp.md](opnsense-mcp.md) |
 | OIDC RBAC | security | [oidc-rbac.md](oidc-rbac.md) |
 | Open Terminal | open-webui | [open-terminal.md](open-terminal.md) |
 | Open WebUI | open-webui | [open-webui.md](open-webui.md) |
@@ -66,6 +67,7 @@ check here before assuming a gap means "not interesting."
 | paperless-ngx | paperless | [paperless-ngx.md](paperless-ngx.md) |
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
 | Proxmox Ansible | automation | [proxmox-ansible.md](proxmox-ansible.md) |
+| proxmox-mcp | hermes-agent | [proxmox-mcp.md](proxmox-mcp.md) |
 | Reloader | kube-system | [reloader.md](reloader.md) |
 | retry | velero | [retry.md](retry.md) |
 | Spegel | kube-system | [spegel.md](spegel.md) |
@@ -74,4 +76,5 @@ check here before assuming a gap means "not interesting."
 | Trivy Operator | trivy-system | [trivy.md](trivy.md) |
 | velero | velero | [velero.md](velero.md) |
 | Wazuh | wazuh | [wazuh.md](wazuh.md) |
+| wazuh-mcp | hermes-agent | [wazuh-mcp.md](wazuh-mcp.md) |
 | Whiteboard | nextcloud | [whiteboard.md](whiteboard.md) |

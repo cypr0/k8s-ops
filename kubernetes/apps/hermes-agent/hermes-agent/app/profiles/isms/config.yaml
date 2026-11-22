@@ -1,0 +1,81 @@
+---
+# Profile "isms" -- information security officer: maintains and evaluates the
+# compliance-as-code repository (isms/compliance-as-code in the in-cluster
+# GitLab), maps controls to evidence, proposes changes as merge requests.
+#
+# Seeded into HERMES_HOME/profiles/isms/config.yaml by bootstrap-config on
+# every pod start. No inheritance from the default profile's config.yaml.
+# Its GitLab token arrives as isms__GITLAB_TOKEN (externalsecret-profile-
+# env.yaml) and only lands in this profile's .env.
+_config_version: 54
+model:
+  # Writing OSCAL / policy code and judging control coverage is the most
+  # demanding work of all profiles; no personal data is involved. Sonnet 5.5
+  # returned a tool call under provider.zdr=true via Amazon Bedrock
+  # (2026-11-22).
+  default: anthropic/claude-sonnet-5.5
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+model_aliases:
+  # Routine evidence checks: `/model schnell`.
+  schnell:
+    model: anthropic/claude-haiku-5.5
+    provider: openrouter
+fallback_providers:
+  - provider: openrouter
+    model: mistralai/mistral-large-4-0
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: anthropic/claude-haiku-5.5
+  compression:
+    provider: openrouter
+    model: anthropic/claude-haiku-5.5
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  title_generation:
+    provider: openrouter
+    model: anthropic/claude-haiku-5.5
+    extra_body: *zeroRetention
+  web_extract:
+    provider: openrouter
+    model: anthropic/claude-haiku-5.5
+    extra_body: *zeroRetention
+agent:
+  max_turns: 80
+  # Needs a working copy (terminal + file for git, editing, running the
+  # repo's scripts) and the web for framework texts (CIS, ISO, BSI). Same
+  # shared-pod caveat as devops: terminal/file could read other profiles'
+  # .env files; accepted because this profile handles no mail/documents.
+  disabled_toolsets:
+    - browser
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+terminal:
+  backend: local
+  cwd: .
+  timeout: 300
+  # Script/terminal env is sanitised; the GitLab token must be passed
+  # explicitly to reach git and curl.
+  env_passthrough:
+    - GITLAB_TOKEN
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+web:
+  backend: firecrawl
+mcp_servers:
+  # Live evidence: Kyverno PolicyReports, Trivy reports, Flux state.
+  flux:
+    url: "http://flux-operator-mcp.flux-system.svc.cluster.local:9090/mcp"

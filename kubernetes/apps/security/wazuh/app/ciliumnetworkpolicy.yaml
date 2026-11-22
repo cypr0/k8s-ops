@@ -39,6 +39,10 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": wazuh
             app: wazuh-ioc-feeds
+        # hermes-agent's read-only SOC MCP server (user hermes-soc, role readonly).
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: wazuh-mcp
       toPorts:
         - ports:
             - port: "55000"
@@ -117,6 +121,10 @@ spec:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring
             app.kubernetes.io/name: gatus
+        # hermes-agent's read-only SOC MCP server (internal user hermes-soc).
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: wazuh-mcp
       toPorts:
         - ports:
             - port: "9200"

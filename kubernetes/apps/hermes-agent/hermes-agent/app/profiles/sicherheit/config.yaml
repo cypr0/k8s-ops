@@ -1,0 +1,73 @@
+---
+# Profile "sicherheit" -- SOC analyst: Wazuh (Proxmox host, Mac, OPNsense
+# incl. Suricata IDS via syslog) plus the in-cluster findings of Trivy,
+# Kyverno and Falco.
+#
+# Seeded into HERMES_HOME/profiles/sicherheit/config.yaml by bootstrap-config
+# on every pod start. No inheritance from the default profile's config.yaml.
+_config_version: 54
+model:
+  # Alerts and logs are technical data with IPs and user names, no personal
+  # documents. Haiku triages cheaply; `/model analyse` for an incident.
+  # Verified to return a tool call under provider.zdr=true (2026-11-22).
+  default: anthropic/claude-haiku-5.5
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+model_aliases:
+  analyse:
+    model: anthropic/claude-sonnet-5.5
+    provider: openrouter
+fallback_providers:
+  - provider: openrouter
+    model: mistralai/mistral-small-2603
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: anthropic/claude-haiku-5.5
+  compression:
+    provider: openrouter
+    model: anthropic/claude-haiku-5.5
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  title_generation:
+    provider: openrouter
+    model: anthropic/claude-haiku-5.5
+    extra_body: *zeroRetention
+agent:
+  max_turns: 60
+  # Attackers control log content (user agents, hostnames, request paths,
+  # mail subjects). A prompt injection hidden in an alert must find no
+  # channel out and nothing to change: no shell, code, files, web, browser.
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - browser
+    - web
+    - search
+    - x_search
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+mcp_servers:
+  # kubernetes/apps/hermes-agent/wazuh-mcp/ -- read-only by credential AND by
+  # code (GET on the manager, _search on the indexer).
+  wazuh:
+    url: "http://wazuh-mcp.hermes-agent.svc.cluster.local:8000/mcp"
+  # Trivy VulnerabilityReports / ConfigAuditReports and Kyverno PolicyReports
+  # through the read-only flux-operator-mcp (view ClusterRole covers them).
+  flux:
+    url: "http://flux-operator-mcp.flux-system.svc.cluster.local:9090/mcp"

@@ -53,6 +53,16 @@ spec:
         - ports:
             - port: "8181"
               protocol: TCP
+    # hermes-agent's "isms" profile: git over HTTP + REST API (merge requests)
+    # on isms/compliance-as-code, with a project token (Developer role).
+    - fromEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": hermes-agent
+            app.kubernetes.io/name: hermes-agent
+      toPorts:
+        - ports:
+            - port: "8181"
+              protocol: TCP
     - fromEndpoints:
         - matchLabels:
             "k8s:io.kubernetes.pod.namespace": monitoring

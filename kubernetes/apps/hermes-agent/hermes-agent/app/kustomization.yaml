@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: hermes-agent
 resources:
   - ./externalsecret.yaml
+  # - ./externalsecret-profile-env.yaml  # enable with the isms profile (needs 1Password item hermes-gitlab)
   - ./serviceaccount.yaml
   - ./pvc.yaml
   - ./configmap.yaml
@@ -61,6 +62,12 @@ configMapGenerator:
       - kurator.SOUL.md=profiles/kurator/SOUL.md
       - devops.config.yaml=profiles/devops/config.yaml
       - devops.SOUL.md=profiles/devops/SOUL.md
+      - sicherheit.config.yaml=profiles/sicherheit/config.yaml
+      - sicherheit.SOUL.md=profiles/sicherheit/SOUL.md
+      # Prepared, enabled once their 1Password items exist (otherwise the
+      # Chief of Staff could delegate to a profile whose MCP server or token
+      # is missing): isms (hermes-gitlab), infrastruktur (hermes-proxmox),
+      # netzwerk (hermes-opnsense). Files: profiles/{isms,infrastruktur,netzwerk}/.
 
 generatorOptions:
   disableNameSuffixHash: false

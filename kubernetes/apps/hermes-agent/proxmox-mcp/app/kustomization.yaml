@@ -1,0 +1,19 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hermes-agent
+resources:
+  - ./externalsecret.yaml
+  - ./deployment.yaml
+  - ./service.yaml
+  - ./ciliumnetworkpolicy.yaml
+
+# Hash-suffixed: a change to the tool module rolls the Deployment.
+configMapGenerator:
+  - name: proxmox-mcp-src
+    files:
+      - proxmox_infra.py
+      - owui_tool_mcp_bridge.py
+
+generatorOptions:
+  disableNameSuffixHash: false

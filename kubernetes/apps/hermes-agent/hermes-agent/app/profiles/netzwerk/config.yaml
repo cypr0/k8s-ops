@@ -1,0 +1,68 @@
+---
+# Profile "netzwerk" -- network engineer for the OPNsense firewall: interfaces,
+# gateways, firewall rules and aliases, DHCP, DNS, WireGuard, IDS state.
+# OPNsense config is not in Git, so changes are proposed, never applied.
+#
+# Seeded into HERMES_HOME/profiles/netzwerk/config.yaml by bootstrap-config
+# on every pod start. No inheritance from the default profile's config.yaml.
+_config_version: 54
+model:
+  # Interface/rule/lease data: technical, but it maps the whole home
+  # network. Haiku day to day; `/model analyse` for rule reviews. Verified to
+  # return a tool call under provider.zdr=true (2026-11-22).
+  default: anthropic/claude-haiku-5.5
+  provider: auto
+  base_url: https://openrouter.ai/api/v1
+model_aliases:
+  analyse:
+    model: anthropic/claude-sonnet-5.5
+    provider: openrouter
+fallback_providers:
+  - provider: openrouter
+    model: mistralai/mistral-small-2603
+provider_routing:
+  data_collection: deny
+auxiliary:
+  openrouter_model: anthropic/claude-haiku-5.5
+  compression:
+    provider: openrouter
+    model: anthropic/claude-haiku-5.5
+    extra_body: &zeroRetention
+      provider:
+        data_collection: deny
+        zdr: true
+  title_generation:
+    provider: openrouter
+    model: anthropic/claude-haiku-5.5
+    extra_body: *zeroRetention
+agent:
+  max_turns: 60
+  # Firewall logs, DHCP hostnames and IDS payload text are attacker-chosen;
+  # same rule as "sicherheit": no shell, code, files, web, browser.
+  disabled_toolsets:
+    - terminal
+    - code_execution
+    - file
+    - browser
+    - web
+    - search
+    - x_search
+    - computer_use
+    - cronjob
+    - delegation
+    - image_gen
+    - video_gen
+    - connections
+    - catalog
+compression:
+  enabled: true
+  threshold: 0.5
+  target_ratio: 0.2
+  protect_last_n: 20
+security:
+  redact_secrets: true
+mcp_servers:
+  # kubernetes/apps/hermes-agent/opnsense-mcp/ -- GET only, action paths
+  # refused in code (OPNsense has no read-only API role).
+  opnsense:
+    url: "http://opnsense-mcp.hermes-agent.svc.cluster.local:8000/mcp"

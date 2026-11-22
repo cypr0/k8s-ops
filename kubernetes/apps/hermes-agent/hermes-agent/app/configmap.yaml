@@ -157,6 +157,41 @@ data:
     # file on every start -- so it is pinned here to keep the file stable.
     gateway:
       multiplex_profiles: true
+      # Telegram group "Hermes" with one forum topic per specialist: a message
+      # in a topic is handled by that profile, and the profile's cron jobs and
+      # webhook deliveries may post there through the shared bot (a routed
+      # profile without its own bot may only send to chats a route maps to
+      # it). Topic 1 ("General") and the DM stay with the Chief of Staff.
+      # thread_id = the topic's message thread id (read from
+      # channel_directory.json after a message in each topic); the group id
+      # comes from the SOPS-encrypted cluster-secrets. Topics for
+      # sicherheit / isms / infrastruktur / netzwerk get added once they exist.
+      profile_routes:
+        - name: tg-assistenz
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "2"
+          profile: assistenz
+        - name: tg-finanzen
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "3"
+          profile: finanzen
+        - name: tg-steuern
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "4"
+          profile: steuern
+        - name: tg-kurator
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "5"
+          profile: kurator
+        - name: tg-devops
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "6"
+          profile: devops
     # ── Chief of Staff: delegation to the specialist profiles via Kanban ──
     # The specialists (assistenz, finanzen, steuern, kurator, devops) live in
     # HERMES_HOME/profiles/, seeded from ./profiles/ by bootstrap-config. A
