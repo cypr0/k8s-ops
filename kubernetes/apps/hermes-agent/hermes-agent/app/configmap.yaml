@@ -2,8 +2,8 @@
 # Bootstrap config.yaml, copied into HERMES_HOME by the bootstrap-config
 # init container (deployment.yaml) on every pod start. This is the full set
 # of values -- the upstream chart's own defaults (agent/terminal/display/
-# browser/compression) merged with our two overrides (model.default,
-# security.tirith_fail_open) that Helm's values-merge used to do implicitly.
+# browser/compression) merged with our overrides (model.default and the
+# model lanes below) that Helm's values-merge used to do implicitly.
 # Made explicit here on purpose: no hidden chart defaults left to track down.
 apiVersion: v1
 kind: ConfigMap
@@ -13,6 +13,10 @@ metadata:
     app.kubernetes.io/name: hermes-agent
 data:
   config.yaml: |-
+    # Schema version of hermes v0.23.3. Declared so the gateway does not
+    # treat this seeded file as "unversioned" on every boot (that path runs
+    # only the legacy-key migrations and then rewrites the file).
+    _config_version: 54
     model:
       # Was mistralai/mistral-small-3.2-24b-instruct on OpenRouter's shared
       # free-tier pool -- found (2026-08-09) to repeatedly hit 429 rate
@@ -34,8 +38,12 @@ data:
     #
     # The default above stays mistral-medium-3.1 on purpose: the Paperless
     # extraction prompt and the cron jobs were tuned against it, and the
-    # unattended pipelines are where a model swap hurts first. Everything
-    # else is opt-in:
+    # unattended pipelines are where a model swap hurts first.
+    # BUT: mistral-medium-3.1 has no zero-data-retention endpoint on
+    # OpenRouter (live probe 2026-11-22: provider.zdr=true -> HTTP 400
+    # "Invalid model: mistral-medium-2508"). Do not enforce ZDR account-wide
+    # on OpenRouter until the default model has moved off it.
+    # Everything else is opt-in:
     #   - per session (desktop app / any chat): `/model code`, `/model tief`, ...
     #   - per cron job: `hermes cron edit <id> --model <id> --provider openrouter`
     #   - subagents and side tasks: delegation / auxiliary below, automatic
@@ -53,17 +61,20 @@ data:
         model: anthropic/claude-opus-5.5
         provider: openrouter
       schnell:
-        model: google/gemini-3.1-flash-lite
+        model: anthropic/claude-haiku-5.5
         provider: openrouter
     # Tried in order when the primary model fails with a rate-limit, overload
     # or connection error. Different vendors on purpose: a Mistral-side outage
     # surfaces on OpenRouter as errors for exactly that model, so retrying
-    # another Mistral model would mostly hit the same incident.
+    # another Mistral model would mostly hit the same incident. The second
+    # entry was gemini-3.1-flash-lite until 2026-11-22; mistral-small-2603
+    # replaces it because it has an EU / zero-data-retention endpoint and
+    # costs less ($0.15/$0.60 vs $0.25/$1.50 per 1M tokens).
     fallback_providers:
       - provider: openrouter
         model: anthropic/claude-haiku-5.5
       - provider: openrouter
-        model: google/gemini-3.1-flash-lite
+        model: mistralai/mistral-small-2603
     # OpenRouter only routes to upstream hosts that don't store or train on
     # prompts. Applies to main turns, cron and desktop sessions -- NOT to
     # auxiliary calls (by upstream design, see hermes_cli/config_defaults.py),
@@ -79,27 +90,35 @@ data:
     # Side tasks (vision, page summaries, context compression, titles, smart
     # approvals, MCP routing, ...). `openrouter_model` replaces upstream's
     # auto-chain default (google/gemini-3.6-flash) for every task not pinned
-    # below; the pinned ones are the high-volume ones.
+    # below; the pinned ones are the high-volume ones -- and the ones that
+    # see the most private content (compression summarises whole mail /
+    # Paperless sessions).
+    # claude-haiku-5.5 since 2026-11-22 (was gemini-3.1-flash-lite): cheaper
+    # ($0.10/$0.50 vs $0.25/$1.50 per 1M tokens below 100K prompt tokens)
+    # and verified live to return a real tool_call with provider.zdr=true
+    # (served via Google Vertex). `provider_routing` has no zdr key, but
+    # extra_body is sent verbatim, so the side tasks can enforce it today.
     auxiliary:
-      openrouter_model: google/gemini-3.1-flash-lite
+      openrouter_model: anthropic/claude-haiku-5.5
       vision:
         provider: openrouter
-        model: google/gemini-3.1-flash-lite
-        extra_body: &noDataCollection
+        model: anthropic/claude-haiku-5.5
+        extra_body: &zeroRetention
           provider:
             data_collection: deny
+            zdr: true
       web_extract:
         provider: openrouter
-        model: google/gemini-3.1-flash-lite
-        extra_body: *noDataCollection
+        model: anthropic/claude-haiku-5.5
+        extra_body: *zeroRetention
       compression:
         provider: openrouter
-        model: google/gemini-3.1-flash-lite
-        extra_body: *noDataCollection
+        model: anthropic/claude-haiku-5.5
+        extra_body: *zeroRetention
       title_generation:
         provider: openrouter
-        model: google/gemini-3.1-flash-lite
-        extra_body: *noDataCollection
+        model: anthropic/claude-haiku-5.5
+        extra_body: *zeroRetention
     agent:
       # Lowered from 90: bounds worst-case stuck-loop time if a bad
       # tool-call round still happens, without cutting off legitimate
@@ -125,13 +144,19 @@ data:
       threshold: 0.5
       target_ratio: 0.2
       protect_last_n: 20
+    # tirith_enabled / tirith_fail_open are gone: upstream removed the Tirith
+    # command scanner entirely (config migration v50, hermes v0.23) with no
+    # replacement. Terminal commands are now gated by the approval system
+    # only (security.approval, default transport builtin / fallback deny).
     security:
       redact_secrets: true
-      tirith_enabled: true
-      # Upstream default is `true` (fail OPEN: an errored guardrail check
-      # lets the action through). This agent has shell + WhatsApp + a
-      # read-only k8s view, so flip to fail-closed instead.
-      tirith_fail_open: false
+    # One gateway process serves every profile under $HERMES_HOME/profiles/
+    # (cron ticks, webhook routes under /p/<profile>/, kanban workers). On by
+    # default since hermes v0.22, but the gateway writes the settled value
+    # back into config.yaml at boot -- and bootstrap-config overwrites that
+    # file on every start -- so it is pinned here to keep the file stable.
+    gateway:
+      multiplex_profiles: true
     # Backend for the Hermes Desktop app (HERMES_DASHBOARD=1 in deployment.yaml
     # starts the image's own s6-supervised `hermes dashboard` on :9119, next to
     # the gateway, same HERMES_HOME). Desktop sessions run HERE -- the agent

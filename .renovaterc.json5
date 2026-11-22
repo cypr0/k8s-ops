@@ -101,6 +101,12 @@
       addLabels: ["renovate/container"],
     },
     {
+      description: "hermes-agent switched from CalVer (v2026.8.16.2) to SemVer (v0.23.3) in autumn 2026; numerically the old CalVer tags look newer, so pin Renovate to the 0.x line or it proposes a downgrade",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["nousresearch/hermes-agent"],
+      allowedVersions: "/^v0\\.\\d+\\.\\d+$/",
+    },
+    {
       description: "velero-plugin-for-aws: needs manual verification against Intercolo S3 before any bump (past silent regression broke uploads, see kubernetes/apps/velero/app/helmrelease.yaml)",
       matchPackageNames: ["velero/velero-plugin-for-aws"],
       enabled: false,

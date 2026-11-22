@@ -76,7 +76,7 @@ spec:
         # truth rather than drifting from whatever the running agent wrote
         # back to its own config at runtime).
         - name: bootstrap-config
-          image: &image nousresearch/hermes-agent:v2026.8.16.2
+          image: &image nousresearch/hermes-agent:v0.23.3
           command:
             - /bin/sh
             - -ec
@@ -170,26 +170,14 @@ spec:
                 https://dl.k8s.io/release/v1.36.2/bin/linux/amd64/kubectl
               echo "1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82  /tmp/kubectl" | sha256sum -c -
               install -m 0755 /tmp/kubectl /opt/data/tools/bin/kubectl
-              # edge-tts (TTS) + faster-whisper (local STT): confirmed present
-              # in hermes-agent's own pyproject.toml as the "edge-tts"/"voice"
-              # extras, but not installed into the image's baked-in venv --
-              # `uv pip install --target=` lands pure files on the shared
-              # volume (confirmed working, unlike a venv/site-packages install
-              # which lives on the main container's own, unshared rootfs and
-              # would be wiped every pod restart); main container adds this
-              # to PYTHONPATH. Versions pinned to match pyproject.toml's
-              # extras exactly. sounddevice (mic capture for interactive CLI
-              # push-to-talk) deliberately omitted -- this pod has no audio
-              # device, voice messages arrive as files via the WhatsApp
-              # bridge instead. --no-cache: uv's default cache dir isn't on
-              # a writable path under this container's readOnlyRootFilesystem
-              # (confirmed: "Failed to initialize cache at /.cache/uv ...
-              # Read-only file system"); this container only ever runs this
-              # install once per pod start anyway, so a warm cache buys
-              # nothing.
-              uv pip install --no-cache --target=/opt/data/tools/pip \
-                edge-tts==7.2.7 \
-                faster-whisper==1.2.1
+              # edge-tts / faster-whisper used to be `uv pip install
+              # --target=/opt/data/tools/pip`'d here. Since hermes v0.23 the
+              # image installs them itself on first use (its lazy-install
+              # package manager, pinned to the versions that release was
+              # tested with, under $HERMES_HOME), and the old target dir held
+              # wheels built for the previous image's Python 3.13 -- the
+              # v0.23.3 image runs 3.14 -- so it is removed (no-op once gone).
+              rm -rf /opt/data/tools/pip
           volumeMounts:
             - name: data
               mountPath: /opt/data
@@ -272,13 +260,6 @@ spec:
             # with no such restriction.
             - name: KUBECONFIG
               value: /etc/hermes-kubeconfig/config
-            # edge-tts/faster-whisper, installed by tools-install onto the
-            # shared volume (see that init container's comment) rather than
-            # into the venv itself. python -- unlike a PATH-found executable
-            # -- does NOT automatically extend its own search path from
-            # sys.prefix, so this needs to be explicit.
-            - name: PYTHONPATH
-              value: "/opt/data/tools/pip"
             - name: WEB_TOOLS_DEBUG
               value: "false"
             - name: VISION_TOOLS_DEBUG
@@ -301,19 +282,10 @@ spec:
             # gated by network policy instead (only this namespace can reach it).
             - name: FIRECRAWL_API_URL
               value: "http://firecrawl-api.hermes-agent.svc.cluster.local:3002"
-            # Browser toolset (already enabled by default, see config.yaml's
-            # browser: section) -- agent-browser and a matching Chrome for
-            # Testing binary both already ship inside the image
-            # (/opt/hermes/.playwright/chromium_headless_shell-*/), but
-            # agent-browser's own auto-detection doesn't look there, so it
-            # needs pointing at it explicitly. Confirmed working via
-            # `agent-browser open`/`snapshot` in this exact container. The
-            # "-1228" build number is this image's pinned Playwright
-            # revision -- re-check the actual path (`find /opt/hermes/
-            # .playwright`) after any *image* version bump, it can change
-            # even though this file didn't.
-            - name: AGENT_BROWSER_EXECUTABLE_PATH
-              value: "/opt/hermes/.playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell"
+            # No AGENT_BROWSER_EXECUTABLE_PATH any more: since hermes v0.23 the
+            # image ships a full Chromium and bakes its path into
+            # /etc/hermes/chromium-executable-path at build time (config
+            # migration v52 also retired the AGENT_BROWSER_* env vars).
             - name: WHATSAPP_ENABLED
               value: "true"
             # self-chat: Hermes uses the owner's own linked WhatsApp session
