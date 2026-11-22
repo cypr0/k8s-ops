@@ -189,7 +189,15 @@ def _sync_models(
     for entry in models:
         model_id = (entry or {}).get("id")
         base_model_id = entry.get("base_model_id")
-        if not model_id or not base_model_id:
+        # connection_model: true = an override row for a model a connection
+        # already serves (id == that model's id, e.g. "hermes.devops"). Open
+        # WebUI stores admin edits of such models exactly like this: same id,
+        # base_model_id NULL. It is what makes a connection model visible to
+        # non-admins (via the grants below) -- without a row it is admin-only.
+        connection_model = bool(entry.get("connection_model"))
+        if connection_model:
+            base_model_id = None
+        if not model_id or (not base_model_id and not connection_model):
             log.error("A models[] entry is missing id or base_model_id: %r", entry)
             sys.exit(1)
 

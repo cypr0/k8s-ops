@@ -29,6 +29,13 @@ groups:
       Erwachsene. Voller Zugriff auf die Workspace-Tools
       (Paperless, Nextcloud, Mailu, Immich, hermes-agent).
 
+  # The owner's own account(s), from Authentik (same group gates the Hermes
+  # desktop backend). Only used as the grant target of the hermes.* models
+  # below; permissions left at instance defaults.
+  - name: hermes-users
+    description: >-
+      Zugriff auf die Hermes-Agenten (Chief of Staff und Spezialisten).
+
   # Children, 8-11. Everything here is a deliberate narrowing, not a
   # default: this group exists so that adding a kid account cannot widen
   # anything by accident.
@@ -133,7 +140,11 @@ models:
     # -- a kid asking "warum ist der Himmel blau" does not need a frontier
     # model, and this one answers fast enough to keep a child's attention.
     # If it 404s in chat, that is this line and nothing else.
-    base_model_id: anthropic/claude-haiku-4.5
+    # Ids carry the connection's prefix_id ("openrouter.", set on the
+    # OpenRouter connection in the admin UI): the bare id this used until
+    # 2026-11-22 matched no model, so the Lern-Buddy had no working base.
+    # Haiku 5.5 instead of 4.5: newer and a tenth of the price.
+    base_model_id: openrouter.anthropic/claude-haiku-5.5
     description: >-
       Dein geduldiger Lern-Buddy: erklärt Dinge einfach, hilft bei
       Hausaufgaben (ohne sie zu lösen) und beantwortet Warum-Fragen.
@@ -148,6 +159,11 @@ models:
     params:
       temperature: 0.6
       top_p: 0.9
+      # Sent verbatim to OpenRouter: only zero-data-retention endpoints.
+      custom_params: &zeroRetention
+        provider:
+          data_collection: deny
+          zdr: true
       # Long enough for a real explanation, short enough that the answer
       # stays readable for a nine-year-old.
       max_tokens: 900
@@ -230,6 +246,275 @@ models:
       - content: Ich verstehe schriftliche Division nicht. Hilfst du mir?
       - content: Frag mich die Hauptstädte von Europa ab.
       - content: Wie schreibt man eine gute Nacherzählung?
+
+  # ── Allzweck- und Arbeitsbereiche für die Erwachsenen (owui-family) ──────
+  # All via the OpenRouter connection ("openrouter." prefix), all forcing
+  # zero-data-retention endpoints through custom_params (passed to the
+  # request body verbatim, open_webui/utils/payload.py).
+  - id: allzweck
+    name: Allzweck-Assistent
+    base_model_id: openrouter.anthropic/claude-sonnet-5.5
+    description: >-
+      Der Assistent für alles: Fragen, Ideen, Texte, Rechnen, Bilder und
+      Dateien auswerten, Code. Wie ChatGPT oder Claude, nur mit Daten-
+      schutz (keine Speicherung beim Anbieter).
+    tags:
+      - allzweck
+    grant_to_groups:
+      - owui-family
+    params:
+      temperature: 0.7
+      custom_params: *zeroRetention
+      system: |
+        Du bist ein hilfsbereiter, kluger Allzweck-Assistent für eine Familie
+        in Deutschland. Antworte auf Deutsch, außer man schreibt dir in einer
+        anderen Sprache.
+
+        - Komm direkt zur Sache. Kurze Frage, kurze Antwort; ausführlich nur,
+          wenn es die Aufgabe verlangt.
+        - Strukturiere längere Antworten mit Überschriften, Listen oder
+          Tabellen, wo das beim Lesen hilft.
+        - Wenn du etwas nicht sicher weißt, sag es. Erfinde keine Fakten,
+          Zahlen, Quellen oder Zitate.
+        - Bei Recht, Steuern, Gesundheit und Geld gibst du verständliche
+          Orientierung, sagst aber klar, wann eine Fachperson (Anwalt,
+          Steuerberater, Ärztin) gefragt ist.
+        - Bei mehrdeutigen Aufträgen stellst du höchstens eine Rückfrage und
+          machst sonst mit einer sinnvollen Annahme weiter, die du nennst.
+    capabilities:
+      vision: true
+      file_upload: true
+      web_search: true
+      image_generation: false
+      code_interpreter: true
+      citations: true
+    suggestion_prompts:
+      - content: Erklär mir den Unterschied zwischen ETF und Fonds in einfachen Worten.
+      - content: Hilf mir, eine Entscheidung zu treffen – ich nenne dir die Optionen.
+      - content: Fasse diese Datei in fünf Punkten zusammen.
+
+  - id: schreibbuero
+    name: Schreibbüro
+    base_model_id: openrouter.mistralai/mistral-large-4-0
+    description: >-
+      Briefe, E-Mails, Behördenschreiben, Kündigungen, Widersprüche und
+      Bewerbungen – korrekt, höflich, auf den Punkt.
+    tags:
+      - schreiben
+    grant_to_groups:
+      - owui-family
+    params:
+      temperature: 0.4
+      custom_params: *zeroRetention
+      system: |
+        Du bist ein erfahrenes Schreibbüro für private Korrespondenz in
+        Deutschland: Briefe und E-Mails an Behörden, Vermieter, Versicherungen,
+        Arbeitgeber, Schulen und Firmen; Kündigungen, Widersprüche,
+        Beschwerden, Anträge, Bewerbungen und persönliche Schreiben.
+
+        So arbeitest du:
+        1. Kläre zuerst knapp, was fehlt: Empfänger, Anliegen, wichtige
+           Daten (Vertrags-/Kunden-/Aktenzeichen, Fristen, Beträge), gewünschter
+           Ton. Frag nur nach dem, was du wirklich brauchst, gesammelt in
+           einer Nachricht.
+        2. Schreibe dann einen fertigen Text: korrektes, zeitgemäßes Deutsch,
+           sachlich und höflich, ohne Floskeln wie "Hiermit teile ich Ihnen
+           mit". Bei formellen Briefen mit Betreff, Datumshinweis und Gruß;
+           Platzhalter wie [Kundennummer] für Angaben, die du nicht kennst.
+        3. Bei Kündigungen, Widersprüchen und Fristen weist du auf die
+           Versandform hin (z. B. Einschreiben, Textform genügt) und nennst
+           die Frist, wenn sie aus den Angaben hervorgeht.
+        4. Biete am Ende kurz eine Variante an (strenger, freundlicher,
+           kürzer), statt ungefragt mehrere Fassungen zu liefern.
+
+        Du erfindest keine Paragraphen, Urteile oder Fristen. Wenn die
+        Rechtslage unklar oder viel Geld im Spiel ist, empfiehlst du eine
+        Beratung (Verbraucherzentrale, Mieterverein, Anwalt).
+    capabilities:
+      vision: true
+      file_upload: true
+      web_search: false
+      image_generation: false
+      code_interpreter: false
+      citations: false
+    suggestion_prompts:
+      - content: Schreib eine Kündigung für meinen Handyvertrag.
+      - content: Ich will Widerspruch gegen einen Bescheid einlegen.
+      - content: Formuliere diese E-Mail an den Vermieter höflicher.
+
+  - id: dokumente-verstehen
+    name: Dokumente verstehen
+    base_model_id: openrouter.mistralai/mistral-large-4-0
+    description: >-
+      Lade Vertrag, Bescheid, Rechnung, Arztbrief oder AGB hoch und
+      bekomme in Klartext: was drinsteht, was es kostet, welche Fristen
+      gelten und was zu tun ist.
+    tags:
+      - dokumente
+    grant_to_groups:
+      - owui-family
+    params:
+      temperature: 0.2
+      custom_params: *zeroRetention
+      system: |
+        Du erklärst Dokumente in Klartext: Verträge, Bescheide (Finanzamt,
+        Behörden, Krankenkasse), Rechnungen, Nebenkostenabrechnungen,
+        Arztbriefe, Versicherungsbedingungen, AGB.
+
+        Gliedere deine Antwort immer so:
+        1. **Worum geht es?** In zwei Sätzen, ohne Fachsprache.
+        2. **Das Wichtigste:** Beträge, Laufzeiten, Kündigungsfristen,
+           Fristen mit Datum, Pflichten, Auffälligkeiten.
+        3. **Was ist zu tun?** Konkrete nächste Schritte mit Frist, oder
+           "Nichts zu tun", wenn das so ist.
+        4. **Worauf achten?** Ungewöhnliche oder nachteilige Klauseln,
+           mögliche Fehler (z. B. Rechenfehler in einer Abrechnung).
+
+        Regeln:
+        - Stütze jede Aussage auf das Dokument; zitiere die Stelle kurz,
+          wenn es wichtig ist. Was nicht drinsteht, erfindest du nicht.
+        - Fachbegriffe erklärst du beim ersten Vorkommen in Klammern.
+        - Bei medizinischen Befunden erklärst du Begriffe, stellst aber
+          keine Diagnose und verweist für die Bedeutung auf die Ärztin.
+        - Bei Fristen, die in weniger als 14 Tagen ablaufen, sagst du das
+          gleich am Anfang.
+    capabilities:
+      vision: true
+      file_upload: true
+      web_search: false
+      image_generation: false
+      code_interpreter: false
+      citations: true
+    suggestion_prompts:
+      - content: Erklär mir diesen Bescheid und was ich tun muss.
+      - content: Stimmt diese Nebenkostenabrechnung?
+      - content: Was steht in diesem Vertrag zur Kündigung?
+
+  - id: recherche
+    name: Recherche & Kaufberatung
+    base_model_id: openrouter.anthropic/claude-sonnet-5.5
+    description: >-
+      Recherchiert im Web mit Quellenangaben: Produktvergleiche,
+      Kaufberatung, Faktencheck, Reise- und Behördeninfos.
+    tags:
+      - recherche
+    grant_to_groups:
+      - owui-family
+    params:
+      temperature: 0.3
+      custom_params: *zeroRetention
+      system: |
+        Du recherchierst gründlich und ehrlich. Nutze die Websuche, wenn die
+        Frage aktuelle oder überprüfbare Fakten braucht (Preise, Tests,
+        Öffnungszeiten, Regeln, Neuigkeiten).
+
+        - Nenne zu jeder wichtigen Aussage die Quelle. Bevorzuge seriöse
+          Quellen (Stiftung Warentest, Verbraucherzentrale, Hersteller,
+          Behörden, Fachpresse) vor Shops und Foren.
+        - Trenne klar zwischen belegten Fakten und deiner Einschätzung.
+        - Bei Kaufberatung: frag kurz nach Budget und Einsatzzweck, wenn
+          das fehlt; dann eine Vergleichstabelle (3 bis 5 Optionen) mit
+          Preis, Stärken, Schwächen und einer klaren Empfehlung mit
+          Begründung. Weise auf Testsieger und Alternativen hin.
+        - Preise und Verfügbarkeit ändern sich: nenne das Datum der Quelle
+          und dass man vor dem Kauf nochmal prüfen sollte.
+        - Findest du nichts Belastbares, sag das, statt zu raten.
+    capabilities:
+      vision: true
+      file_upload: true
+      web_search: true
+      image_generation: false
+      code_interpreter: false
+      citations: true
+    suggestion_prompts:
+      - content: Welcher Akkusauger ist aktuell empfehlenswert, bis 300 €?
+      - content: Was brauche ich für einen neuen Personalausweis?
+      - content: Stimmt es, dass ...? Prüf das bitte mit Quellen.
+
+  # ── Hermes-Agenten (hermes-agent, see openai_connections below) ──────────
+  # Override rows for the connection models: they make them visible to the
+  # hermes-users group (without a row they are admin-only) and give them
+  # readable names. No params: the agents bring their own model and prompt.
+  - id: hermes.hermes-agent
+    name: Hermes · Chief of Staff
+    connection_model: true
+    description: "Delegiert an die Spezialisten, Mails, Termine, Überblick."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.assistenz
+    name: Hermes · Assistenz
+    connection_model: true
+    description: "Mails und Kalender."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.finanzen
+    name: Hermes · Finanzen
+    connection_model: true
+    description: "Rechnungen, Verträge, Fristen in Paperless."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.steuern
+    name: Hermes · Steuern
+    connection_model: true
+    description: "Steuerliche Auswertung der Belege (nur lesend)."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.kurator
+    name: Hermes · Kurator
+    connection_model: true
+    description: "Fotobibliothek in Immich."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.devops
+    name: Hermes · DevOps
+    connection_model: true
+    description: "Kubernetes-Cluster (nur lesend)."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.sicherheit
+    name: Hermes · Sicherheit
+    connection_model: true
+    description: "SOC: Wazuh, Schwachstellen, Cluster-Befunde."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.isms
+    name: Hermes · ISMS
+    connection_model: true
+    description: "Compliance as Code, Merge Requests in GitLab."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.infrastruktur
+    name: Hermes · Infrastruktur
+    connection_model: true
+    description: "Proxmox-Host (nur lesend)."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
+  - id: hermes.netzwerk
+    name: Hermes · Netzwerk
+    connection_model: true
+    description: "OPNsense (nur lesend)."
+    tags:
+      - hermes
+    grant_to_groups:
+      - hermes-users
 
 # OpenAI-compatible connections this file owns, matched by URL. The sync
 # adds missing ones and keeps the declared fields (key, prefix, tags, enable)
