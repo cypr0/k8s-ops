@@ -165,8 +165,8 @@ data:
       # it). Topic 1 ("General") and the DM stay with the Chief of Staff.
       # thread_id = the topic's message thread id (read from
       # channel_directory.json after a message in each topic); the group id
-      # comes from the SOPS-encrypted cluster-secrets. Topics for
-      # sicherheit / isms / infrastruktur / netzwerk get added once they exist.
+      # comes from the SOPS-encrypted cluster-secrets. Unrouted topics (1 =
+      # Allgemein) stay with the chief of staff.
       profile_routes:
         - name: tg-assistenz
           platform: telegram
@@ -198,6 +198,26 @@ data:
           chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
           thread_id: "44"
           profile: depot
+        - name: tg-sicherheit
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "35"
+          profile: sicherheit
+        - name: tg-isms
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "36"
+          profile: isms
+        - name: tg-infrastruktur
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "37"
+          profile: infrastruktur
+        - name: tg-netzwerk
+          platform: telegram
+          chat_id: "${SECRET_HERMES_TELEGRAM_GROUP}"
+          thread_id: "38"
+          profile: netzwerk
     # ── Chief of Staff: delegation to the specialist profiles via Kanban ──
     # The specialists (assistenz, finanzen, steuern, kurator, devops) live in
     # HERMES_HOME/profiles/, seeded from ./profiles/ by bootstrap-config. A

@@ -65,7 +65,7 @@ The default profile is the **Chief of Staff**: it talks to the owner on Telegram
 
 | Profile | Domain | Model | MCP tools | Disabled toolsets |
 | --- | --- | --- | --- | --- |
-| `default` (Chief of Staff) | Triage, delegation, summaries | `mistral-medium-3.1` (for now; the Paperless pipeline and cron jobs still run here) | all four servers | none; `kanban` enabled per platform |
+| `default` (Chief of Staff) | Triage, delegation, summaries | `mistral-large-4-0` (Medium 3.1 was retired by Mistral; the Paperless pipeline still runs here) | all four servers | none; `kanban` enabled per platform |
 | `assistenz` | Mail, calendar, Nextcloud files | `mistral-small-2603` (alias `gross` → Large 4) | mailu without `delete_*`; nextcloud read + upload only | terminal, code_execution, file, web, search, browser, cronjob, delegation, … |
 | `finanzen` | Invoices, contracts, deadlines | `mistral-large-4-0` | paperless without `delete_documents` | same as assistenz |
 | `steuern` | Tax view on Paperless | `mistral-large-4-0` | paperless, read-only allow-list (11 tools) | same as assistenz |
@@ -75,6 +75,7 @@ The default profile is the **Chief of Staff**: it talks to the owner on Telegram
 | `isms` | Compliance as code in GitLab `isms/compliance-as-code`, MRs only | `claude-sonnet-5.5` (alias `schnell`) | flux-operator-mcp; GitLab via git/REST with its own token | browser, cronjob, delegation, … (keeps terminal + file + web) |
 | `infrastruktur` | Proxmox host | `claude-haiku-5.5` (alias `analyse`) | proxmox-mcp (PVEAuditor) | same as assistenz |
 | `netzwerk` | OPNsense | `claude-haiku-5.5` (alias `analyse`) | opnsense-mcp (GET only) | same as assistenz |
+| `depot` | Securities: daily price check, assessments, watch candidates | `mistral-large-4-0` | portfolio-mcp (watch candidates + assessment log only, no positions, no free SQL) | terminal, code_execution, file, browser, … (keeps web: news and ticker lookup) |
 
 Why it's built this way:
 - **Kanban, not `delegate_task`.** A Kanban task runs entirely in the assignee's profile: its own model, `mcp_servers`, `agent.disabled_toolsets`, `.env` and memory. `delegate_task` children (including the `advanced-delegation` plugin's `profile_routes`) keep the **parent's** toolsets and MCP servers, so they give no isolation.
@@ -83,12 +84,27 @@ Why it's built this way:
 - **Not a security boundary between profiles.** All profiles share one pod and uid 10000. `devops` (terminal + file) could technically read the other profiles' `.env`; accepted because it only processes cluster data. Real separation would mean one pod per profile.
 - **Profile-only secrets** use keys `<profile>__<VAR>` in `externalsecret-profile-env.yaml`. `bootstrap_profiles.sh` writes each one only into that profile's `.env`, e.g. `isms__GITLAB_TOKEN`. The Secret volume is `optional`, so a missing 1Password item doesn't stop the pod.
 - **Personal names are placeholders.** SOULs and prompts use `${SECRET_HERMES_OWNER_NAME}`, `${SECRET_HERMES_PARTNER_NAME}`, `${SECRET_HERMES_OWNER_MAILBOX}` and `${SECRET_HERMES_PARTNER_MAILBOX}` from the SOPS-encrypted `cluster-secrets`. The profiles ConfigMap goes through Flux substitution, so **no other `$` may appear in those files**. `bootstrap_profiles.sh` sits in its own ConfigMap with substitution disabled.
-- **Telegram delivery from a specialist** (its cron jobs, a webhook route with `profile: <name>`) only works into a chat/topic that `gateway.profile_routes` maps to that profile; the shared bot refuses anything else (502). Moving the existing cron jobs and the Paperless webhook to `finanzen`/`assistenz` therefore waits for the Telegram group with one topic per specialist.
+- **Telegram delivery from a specialist** (its cron jobs, a webhook route with `profile: <name>`) only works into a chat/topic that `gateway.profile_routes` maps to that profile; the shared bot refuses anything else (502). Deliver targets are `telegram:<group>:<topic>`; create them via `kubectl exec` with `--deliver "telegram:$TELEGRAM_HOME_CHANNEL:<topic>"` so the group id never lands in the repo.
+
+### Scheduled jobs
+Each job runs in the profile that owns the domain and posts into that profile's topic. The prompts live only in each profile's `cron/jobs.json`, which is pod state on the PVC and not in git. Change a prompt with `hermes -p <profile> cron edit <name> --prompt …`. All jobs use `--no-wrap-response`. Formatting rules (bold heading with one emoji, bullets, German dates, no IDs or tables) are in every SOUL's "Ausgabe in Telegram" section. A job that has nothing to report answers `[SILENT]`, and nothing gets posted.
+
+| Job | Profile | Schedule | Topic | Notes |
+| --- | --- | --- | --- | --- |
+| `morgen-briefing` | default | 07:00 daily | 1 | calendar, mail, new Paperless documents, deadlines |
+| `politik-radar` | default | 12:34 daily | 1 | web search; memory entry "Politik-Radar" holds what was already reported |
+| `sicherheits-radar` | isms | 12:40 daily | 36 | web search, weighted to the software running here; memory entry "Sicherheits-Radar" |
+| `fristen` | finanzen | 08:00 daily | 3 | one `list_documents` call with a fixed `custom_field_query` (field names + `range`) |
+| `monatsuebersicht` | finanzen | 09:00 on the 1st | 3 | |
+| `depot-check` | depot | 19:00 daily | 44 | `--script portfolio_price_check.py` (asyncpg from the image's venv), then assessment + web news |
+| `homelab-waechter` | devops | :17 every 2 h | 6 | `--no-agent --script cluster_health_check.py`, silent when healthy |
+
+The pre-profile jobs in the default profile (`daily-digest`, `vertrags-abo-monitoring`, `finanzuebersicht-monatlich`, `portfolio-price-check`, `homelab-waechter`, `themen-radar`) are paused, not removed, so they can be restored with `hermes cron resume <name>`.
 
 ## Telegram and Open WebUI
 - **Telegram:** The forum group "Hermes" (id in `SECRET_HERMES_TELEGRAM_GROUP`) is the home.
   - Topic 1 (General) belongs to the Chief of Staff. It is `TELEGRAM_HOME_CHANNEL` + `TELEGRAM_HOME_CHANNEL_THREAD_ID=1`, so the default profile's cron results and webhook deliveries land there.
-  - Topics 2-6 are routed to specialists (`gateway.profile_routes`).
+  - Topics routed to specialists (`gateway.profile_routes`): 2 assistenz, 3 finanzen, 4 steuern, 5 kurator, 6 devops, 35 sicherheit, 36 isms, 37 infrastruktur, 38 netzwerk, 44 depot. A topic's id is its root message id. Read it from the `thread_id` column of `sessions` in `/opt/data/state.db` after writing one message into the topic.
   - `telegram.free_response_chats` lifts the @mention requirement for this group only.
   - The old DM still works; only the owner's user id is allowed anywhere (`TELEGRAM_ALLOWED_USERS`).
 - **Open WebUI:** The OpenAI-compatible API server (`API_SERVER_*` env vars, port 8642, Service port `api`) is reachable only from the open-webui pod (CNP), and requests carry Bearer `API_SERVER_KEY` (1Password `hermes-agent` / `HERMES_API_SERVER_KEY`).
