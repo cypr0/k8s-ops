@@ -274,6 +274,15 @@ spec:
         - ports:
             - port: "80"
               protocol: TCP
+    # Backend: mail namespace (calendar-public nginx on :8080)
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": mail
+            app.kubernetes.io/name: calendar-public
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     # Backend: flux-system namespace (webhook-receiver :9292)
     - toEndpoints:
         - matchLabels:

@@ -36,7 +36,7 @@ spec:
             image:
               repository: ghcr.io/firecrawl/firecrawl
               # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
-              tag: 2.11.607-production
+              tag: 2.11.813-production
             command:
               - "node"
             args:
@@ -106,7 +106,7 @@ spec:
             image:
               repository: ghcr.io/firecrawl/firecrawl
               # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
-              tag: 2.11.607-production
+              tag: 2.11.813-production
             command:
               - "node"
             args:
@@ -163,7 +163,7 @@ spec:
             image:
               repository: ghcr.io/firecrawl/firecrawl
               # renovate: datasource=docker depName=ghcr.io/firecrawl/firecrawl
-              tag: 2.11.607-production
+              tag: 2.11.813-production
             command:
               - "node"
             args:
@@ -227,7 +227,7 @@ spec:
           playwright-service:
             image:
               repository: ghcr.io/firecrawl/playwright-service
-              tag: latest@sha256:6b54a9733fe6863c2dc225bf8e284db996ef59f6efd5d1e760f0664c09c1f856
+              tag: latest@sha256:227ce3d8059173925a5a0697c63a1e947662cca934a609151651f578774edd5d
             envFrom:
               - configMapRef:
                   name: playwright-service-config

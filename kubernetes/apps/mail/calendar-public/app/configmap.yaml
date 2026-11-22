@@ -1,0 +1,157 @@
+---
+# Static nginx parts of the feed proxy; the token-bearing server block is in
+# externalsecret.yaml and includes these files.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: calendar-public-nginx-static
+data:
+  http.conf: |
+    # The request URI is deliberately absent from the log format: it carries
+    # the token.
+    log_format feed '$remote_addr "$request_method" $status $body_bytes_sent';
+    access_log /dev/stdout feed;
+
+    js_import feed from /etc/nginx/feed/feed.js;
+  server.conf: |
+    server_tokens off;
+
+    add_header Cache-Control "private, no-store" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location = /healthz {
+      access_log off;
+      default_type text/plain;
+      return 200 "ok\n";
+    }
+  location.conf: |-
+    # Browser-based subscribers (web apps) fetch the feed cross-origin. The
+    # URL token is the only protection, so a wildcard origin adds no exposure.
+    # add_header in a location replaces the server-level ones, hence repeated.
+    add_header Access-Control-Allow-Origin "*" always;
+    add_header Cache-Control "private, no-store" always;
+    add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    if ($request_method = OPTIONS) {
+      add_header Access-Control-Allow-Origin "*" always;
+      add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS" always;
+      add_header Access-Control-Allow-Headers "*" always;
+      add_header Access-Control-Max-Age 86400 always;
+      return 204;
+    }
+
+    limit_except GET HEAD OPTIONS { deny all; }
+
+    proxy_set_header Authorization "";
+    proxy_set_header Cookie "";
+    proxy_set_header X-Forwarded-For "";
+    # sub_filter needs an uncompressed body.
+    proxy_set_header Accept-Encoding "";
+
+    # Radicale marks the collection as a download; subscribers want a feed.
+    proxy_hide_header Content-Disposition;
+
+    # Radicale's export is not accepted by strict subscribers; feed.js
+    # rewrites the few offending lines (see there).
+    js_header_filter feed.header;
+    js_body_filter feed.body buffer_type=buffer;
+  feed.js: |
+    // Normalizes Radicale's calendar export for strict iCalendar parsers.
+    // Found with Daely's parser (Dart icalendar_parser), which rejects the
+    // whole feed on a single bad line:
+    //  - GEO written with an escaped separator ("lat\;lon"); RFC 5545
+    //    wants a bare ";" there.
+    //  - a TZID property directly inside a VEVENT (only VTIMEZONE may have
+    //    one), left over from an imported event.
+    //  - X-WR-CALNAME/X-WR-CALDESC with a ";VALUE=TEXT" parameter.
+
+    var pending = {};
+
+    function normalize(text) {
+      var lines = text.split('\r\n');
+      var out = [];
+      var inZone = false;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line === 'BEGIN:VTIMEZONE') {
+          inZone = true;
+        } else if (line === 'END:VTIMEZONE') {
+          inZone = false;
+        } else if (!inZone && line.indexOf('TZID:') === 0) {
+          continue;
+        } else if (line.indexOf('GEO:') === 0) {
+          line = line.replace(/\\;/g, ';');
+        } else if (line.indexOf('X-WR-CAL') === 0) {
+          line = line.replace(/^(X-WR-CAL(?:NAME|DESC));VALUE=TEXT:/, '$1:');
+        }
+        out.push(line);
+      }
+      return out.join('\r\n');
+    }
+
+    function header(r) {
+      // The body is rewritten, so the upstream length no longer applies.
+      if (r.status === 200) {
+        delete r.headersOut['Content-Length'];
+      }
+    }
+
+    function body(r, data, flags) {
+      if (r.status !== 200) {
+        r.sendBuffer(data, flags);
+        return;
+      }
+      // Chunks can split a multi-byte character, so collect the raw bytes
+      // (as hex) and decode only once the body is complete. Keyed by
+      // connection + request number: $request_id differs between calls.
+      var key = r.variables.connection + '-' + r.variables.connection_requests;
+      if (!pending[key]) {
+        // Requests aborted mid-transfer never reach flags.last; cap the leak.
+        if (Object.keys(pending).length > 50) {
+          pending = {};
+        }
+        pending[key] = [];
+      }
+      pending[key].push(data.toString('hex'));
+      if (!flags.last) {
+        return;
+      }
+      var text = Buffer.from(pending[key].join(''), 'hex').toString();
+      delete pending[key];
+      r.sendBuffer(Buffer.from(normalize(text)), flags);
+    }
+
+    export default { header, body };
+  nginx.conf: |-
+    # The image's stock nginx.conf plus load_module for njs (feed.js). Keep in
+    # step with the image when bumping its tag.
+    load_module modules/ngx_http_js_module.so;
+
+    worker_processes  auto;
+
+    error_log  /var/log/nginx/error.log notice;
+    pid        /tmp/nginx.pid;
+
+    events {
+        worker_connections  1024;
+    }
+
+    http {
+        proxy_temp_path /tmp/proxy_temp;
+        client_body_temp_path /tmp/client_temp;
+        fastcgi_temp_path /tmp/fastcgi_temp;
+        uwsgi_temp_path /tmp/uwsgi_temp;
+        scgi_temp_path /tmp/scgi_temp;
+
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        sendfile        on;
+        keepalive_timeout  65;
+
+        include /etc/nginx/conf.d/*.conf;
+    }

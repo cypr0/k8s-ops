@@ -1,0 +1,184 @@
+---
+# Prometheus exporter for the ISMS assessment.
+#
+# Serves the committed `assessment/metrics.prom` from the internal GitLab
+# repository `isms/compliance-as-code`, which the ISMS pipeline generates with
+# scripts/metrics.py on every assessment run.
+#
+# It is a pass-through on purpose. The exporter parses nothing, decides
+# nothing and derives nothing -- it fetches a file and adds a handful of
+# metrics about its own fetching. Any ISMS semantics implemented here would be
+# a second opinion on what "satisfied" means, free to disagree with the
+# assessment that produced the number. That is the exact class of drift the
+# ISMS is built to prevent, so the rule is: the pipeline computes, the
+# exporter transports.
+#
+# Deliberately stdlib-only, same reasoning as paperless-exporter: nothing is
+# installed on top of python:*-alpine, so the container runs as nobody with a
+# read-only root filesystem and there is no dependency to keep current.
+#
+# Staleness is self-revealing and that is a design property rather than luck.
+# Every freshness value in the file is an absolute timestamp, never an age, so
+# when GitLab is unreachable the exporter keeps serving the last good body and
+# the dashboard's computed ages simply keep growing. A cached body cannot
+# pretend to be fresh.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: isms-exporter
+data:
+  exporter.py: |-
+    #!/usr/bin/env python3
+    """Fetch assessment/metrics.prom from GitLab, serve it to Prometheus."""
+    import os
+    import threading
+    import time
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    BASE = os.environ["GITLAB_URL"].rstrip("/")
+    PROJECT = os.environ["GITLAB_PROJECT"]
+    REF = os.environ.get("GITLAB_REF", "main")
+    FILE = os.environ.get("METRICS_PATH", "assessment/metrics.prom")
+    PORT = int(os.environ.get("PORT", "9878"))
+    TIMEOUT = float(os.environ.get("TIMEOUT_SECONDS", "15"))
+    # The file changes at most once a day: the collector commits evidence at
+    # 04:00 and the pipeline regenerates the metrics from it. Polling faster
+    # would only add load to GitLab for values that cannot have moved.
+    REFRESH = float(os.environ.get("REFRESH_SECONDS", "300"))
+
+    # The token is mounted as a file rather than passed as an environment
+    # variable, because the cluster's own Kyverno policy
+    # prefer-secrets-as-files (CIS 5.4.1) says so -- and a long-running pod
+    # leaking its environment is a larger surface than a CronJob doing it.
+    with open(os.environ["TOKEN_FILE"], encoding="utf-8") as fh:
+        TOKEN = fh.read().strip()
+
+    URL = (
+        f"{BASE}/api/v4/projects/{urllib.parse.quote(PROJECT, safe='')}"
+        f"/repository/files/{urllib.parse.quote(FILE, safe='')}/raw"
+        f"?ref={urllib.parse.quote(REF, safe='')}"
+    )
+
+    _state = {
+        "body": None,
+        "fetched_at": 0.0,
+        "errors": 0,
+        "last_error": "",
+        "last_status": 0,
+    }
+    _lock = threading.Lock()
+
+    def fetch() -> None:
+        request = urllib.request.Request(URL, headers={"PRIVATE-TOKEN": TOKEN})
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                body = response.read().decode("utf-8")
+                status = response.status
+        except urllib.error.HTTPError as exc:
+            with _lock:
+                _state["errors"] += 1
+                _state["last_error"] = f"http {exc.code}"
+                _state["last_status"] = exc.code
+            return
+        except Exception as exc:  # noqa: BLE001 - any failure is just a failed fetch
+            with _lock:
+                _state["errors"] += 1
+                _state["last_error"] = type(exc).__name__
+                _state["last_status"] = 0
+            return
+
+        # A body that is not the expected exposition format would poison the
+        # scrape, so it is rejected rather than forwarded. The likeliest cause
+        # is GitLab answering with an HTML error page on a 200.
+        if "isms_assessment_timestamp_seconds" not in body:
+            with _lock:
+                _state["errors"] += 1
+                _state["last_error"] = "unexpected body"
+                _state["last_status"] = status
+            return
+
+        with _lock:
+            _state["body"] = body
+            _state["fetched_at"] = time.time()
+            _state["last_error"] = ""
+            _state["last_status"] = status
+
+    def refresh_loop() -> None:
+        while True:
+            fetch()
+            time.sleep(REFRESH)
+
+    def own_metrics() -> str:
+        with _lock:
+            fetched_at = _state["fetched_at"]
+            errors = _state["errors"]
+            status = _state["last_status"]
+            have_body = _state["body"] is not None
+        lines = [
+            "# HELP isms_exporter_last_fetch_success_timestamp_seconds When the"
+            " exporter last read the metrics file from GitLab.",
+            "# TYPE isms_exporter_last_fetch_success_timestamp_seconds gauge",
+            f"isms_exporter_last_fetch_success_timestamp_seconds {fetched_at}",
+            "# HELP isms_exporter_fetch_errors_total Failed fetches since start.",
+            "# TYPE isms_exporter_fetch_errors_total counter",
+            f"isms_exporter_fetch_errors_total {errors}",
+            "# HELP isms_exporter_last_http_status Status of the last fetch attempt;"
+            " 0 means it never reached GitLab.",
+            "# TYPE isms_exporter_last_http_status gauge",
+            f"isms_exporter_last_http_status {status}",
+            "# HELP isms_exporter_has_metrics 1 when a metrics body has been fetched"
+            " at least once; the values may still be stale.",
+            "# TYPE isms_exporter_has_metrics gauge",
+            f"isms_exporter_has_metrics {1 if have_body else 0}",
+        ]
+        return "\n".join(lines) + "\n"
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def _send(self, code: int, body: str, content_type: str) -> None:
+            payload = body.encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's name
+            if self.path.startswith("/healthz"):
+                # Deliberately independent of whether GitLab is reachable. A
+                # failing fetch must not take the pod out of the Service:
+                # Prometheus would then see the target as down and the
+                # dashboard would show no data at all, when what is true is
+                # "the last known assessment, and it is getting old". The
+                # staleness is reported as a metric and alerted on there.
+                self._send(200, "ok\n", "text/plain; charset=utf-8")
+                return
+            if not self.path.startswith("/metrics"):
+                self._send(404, "not found\n", "text/plain; charset=utf-8")
+                return
+
+            with _lock:
+                body = _state["body"]
+            # No body yet means no ISMS metrics, not zeroed ISMS metrics.
+            # Emitting zeros here would read as "nothing deviates", which is
+            # the single most dangerous thing this exporter could say.
+            payload = own_metrics() if body is None else own_metrics() + body
+            self._send(200, payload, "text/plain; version=0.0.4; charset=utf-8")
+
+        def log_message(self, *_args) -> None:
+            return
+
+    def main() -> None:
+        thread = threading.Thread(target=refresh_loop, daemon=True)
+        thread.start()
+        # Give the first fetch a moment so the initial scrape is not empty for
+        # no reason; the loop keeps trying regardless.
+        time.sleep(2)
+        ThreadingHTTPServer(("", PORT), Handler).serve_forever()
+
+    if __name__ == "__main__":
+        main()

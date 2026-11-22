@@ -61,6 +61,22 @@ spec:
       compactor:
         retention_enabled: true
         delete_request_store: filesystem
+      # KONF.7.13 -- the only hardening property the three Loki containers
+      # lacked. The chart already drops all capabilities and mounts the root
+      # filesystem read-only, but sets no seccomp profile anywhere.
+      #
+      # One place covers all three: the helper loki.podSecurityContext is
+      # included by both the single-binary StatefulSet (loki and the
+      # loki-sc-rules sidecar) and the loki-canary DaemonSet.
+      #
+      # Merges with the chart defaults, so fsGroup 10001 and
+      # fsGroupChangePolicy: OnRootMismatch survive -- and those must survive.
+      # They are what keeps the NFS volume from being walked on every start;
+      # the full fsGroup story is in the static PV under
+      # kubernetes/apps/monitoring/loki/app/pv.yaml.
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
 
     singleBinary:
       replicas: 1

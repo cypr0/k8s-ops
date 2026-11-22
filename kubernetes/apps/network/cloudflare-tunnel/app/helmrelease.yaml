@@ -18,7 +18,7 @@ spec:
           app:
             image:
               repository: docker.io/cloudflare/cloudflared
-              tag: 2026.10.3
+              tag: 2026.11.1
             env:
               NO_AUTOUPDATE: true
               TUNNEL_METRICS: 0.0.0.0:8080
@@ -57,6 +57,11 @@ spec:
         runAsNonRoot: true
         runAsUser: 65534
         runAsGroup: 65534
+        # The only hardening property this workload was missing (KONF.7.13).
+        # cloudflared opens an outbound QUIC tunnel and needs no syscall
+        # RuntimeDefault withholds.
+        seccompProfile:
+          type: RuntimeDefault
     service:
       app:
         ports:

@@ -164,6 +164,18 @@ spec:
         capabilities:
           drop:
             - "ALL"
+      # Pod level, which is where the subchart reads it (.Values.securityContext
+      # in templates/daemonset.yaml). Merges with the chart defaults
+      # (fsGroup/runAsGroup/runAsUser 65534, runAsNonRoot), so only the missing
+      # key is set here.
+      #
+      # This was the only hardening property node-exporter lacked (KONF.7.13).
+      # It uses hostPID and hostNetwork to read the host's /proc, and neither
+      # conflicts with RuntimeDefault: the profile restricts syscalls, not
+      # namespaces.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
 
     # kube-state-metrics
     kubeStateMetrics:

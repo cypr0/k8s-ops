@@ -36,6 +36,25 @@ rules:
     verbs:
       - "get"
       - "list"
+  # Scheduled work, for the `scheduled-jobs` evidence source. A CronJob's
+  # status.lastSuccessfulTime is the one field that distinguishes "runs every
+  # night" from "is scheduled every night and has not succeeded since
+  # October" -- and only the status, no pod contents.
+  #
+  # Added 2026-11-06 after the Wazuh IOC feed refresh had been failing daily
+  # since 2026-10-22, unnoticed: abuse.ch had retired its unauthenticated
+  # exports, two of the four IOC lists stopped receiving anything, and the
+  # ISMS could not see it because nothing in the harvest covered scheduled
+  # work. The CronJob's own status said lastSuccessfulTime 2026-10-21 the
+  # whole time.
+  - apiGroups:
+      - "batch"
+    resources:
+      - "cronjobs"
+      - "jobs"
+    verbs:
+      - "get"
+      - "list"
   # Pod specs, not pod contents: the evidence for KONF.9.1 and KONF.15.1/15.2
   # (limiting memory and compute) needs the resources.limits actually set per
   # container. Deployments alone are not enough, because CronJobs, Jobs and
@@ -48,6 +67,17 @@ rules:
       - "pods"
       - "resourcequotas"
       - "limitranges"
+    verbs:
+      - "get"
+      - "list"
+  # Service types, for KONF.2.4 (disable unneeded system functions). A
+  # NodePort opens a port on every node and bypasses the gateway, so the
+  # check asserts that none exists. Only the spec is read; Services carry no
+  # payload data.
+  - apiGroups:
+      - ""
+    resources:
+      - "services"
     verbs:
       - "get"
       - "list"
@@ -79,6 +109,32 @@ rules:
       - "schedules"
       - "backups"
       - "backupstoragelocations"
+      # `restores` added 2026-11-06, and late: the harvester started reading
+      # them on 2026-11-03 for isms_recovery_rehearsed (DLS.3.6, DLS.4.1.1),
+      # tested against an admin kubeconfig. The collector then failed the
+      # whole velero-backups source with Forbidden every night, its old file
+      # stayed in place, and the assessment reported the daily backup as 72.9
+      # hours overdue -- three controls deviated while the cluster was fine.
+      # Exactly the failure mode the gateway-dos comment above describes, so
+      # `kubectl auth can-i --as=system:serviceaccount:security:isms-collector`
+      # is now part of adding a source rather than an afterthought.
+      - "restores"
+    verbs:
+      - "get"
+      - "list"
+  # The secret chain: which external stores exist and whether everything
+  # resolving against them is syncing. Backs isms_provider_delivery for
+  # DL.1PASSWORD, which holds the root of every secret in the cluster.
+  #
+  # Only the two resource kinds, and only get/list. The ExternalSecret and
+  # ClusterSecretStore objects name vault items and report sync status; they
+  # carry no secret material, which is why this does not need `secrets` and
+  # does not trip no-sensitive-resource-access.
+  - apiGroups:
+      - "external-secrets.io"
+    resources:
+      - "clustersecretstores"
+      - "externalsecrets"
     verbs:
       - "get"
       - "list"
@@ -109,6 +165,28 @@ rules:
       - "cilium.io"
     resources:
       - "ciliumnetworkpolicies"
+      # Cluster-scoped counterpart. There is none in this cluster today, but
+      # KONF.7.15 asks how much of the workload is covered by policy, and a
+      # cluster-wide policy covering everything would otherwise be invisible
+      # and the answer would read worse than reality.
+      - "ciliumclusterwidenetworkpolicies"
+    verbs:
+      - "get"
+      - "list"
+  # Envoy Gateway traffic policies. These back KONF.15.3 (denial of service),
+  # KONF.2.2 (TLS floor) and KONF.12.1.10 (response headers).
+  #
+  # Added 2026-10-27 after the fact: the gateway-dos source was written and
+  # tested with an admin kubeconfig, so the missing permission did not show
+  # up until `kubectl auth can-i --as=` was run against the collector's own
+  # ServiceAccount. Without this the source fails and the dependent check
+  # reports error -- which the staleness logic would have surfaced, but only
+  # after the next collector run.
+  - apiGroups:
+      - "gateway.envoyproxy.io"
+    resources:
+      - "clienttrafficpolicies"
+      - "backendtrafficpolicies"
     verbs:
       - "get"
       - "list"

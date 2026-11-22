@@ -31,7 +31,7 @@ spec:
           app:
             image:
               repository: redis
-              tag: 8.10.2-alpine
+              tag: 8.10.3-alpine
             args:
               # No password: Mailu's admin/rspamd Redis integration doesn't
               # support authentication at all (upstream chart's
@@ -57,6 +57,9 @@ spec:
               capabilities:
                 drop:
                   - ALL
+              # KONF.7.13 -- the only property this container was missing.
+              seccompProfile:
+                type: RuntimeDefault
             probes:
               liveness:
                 enabled: true

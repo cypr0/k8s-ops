@@ -114,7 +114,10 @@ spec:
     matchLabels:
       app.kubernetes.io/name: dmarc-exporter
   endpoints:
-    # The exporter polls IMAP on its own schedule (15 min); scraping more often
-    # than that only re-reads the same counters.
+    # The exporter polls IMAP on its own schedule (15 min) and a scrape only
+    # re-reads counters already in memory, so the interval is free to be short
+    # -- and it has to be. At 5m it equalled Prometheus' lookbackDelta, so a
+    # late scrape dropped the newest sample out of the lookback window and
+    # every instant query against it returned empty.
     - port: metrics
-      interval: 5m
+      interval: 1m

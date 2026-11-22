@@ -16,6 +16,7 @@ check here before assuming a gap means "not interesting."
 | 1Password Connect | security | [onepassword-connect.md](onepassword-connect.md) |
 | Alloy | monitoring | [alloy.md](alloy.md) |
 | Authentik | security | [authentik.md](authentik.md) |
+| Calendar Public | mail | [calendar-public.md](calendar-public.md) |
 | cert-manager | cert-manager | [cert-manager.md](cert-manager.md) |
 | Cilium | kube-system | [cilium.md](cilium.md) |
 | ClamAV | nextcloud | [clamav.md](clamav.md) |
@@ -23,6 +24,7 @@ check here before assuming a gap means "not interesting."
 | Cloudflare Tunnel | network | [cloudflare-tunnel.md](cloudflare-tunnel.md) |
 | CloudNativePG | database | [cloudnative-pg.md](cloudnative-pg.md) |
 | Collabora | nextcloud | [collabora.md](collabora.md) |
+| collector | isms | [collector.md](collector.md) |
 | CoreDNS | kube-system | [coredns.md](coredns.md) |
 | csi-driver-nfs | kube-system | [csi-driver-nfs.md](csi-driver-nfs.md) |
 | DMARC Exporter | mail | [dmarc-exporter.md](dmarc-exporter.md) |
@@ -45,6 +47,7 @@ check here before assuming a gap means "not interesting."
 | hermes-agent | hermes-agent | [hermes-agent.md](hermes-agent.md) |
 | Immich | immich | [immich.md](immich.md) |
 | isms-collector | security | [isms-collector.md](isms-collector.md) |
+| isms-exporter | security | [isms-exporter.md](isms-exporter.md) |
 | k8s-gateway | network | [k8s-gateway.md](k8s-gateway.md) |
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
 | Kyverno | kyverno | [kyverno.md](kyverno.md) |
@@ -64,6 +67,7 @@ check here before assuming a gap means "not interesting."
 | plugin-barman-cloud | database | [plugin-barman-cloud.md](plugin-barman-cloud.md) |
 | Proxmox Ansible | automation | [proxmox-ansible.md](proxmox-ansible.md) |
 | Reloader | kube-system | [reloader.md](reloader.md) |
+| retry | velero | [retry.md](retry.md) |
 | Spegel | kube-system | [spegel.md](spegel.md) |
 | Tika (open-webui) | open-webui | [open-webui-tika.md](open-webui-tika.md) |
 | Tika (Paperless) | paperless | [paperless-tika.md](paperless-tika.md) |

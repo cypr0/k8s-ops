@@ -19,7 +19,7 @@ spec:
             image:
               repository: apache/tika
               # renovate: datasource=docker depName=apache/tika
-              tag: 3.3.3.0-full
+              tag: 3.3.3.1-full
             resources:
               requests:
                 cpu: 200m
@@ -39,6 +39,12 @@ spec:
               runAsUser: 3000
               runAsGroup: 3000
               runAsNonRoot: true
+
+    defaultPodOptions:
+      securityContext:
+        # The only hardening property this workload was missing (KONF.7.13).
+        seccompProfile:
+          type: RuntimeDefault
 
     service:
       http:

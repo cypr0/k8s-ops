@@ -9,3 +9,4 @@ components:
 resources:
   - ./namespace.yaml
   - ./ks.yaml
+  - ./retry/ks.yaml
