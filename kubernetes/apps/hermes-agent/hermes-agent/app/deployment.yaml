@@ -41,11 +41,18 @@ spec:
     spec:
       serviceAccountName: hermes-agent
       automountServiceAccountToken: true
+      # No fsGroup (removed 2026-11-22). With fsGroup the kubelet re-applied
+      # group-write + setgid to /opt/data on every pod start (OnRootMismatch
+      # always "mismatched" because hermes keeps the dir private), which
+      # (a) walked ~15k files on NFS for 5-10 min per start and (b) left
+      # /opt/data at 2775 -- and hermes v0.23 refuses its own control socket
+      # under a group-writable home ("unsafe_control_permissions"), so every
+      # Kanban worker failed with "Gateway starting: deadline". Nothing needs
+      # it: files below /opt/data are group 1000 already, the ServiceAccount
+      # token is 0644 without fsGroup, and Secret files set their own mode.
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
-        fsGroup: 1000
-        fsGroupChangePolicy: OnRootMismatch
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
@@ -64,7 +71,7 @@ spec:
         # and the agent stayed down until 2026-11-22.
         # Fix: every init container that writes to the volume runs as the
         # same uid 10000 the image itself uses (gid 1000 = this pod's
-        # runAsGroup/fsGroup, which owns everything below /opt/data with
+        # runAsGroup, which owns everything below /opt/data with
         # group-write). That is correct for every state of the volume --
         # steady state, after a Velero restore (Kopia keeps uid 10000), or
         # freshly provisioned -- with no CAP_CHOWN and no mode juggling.
@@ -83,6 +90,10 @@ spec:
           args:
             - |
               set -eu
+              # hermes refuses its gateway control socket while HERMES_HOME is
+              # writable by group/other (unsafe_control_permissions); a restore
+              # or an older pod spec with fsGroup can leave it 2775.
+              chmod go-w /opt/data
               mkdir -p /opt/data/home
               cp /bootstrap/config.yaml /opt/data/config.yaml
               # The `hermes whatsapp` pairing CLI writes its session to
@@ -454,7 +465,10 @@ spec:
         # projected-volume source hard-codes that mode regardless of
         # defaultMode -- also confirmed live). This sidecar runs as
         # uid/gid 1000 -- ordinary group-read access to the 0640 token is
-        # enough, no root needed here either.
+        # enough, no root needed here either. (Since fsGroup was dropped on
+        # 2026-11-22 the token is 0644 root:root, readable by every
+        # container; the sidecar stays because the kubeconfig it writes is
+        # what the agent's kubectl is pointed at.)
         # Writes to kubeconfig-dir (a plain emptyDir), NOT anywhere under
         # the `data` PVC: /opt/data itself is 0700 owned solely by uid
         # 10000, and -- confirmed live -- not even root can chmod it
@@ -528,9 +542,10 @@ spec:
             items:
               - key: OPENROUTER_API_KEY
                 path: OPENROUTER_API_KEY
-            # Group-readable for gid 1000 (fsGroup): bootstrap-config runs
-            # as uid 10000, not as the file's owner.
-            defaultMode: 0440
+            # Without fsGroup the file is root:root; bootstrap-config runs as
+            # uid 10000. Readable in-pod only -- the main container already
+            # carries the same key as an env var.
+            defaultMode: 0444
         - name: tmp
           emptyDir: {}
         # Browser tool uses shared memory for headless rendering.

@@ -52,4 +52,4 @@ The comments in `deployment.yaml` explained earlier failures as an NFS restricti
 ## Follow-ups
 - [ ] Re-run the Paperless extraction webhook for documents added 2026-11-16 to 2026-11-22.
 - [ ] Check why the Gatus/Pushover alert for "Hermes Agent (Webhook)" went unnoticed.
-- [ ] Every pod start still spends 5 to 10 minutes on the kubelet's recursive fsGroup pass: `OnRootMismatch` always sees the `0700` root as a mismatch. Consider dropping `fsGroup` once nothing depends on it. The `kubeconfig-refresher` sidecar reads the projected token through it.
+- [x] Every pod start spent 5 to 10 minutes on the kubelet's recursive fsGroup pass (`OnRootMismatch` always saw the private root as a mismatch), and the pass left `/opt/data` at `2775`. hermes v0.23 then refused its own control socket (`unsafe_control_permissions`), so every Kanban worker failed with "Gateway starting: deadline". `fsGroup` was dropped on 2026-11-22: the ServiceAccount token is `0644` without it, and `bootstrap-config` runs `chmod go-w /opt/data`.
