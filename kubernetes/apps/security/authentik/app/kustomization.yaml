@@ -40,5 +40,6 @@ configMapGenerator:
       - blueprints/09-wazuh-oidc.yaml
       - blueprints/10-hermes-oidc.yaml
       - blueprints/11-gitlab-oidc.yaml
+      - blueprints/12-cisotop-family.yaml
     options:
       disableNameSuffixHash: true

@@ -1,0 +1,169 @@
+---
+# Who may open which application -- allow-lists instead of "every
+# authenticated user".
+#
+# Until 2026-11-22 eight applications had NO policy binding at all
+# (grafana, proxmox, paperless-ngx, open-webui, nextcloud, immich,
+# kubernetes, wazuh), and an application without bindings admits every
+# authenticated Authentik user. That stopped being acceptable once the
+# household (and child) accounts exist. All eight use
+# policy_engine_mode: all, so the single binding below is the whole rule.
+#
+#   admin apps   grafana, proxmox, kubernetes, wazuh
+#                -> only accounts whose username ends in "-cmd" (the
+#                   separate admin identities, e.g. <user>-cmd)
+#   family apps  paperless-ngx, nextcloud, immich
+#                -> group owui-family (the adults' everyday accounts)
+#   open-webui   -> owui-family, owui-kids, and "-cmd" accounts (the Open
+#                   WebUI admin role sits on the admin identity)
+#
+# hermes and gitlab are already restricted to their own groups
+# (10-hermes-oidc.yaml, 11-gitlab-oidc.yaml) and are left alone.
+#
+# Group MEMBERSHIP is maintained in the Authentik UI, not here: it names
+# real people, and this repository is public.
+version: 1
+metadata:
+  name: cisotop Application access
+  labels:
+    app: authentik
+entries:
+  - model: authentik_core.group
+    id: owui-family-group
+    identifiers:
+      name: owui-family
+    attrs:
+      attributes:
+        description: Erwachsene im Haushalt (Paperless, Nextcloud, Immich, Open WebUI)
+
+  - model: authentik_core.group
+    id: owui-kids-group
+    identifiers:
+      name: owui-kids
+    attrs:
+      attributes:
+        description: Kinder (nur Open WebUI, Lern-Buddy)
+
+  - model: authentik_policies_expression.expressionpolicy
+    id: cisotop-admin-identities
+    identifiers:
+      name: cisotop-admin-identities
+    attrs:
+      execution_logging: false
+      expression: |
+        # Separate admin identities only (username suffix "-cmd").
+        return request.user.username.endswith("-cmd")
+
+  - model: authentik_policies_expression.expressionpolicy
+    id: cisotop-family
+    identifiers:
+      name: cisotop-family
+    attrs:
+      execution_logging: false
+      expression: |
+        # Adults' everyday accounts.
+        return ak_is_group_member(request.user, name="owui-family")
+
+  - model: authentik_policies_expression.expressionpolicy
+    id: cisotop-open-webui-users
+    identifiers:
+      name: cisotop-open-webui-users
+    attrs:
+      execution_logging: false
+      expression: |
+        # Adults, kids, and the admin identities (Open WebUI admin role).
+        return (
+            ak_is_group_member(request.user, name="owui-family")
+            or ak_is_group_member(request.user, name="owui-kids")
+            or request.user.username.endswith("-cmd")
+        )
+
+  # ── admin apps ──────────────────────────────────────────────────────────
+  - model: authentik_policies.policybinding
+    id: access-grafana
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - grafana
+      order: 100
+    attrs: &adminOnly
+      policy: !KeyOf cisotop-admin-identities
+      enabled: true
+      negate: false
+      timeout: 30
+  - model: authentik_policies.policybinding
+    id: access-proxmox
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - proxmox
+      order: 100
+    attrs: *adminOnly
+  - model: authentik_policies.policybinding
+    id: access-kubernetes
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - kubernetes
+      order: 100
+    attrs: *adminOnly
+  - model: authentik_policies.policybinding
+    id: access-wazuh
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - wazuh
+      order: 100
+    attrs: *adminOnly
+
+  # ── family apps ─────────────────────────────────────────────────────────
+  - model: authentik_policies.policybinding
+    id: access-paperless
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - paperless-ngx
+      order: 100
+    attrs: &familyOnly
+      policy: !KeyOf cisotop-family
+      enabled: true
+      negate: false
+      timeout: 30
+  - model: authentik_policies.policybinding
+    id: access-nextcloud
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - nextcloud
+      order: 100
+    attrs: *familyOnly
+  - model: authentik_policies.policybinding
+    id: access-immich
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - immich
+      order: 100
+    attrs: *familyOnly
+
+  # ── open-webui ──────────────────────────────────────────────────────────
+  - model: authentik_policies.policybinding
+    id: access-open-webui
+    identifiers:
+      target: !Find
+        - authentik_core.application
+        - - slug
+          - open-webui
+      order: 100
+    attrs:
+      policy: !KeyOf cisotop-open-webui-users
+      enabled: true
+      negate: false
+      timeout: 30
