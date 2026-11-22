@@ -1,7 +1,7 @@
 """
 title: OPNsense (read-only)
 author: cypr0
-version: 1.0.0
+version: 1.1.0
 license: MIT
 requirements: httpx
 description: >
@@ -19,6 +19,15 @@ description: >
   only on POST. Give the API user nothing but the pages it should read.
 
   Auth: OPNSENSE_API_KEY / OPNSENSE_API_SECRET as HTTP basic auth.
+
+  TLS: the firewall serves its self-signed web GUI certificate and is
+  addressed by IP, so neither the public CA store nor a hostname check can
+  work. OPNSENSE_CA_PEM_B64 pins exactly that certificate as the only trust
+  anchor (hostname check off -- the pin replaces it); any other
+  certificate, including a MITM's, fails the handshake. It comes from the
+  SOPS-encrypted cluster-secrets (SECRET_OPNSENSE_CERT_B64) because the
+  certificate names the private domain. When the GUI certificate is
+  renewed (current one expires 2027-07-29), update that secret.
   Security events from OPNsense/Suricata also land in Wazuh (syslog) --
   the "sicherheit" profile reads those; this tool is about configuration
   and state.
@@ -26,8 +35,10 @@ description: >
 
 from __future__ import annotations
 
+import base64
 import os
 import re
+import ssl
 from typing import Any, Optional
 
 import httpx
@@ -63,15 +74,23 @@ class Tools:
         OPNSENSE_API_KEY: str = Field(default_factory=lambda: os.getenv("OPNSENSE_API_KEY", ""))
         OPNSENSE_API_SECRET: str = Field(default_factory=lambda: os.getenv("OPNSENSE_API_SECRET", ""))
         OPNSENSE_VERIFY_TLS: bool = Field(default_factory=lambda: os.getenv("OPNSENSE_VERIFY_TLS", "true").lower() == "true")
+        OPNSENSE_CA_PEM_B64: str = Field(default_factory=lambda: os.getenv("OPNSENSE_CA_PEM_B64", ""))
 
     def __init__(self):
         self.valves = self.Valves()
+
+    def _verify(self):
+        if self.valves.OPNSENSE_CA_PEM_B64:
+            ctx = ssl.create_default_context(cadata=base64.b64decode(self.valves.OPNSENSE_CA_PEM_B64).decode())
+            ctx.check_hostname = False  # addressed by IP; the pinned certificate is the check
+            return ctx
+        return self.valves.OPNSENSE_VERIFY_TLS
 
     def _get(self, path: str, params: Optional[dict] = None) -> Any:
         if _ACTION.search(path):
             return {"error": "refused: path looks like an action endpoint; this tool is read-only"}
         base = self.valves.OPNSENSE_URL.rstrip("/")
-        with httpx.Client(verify=self.valves.OPNSENSE_VERIFY_TLS, timeout=30.0) as c:
+        with httpx.Client(verify=self._verify(), timeout=30.0) as c:
             r = c.get(
                 f"{base}/api{path}",
                 params=params or {},

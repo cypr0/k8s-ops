@@ -74,6 +74,10 @@ spec:
               value: "1"
             - name: OPNSENSE_VERIFY_TLS
               value: "true"
+            # Pinned self-signed GUI certificate, base64 PEM (see the module
+            # docstring); substituted by Flux from cluster-secrets.
+            - name: OPNSENSE_CA_PEM_B64
+              value: "${SECRET_OPNSENSE_CERT_B64}"
           envFrom:
             - secretRef:
                 name: opnsense-mcp-secret
