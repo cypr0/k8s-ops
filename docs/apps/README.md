@@ -46,6 +46,7 @@ check here before assuming a gap means "not interesting."
 | Grafana | monitoring | [grafana.md](grafana.md) |
 | hermes-agent | hermes-agent | [hermes-agent.md](hermes-agent.md) |
 | Immich | immich | [immich.md](immich.md) |
+| isms-collector | security | [isms-collector.md](isms-collector.md) |
 | isms-exporter | security | [isms-exporter.md](isms-exporter.md) |
 | k8s-gateway | network | [k8s-gateway.md](k8s-gateway.md) |
 | kube-prometheus-stack | monitoring | [kube-prometheus-stack.md](kube-prometheus-stack.md) |
