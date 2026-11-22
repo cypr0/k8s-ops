@@ -29,7 +29,7 @@ spec:
       containers:
         - name: nginx
           # renovate: datasource=docker depName=nginxinc/nginx-unprivileged
-          image: nginxinc/nginx-unprivileged:1.30.6-alpine
+          image: nginxinc/nginx-unprivileged:1.31.7-alpine
           ports:
             - name: http
               containerPort: 8080
